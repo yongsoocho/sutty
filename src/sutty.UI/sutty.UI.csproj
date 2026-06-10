@@ -16,15 +16,12 @@
          app launches without the machine-wide Windows App Runtime installed. -->
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
   </PropertyGroup>
-
   <ItemGroup>
-    <Content Include="Assets\SplashScreen.scale-200.png" />
-    <Content Include="Assets\LockScreenLogo.scale-200.png" />
-    <Content Include="Assets\Square150x150Logo.scale-200.png" />
-    <Content Include="Assets\Square44x44Logo.scale-200.png" />
-    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
-    <Content Include="Assets\StoreLogo.png" />
-    <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <!-- Package every image asset in the Assets folder (tiles, splash, logos
+         and the sutty.* icon set) so the MSIX manifest can resolve them. -->
+    <Content Include="Assets\**\*.png" />
+    <!-- The .ico used by AppWindow.SetIcon (title bar / taskbar / Alt+Tab). -->
+    <Content Include="Assets\sutty.ico" />
   </ItemGroup>
 
   <ItemGroup>
