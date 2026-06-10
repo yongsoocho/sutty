@@ -98,6 +98,8 @@ namespace sutty.UI.Views
         // changes (user clicks a different nav icon).
         //   sender = the NavigationView that raised the event.
         //   args   = event data, including args.SelectedItem (the new selection).
+        // NOTE: clicking a nav item updates the RIGHT-side panel (RightText),
+        //       NOT the center. The center is driven only by the tabs.
         private void LeftNav_SelectionChanged(
             Microsoft.UI.Xaml.Controls.NavigationView sender,
             Microsoft.UI.Xaml.Controls.NavigationViewSelectionChangedEventArgs args)
@@ -106,18 +108,20 @@ namespace sutty.UI.Views
             // SelectedItem really is a NavigationViewItem, binding it to `item`.
             if (args.SelectedItem is Microsoft.UI.Xaml.Controls.NavigationViewItem item)
             {
-                // Show the item's Tag text in the center area.
+                // Show the item's Tag text in the right panel.
                 //   ?.  (null-conditional)  -> if the left side is null, skip the
                 //        call and yield null instead of throwing.
                 //   ??  (null-coalescing)   -> if the left side is null, use the
                 //        right side instead. So: Tag if present, else Content.
-                ContentText.Text = item.Tag?.ToString() ?? item.Content?.ToString();
+                RightText.Text = item.Tag?.ToString() ?? item.Content?.ToString();
             }
         }
 
-        // Event handler: fires when a different TAB on the title line is selected.
+        // Event handler: fires when a different TAB on the title line is clicked.
         // TabView's SelectionChanged uses the classic Selector signature:
         //   (object sender, SelectionChangedEventArgs e)  -- note: plain `object`.
+        // NOTE: clicking a tab updates the CENTER content (ContentText). The
+        //       right panel is driven only by the left nav rail.
         private void TitleTabs_SelectionChanged(
             object sender,
             Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)

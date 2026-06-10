@@ -80,24 +80,24 @@
                         Icon="Home"
                         Tag="Home" />
                     <NavigationViewItem
-                        Content="Documents"
+                        Content="Document"
                         Icon="Document"
-                        Tag="Documents" />
+                        Tag="Document" />
                     <NavigationViewItem
-                        Content="Settings"
+                        Content="More"
                         Icon="More"
-                        Tag="Settings" />
+                        Tag="More" />
                 </NavigationView.MenuItems>
 
                 <!--  Options icon pinned to the bottom of the rail  -->
                 <NavigationView.FooterMenuItems>
                     <NavigationViewItem
-                        Content="Options"
+                        Content="Setting"
                         Icon="Setting"
-                        Tag="Options" />
+                        Tag="Setting" />
                 </NavigationView.FooterMenuItems>
 
-                <!--  Center panel: content swapped when a nav icon is clicked  -->
+                <!--  Center panel: content swapped when a TAB is clicked  -->
                 <Grid Background="{ThemeResource LayerFillColorAltBrush}">
                     <TextBlock
                         x:Name="ContentText"
@@ -108,14 +108,17 @@
                 </Grid>
             </NavigationView>
 
-            <!--  Right panel: fixed column pinned to the right border  -->
+            <!--  Right panel: updated when a NAV RAIL item is clicked  -->
             <StackPanel
                 Grid.Column="1"
                 Padding="12"
                 VerticalAlignment="Stretch"
                 Background="{ThemeResource LayerFillColorDefaultBrush}"
                 Spacing="8">
-                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Right" />
+                <TextBlock
+                    x:Name="RightText"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Text="Right" />
             </StackPanel>
         </Grid>
     </Grid>
