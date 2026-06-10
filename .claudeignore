@@ -1,0 +1,39 @@
+# Build artifacts
+bin/
+obj/
+
+# NuGet restore outputs
+packages/
+project.assets.json
+project.nuget.cache
+*.csproj.nuget.dgspec.json
+*.csproj.nuget.g.props
+*.csproj.nuget.g.targets
+
+# Windows App packaging
+AppPackages/
+BundleArtifacts/
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+
+# IDE state
+.vs/
+.idea/
+*.user
+*.suo
+
+# Assets (binary images — not useful for code context)
+**/*.png
+**/*.ico
+**/*.gif
+**/*.jpg
+**/*.jpeg
+**/*.bmp
+
+# Logs and test results
+*.log
+TestResults/
+*.trx
+*.coverage
