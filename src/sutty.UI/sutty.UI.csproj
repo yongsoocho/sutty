@@ -20,6 +20,9 @@
     <!-- Package every image asset in the Assets folder (tiles, splash, logos
          and the sutty.* icon set) so the MSIX manifest can resolve them. -->
     <Content Include="Assets\**\*.png" />
+    <None Remove="Views\DocumentPanel.xaml" />
+    <None Remove="Views\HomePanel.xaml" />
+    <None Remove="Views\MorePanel.xaml" />
     <!-- The .ico used by AppWindow.SetIcon (title bar / taskbar / Alt+Tab). -->
     <Content Include="Assets\sutty.ico" />
   </ItemGroup>
@@ -41,6 +44,21 @@
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.251219" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="Views\DocumentPanel.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="Views\MorePanel.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="Views\HomePanel.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
 
   <!--

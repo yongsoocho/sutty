@@ -17,7 +17,7 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="300" />
         </Grid.ColumnDefinitions>
-        <!--  ── Column 0: 로고 + 좌측 Nav Rail ──  -->
+        <!--  ── Column 0: Logo + Left Nav Rail ──  -->
         <Grid Grid.Column="0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="40" />
@@ -25,8 +25,8 @@
             </Grid.RowDefinitions>
             <Grid.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Offset="0.0" Color="#1A5F8A" />
-                    <GradientStop Offset="1.0" Color="#1A8A7A" />
+                    <GradientStop Offset="0.0" Color="#121E31" />
+                    <GradientStop Offset="1.0" Color="#0B111E" />
                 </LinearGradientBrush>
             </Grid.Background>
 
@@ -44,6 +44,7 @@
                 IsBackButtonVisible="Collapsed"
                 IsPaneToggleButtonVisible="False"
                 IsSettingsVisible="False"
+                ItemInvoked="LeftNav_ItemInvoked"
                 PaneDisplayMode="LeftCompact"
                 SelectionChanged="LeftNav_SelectionChanged">
                 <NavigationView.MenuItems>
@@ -64,18 +65,18 @@
                     <NavigationViewItem
                         Content="Setting"
                         Icon="Setting"
+                        SelectsOnInvoked="False"
                         Tag="Setting" />
                 </NavigationView.FooterMenuItems>
-                <Grid />
             </NavigationView>
         </Grid>
-        <!--  ── Column 1: 탭바(타이틀바) + 메인 콘텐츠 ──  -->
+        <!--  ── Column 1: Tabs + Main Content ──  -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="40" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <!--  TabView: 각 탭에 Content 직접 포함  -->
+            <!--  TabView: Tabs  -->
             <TabView
                 x:Name="TitleTabs"
                 Grid.Row="0"
@@ -115,7 +116,7 @@
                     </TabViewItem.IconSource>
                 </TabViewItem>
             </TabView>
-            <!--  메인 콘텐츠 영역: 탭 선택 시 ContentText 교체  -->
+            <!--  Main Content  -->
             <Grid Grid.Row="1" Background="{ThemeResource LayerFillColorAltBrush}">
                 <TextBlock
                     x:Name="ContentText"
@@ -125,17 +126,12 @@
                     Text="Tab 1 Content" />
             </Grid>
         </Grid>
-        <!--  ── Column 2: 우측 패널 ──  -->
-        <StackPanel
+        <!--  ── Column 2: Right Panel ──  -->
+        <ContentControl
+            x:Name="RightPanel"
             Grid.Column="2"
             Padding="12"
             VerticalAlignment="Stretch"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
-            Spacing="8">
-            <TextBlock
-                x:Name="RightText"
-                Style="{StaticResource BodyStrongTextBlockStyle}"
-                Text="Home" />
-        </StackPanel>
+            Background="{ThemeResource LayerFillColorDefaultBrush}" />
     </Grid>
 </Window>
