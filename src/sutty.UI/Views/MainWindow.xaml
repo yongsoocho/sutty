@@ -15,7 +15,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="336" />
         </Grid.ColumnDefinitions>
         <!--  ── Column 0: Logo + Left Nav Rail ──  -->
         <Grid Grid.Column="0">
@@ -127,11 +127,22 @@
             </Grid>
         </Grid>
         <!--  ── Column 2: Right Panel ──  -->
-        <ContentControl
-            x:Name="RightPanel"
-            Grid.Column="2"
-            Padding="12"
-            VerticalAlignment="Stretch"
-            Background="{ThemeResource LayerFillColorDefaultBrush}" />
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" />
+            <Border
+                Grid.Row="1"
+                Padding="8"
+                VerticalAlignment="Stretch"
+                Background="#0D1520">
+                <ContentControl
+                    x:Name="RightPanel"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch" />
+            </Border>
+        </Grid>
     </Grid>
-</Window>
+</Window>   
