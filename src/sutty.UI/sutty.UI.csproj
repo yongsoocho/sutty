@@ -20,7 +20,7 @@
     <!-- Package every image asset in the Assets folder (tiles, splash, logos
          and the sutty.* icon set) so the MSIX manifest can resolve them. -->
     <Content Include="Assets\**\*.png" />
-    <None Remove="Views\DocumentPanel.xaml" />
+    <None Remove="Controls\HostCard.xaml" />
     <None Remove="Views\HomePanel.xaml" />
     <None Remove="Views\MorePanel.xaml" />
     <!-- The .ico used by AppWindow.SetIcon (title bar / taskbar / Alt+Tab). -->
@@ -46,7 +46,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
   </ItemGroup>
   <ItemGroup>
-    <Page Update="Views\DocumentPanel.xaml">
+    <Page Update="Views\HostListPanel.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
   </ItemGroup>
@@ -57,6 +57,11 @@
   </ItemGroup>
   <ItemGroup>
     <Page Update="Views\HomePanel.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="Controls\HostCard.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
   </ItemGroup>

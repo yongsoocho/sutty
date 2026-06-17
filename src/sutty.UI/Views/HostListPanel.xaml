@@ -1,0 +1,83 @@
+<UserControl
+    x:Class="sutty.UI.Views.HostListPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:sutty.UI.Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:sutty.UI.ViewModels"
+    mc:Ignorable="d">
+
+    <!--
+        React 비유:
+        {hosts.map(h => <HostCard host={h} key={h.hostname} />)}
+        ↓ WinUI3 에서는
+        ItemsRepeater + DataTemplate 이 이 역할을 한다.
+    -->
+
+    <Border Background="Transparent">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="0,0,0,20" Spacing="16">
+
+                <!--  헤더  -->
+                <StackPanel Spacing="18">
+                    <StackPanel>
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="20"
+                            FontWeight="Medium"
+                            Foreground="#E1E8F2"
+                            Text="History" />
+                    </StackPanel>
+                    <StackPanel Spacing="8">
+                        <!--  검색  -->
+                        <AutoSuggestBox
+                            x:Name="SearchBox"
+                            VerticalAlignment="Stretch"
+                            PlaceholderText="Search hosts..."
+                            QueryIcon="Find"
+                            TextChanged="SearchBox_TextChanged" />
+                        <!--  추가 버튼  -->
+                        <!--<Button
+                            Padding="14,8"
+                            Click="AddHost_Click"
+                            Content="+ Add Host"
+                            CornerRadius="8"
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Foreground="#E1E8F2">
+                            <Button.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Offset="0.0" Color="#1A3050" />
+                                    <GradientStop Offset="1.0" Color="#121E31" />
+                                </LinearGradientBrush>
+                            </Button.Background>
+                        </Button>-->
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 카드 리스트 = React의 hosts.map(h => <HostCard />) -->
+                <ItemsRepeater x:Name="HostRepeater" ItemsSource="{x:Bind FilteredHosts}">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Spacing="8" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:HostInfoModel">
+                            <controls:HostCard Host="{x:Bind}" />
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+
+                <!--  빈 상태  -->
+                <TextBlock
+                    x:Name="EmptyState"
+                    Margin="0,40,0,0"
+                    HorizontalAlignment="Center"
+                    FontSize="14"
+                    Foreground="#3E5470"
+                    Text="No hosts found"
+                    Visibility="Collapsed" />
+            </StackPanel>
+        </ScrollViewer>
+    </Border>
+</UserControl>

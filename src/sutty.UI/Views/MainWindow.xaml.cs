@@ -52,7 +52,7 @@ namespace sutty.UI.Views
                 RightPanel.Content = item.Tag switch
                 {
                     "Home" => new HomePanel(),
-                    "Document" => new DocumentPanel(),
+                    "Document" => new HostListPanel(),
                     "More" => new MorePanel(),
                     _ => null
                 };
