@@ -19,12 +19,28 @@ public sealed partial class HostListPanel : UserControl
     private readonly ObservableCollection<HostInfoModel> _allHosts = [];
     public ObservableCollection<HostInfoModel> FilteredHosts { get; } = [];
 
+    /// <summary>카드를 클릭하면 해당 호스트로 연결해 달라는 신호.</summary>
+    public event EventHandler<HostInfoModel>? ConnectRequested;
+
     public HostListPanel()
     {
         this.InitializeComponent();
         LoadSampleData();
         ApplyFilter("");
+
+        // ItemsRepeater가 만든 HostCard에 클릭 이벤트를 연결
+        HostRepeater.ElementPrepared += (_, args) =>
+        {
+            if (args.Element is Controls.HostCard card)
+            {
+                card.Clicked -= OnCardClicked;
+                card.Clicked += OnCardClicked;
+            }
+        };
     }
+
+    private void OnCardClicked(object? sender, HostInfoModel host)
+        => ConnectRequested?.Invoke(this, host);
 
     // ── 샘플 데이터 (나중에 DB/API로 교체) ──
 
@@ -42,6 +58,7 @@ public sealed partial class HostListPanel : UserControl
                 Hostname      = "Dev Scheduler",
                 Alias         = "dev-scheduler",
                 IP            = "10.0.0.15",
+                Username      = "admin",
                 Tags          = ["ssh", "dev"],
                 LogoPath      = "ms-appx:///Assets/ubuntu.png",
                 LogoBg        = orangeBrush,
@@ -52,6 +69,7 @@ public sealed partial class HostListPanel : UserControl
                 Hostname      = "Web Server us-1",
                 Alias         = "web-us-1",
                 IP            = "10.0.1.22",
+                Username      = "deploy",
                 Tags          = ["ssh", "dev", "cash"],
                 LogoPath      = "ms-appx:///Assets/ubuntu.png",
                 LogoBg        = orangeBrush,
@@ -62,6 +80,7 @@ public sealed partial class HostListPanel : UserControl
                 Hostname      = "Postgresql Replica-1",
                 Alias         = "pg-replica-1",
                 IP            = "10.0.2.10",
+                Username      = "postgres",
                 Tags          = ["ssh", "prod", "db"],
                 LogoPath      = "ms-appx:///Assets/ubuntu.png",
                 LogoBg        = purpleBrush,
@@ -72,6 +91,7 @@ public sealed partial class HostListPanel : UserControl
                 Hostname      = "Web Server us-0",
                 Alias         = "web-us-0",
                 IP            = "10.0.1.20",
+                Username      = "ubuntu",
                 Tags          = ["ssh", "dev", "cash"],
                 LogoPath      = "ms-appx:///Assets/ubuntu.png",
                 LogoBg        = tealBrush,

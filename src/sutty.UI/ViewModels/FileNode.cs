@@ -1,30 +1,80 @@
-﻿using Microsoft.UI.Xaml;
+using CommunityToolkit.Mvvm.ComponentModel;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Models;
+using sutty.Core.Sftp;
 using System.Collections.ObjectModel;
+using System.Threading;
 
 namespace sutty.UI.ViewModels;
 
-/// <summary>파일 트리(TreeView)의 노드 하나. RemoteFileEntry를 UI 표시용으로 감싼다.</summary>
-public sealed class FileNode
+/// <summary>
+/// 파일 트리(TreeView)의 노드 하나. RemoteFileEntry를 UI 표시용으로 감싼다.
+/// 업로드 중이면 진행도와 취소 토큰을 함께 가진다.
+/// </summary>
+public sealed partial class FileNode : ObservableObject
 {
     public RemoteFileEntry Entry { get; }
+    public FileNode? Parent { get; set; }
     public ObservableCollection<FileNode> Children { get; } = [];
 
-    /// <summary>루트("/")만 처음부터 펼쳐 놓는다.</summary>
-    public bool IsExpandedInitially { get; set; }
+    // [ObservableProperty]는 WinUI3에서 AOT 경고(MVVMTK0045)가 있어 수동 SetProperty 사용
+
+    private bool _isExpanded;
+    /// <summary>펼침 상태 (TreeViewItem.IsExpanded와 양방향 바인딩).</summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set => SetProperty(ref _isExpanded, value);
+    }
+
+    private bool _hasUnrealizedChildren;
+    /// <summary>true면 아직 자식을 서버에서 안 읽어옴 → 펼칠 때 지연 로딩.</summary>
+    public bool HasUnrealizedChildren
+    {
+        get => _hasUnrealizedChildren;
+        set => SetProperty(ref _hasUnrealizedChildren, value);
+    }
+
+    private bool _isUploading;
+    public bool IsUploading
+    {
+        get => _isUploading;
+        set => SetProperty(ref _isUploading, value);
+    }
+
+    private double _progress;
+    /// <summary>업로드 진행도 0.0 ~ 1.0.</summary>
+    public double Progress
+    {
+        get => _progress;
+        set
+        {
+            if (SetProperty(ref _progress, value))
+                OnPropertyChanged(nameof(ProgressText));
+        }
+    }
+
+    public CancellationTokenSource? UploadCts { get; set; }
 
     public FileNode(RemoteFileEntry entry) => Entry = entry;
 
     public string Name => Entry.Name;
+    public string FullPath => Entry.FullPath;
+    public bool IsDirectory => Entry.IsDirectory;
+
+    /// <summary>업로드 대상 디렉터리: 디렉터리면 자기 자신, 파일이면 부모 경로.</summary>
+    public string DirectoryPath => IsDirectory ? FullPath : RemotePath.GetDirectory(FullPath);
+
+    public string ProgressText => $"{Progress:P0}";
 
     // Segoe Fluent Icons: E8B7 = Folder, E8A5 = Document
-    public string Glyph => Entry.IsDirectory ? "" : "";
+    public string Glyph => IsDirectory ? "" : "";
 
     public Brush GlyphBrush =>
-        (Brush)Application.Current.Resources[Entry.IsDirectory ? "AccentBlue" : "TextMuted"];
+        (Brush)Application.Current.Resources[IsDirectory ? "AccentBlue" : "TextMuted"];
 
-    public string SizeText => Entry.IsDirectory ? "" : FormatSize(Entry.Size);
+    public string SizeText => IsDirectory ? "" : FormatSize(Entry.Size);
 
     private static string FormatSize(long bytes) => bytes switch
     {

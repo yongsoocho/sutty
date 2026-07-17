@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Media;
 using sutty.Core.Sessions;
 using sutty.Setting;
 using System;
+using System.Threading.Tasks;
 
 namespace sutty.UI.Views
 {
@@ -61,12 +62,8 @@ namespace sutty.UI.Views
                     break;
 
                 case SessionState.Connected:
-                    AppendLine("Connected. (mock session)");
-                    AppendLine("");
-                    AppendLine("Welcome to Ubuntu 22.04.4 LTS (GNU/Linux 5.15.0-105-generic x86_64)");
-                    AppendLine("");
-                    AppendLine($"Last login: {DateTime.Now.AddDays(-1):ddd MMM d HH:mm:ss yyyy} from 10.0.0.2");
-                    AppendLine($"{user}@{info.Host}:~$ ");
+                    AppendLine("Connected.");
+                    _ = ShowBannerAsync(user); // 서버 정보(uname)를 실제로 실행해서 출력
                     break;
 
                 case SessionState.Disconnecting:
@@ -79,9 +76,28 @@ namespace sutty.UI.Views
                     break;
 
                 case SessionState.Failed:
-                    AppendLine("Connection failed.");
+                    AppendLine($"Connection failed: {Session.LastError ?? "unknown error"}");
                     break;
             }
+        }
+
+        private async Task ShowBannerAsync(string user)
+        {
+            try
+            {
+                var banner = await Session.RunCommandAsync("uname -a");
+                if (!string.IsNullOrWhiteSpace(banner))
+                {
+                    AppendLine("");
+                    AppendLine(banner.TrimEnd());
+                }
+            }
+            catch
+            {
+                // 배너는 장식일 뿐 — 실패해도 프롬프트는 띄운다
+            }
+            AppendLine("");
+            AppendLine($"{user}@{Session.Info.Host}:~$ ");
         }
 
         private void AppendLine(string line)

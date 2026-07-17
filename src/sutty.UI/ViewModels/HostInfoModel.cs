@@ -13,6 +13,7 @@ public class HostInfoModel
     public string Hostname { get; set; } = "";
     public string Alias { get; set; } = "";
     public string IP { get; set; } = "";
+    public string Username { get; set; } = "";
     public string[] Tags { get; set; } = [];
     public DateTime? LastConnected { get; set; }
 

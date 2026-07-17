@@ -15,11 +15,18 @@ public interface ISshSession
     SshConnectionInfo Info { get; }
     SessionState State { get; }
 
+    /// <summary>State가 Failed일 때 마지막 오류 메시지.</summary>
+    string? LastError { get; }
+
     /// <summary>이 세션과 같은 연결을 공유하는 SFTP 채널.</summary>
     ISftpService Sftp { get; }
 
     event EventHandler<SessionState>? StateChanged;
 
     Task ConnectAsync(CancellationToken ct = default);
+
+    /// <summary>원격에서 명령 하나를 실행하고 출력을 돌려준다.</summary>
+    Task<string> RunCommandAsync(string command, CancellationToken ct = default);
+
     Task DisconnectAsync();
 }

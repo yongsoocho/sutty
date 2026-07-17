@@ -114,6 +114,25 @@ public sealed class MockSftpService : ISftpService
         return list;
     }
 
-    private static string Combine(string parent, string name) =>
-        parent == "/" ? "/" + name : parent + "/" + name;
+    private static string Combine(string parent, string name) => RemotePath.Combine(parent, name);
+
+    /// <summary>가짜 업로드: 약 3초 동안 진행도를 보고하고, 완료되면 mock 트리에 파일을 추가한다.</summary>
+    public async Task UploadFileAsync(string localPath, string remoteDirectory,
+        IProgress<double>? progress = null, CancellationToken ct = default)
+    {
+        long size = 0;
+        try { size = new FileInfo(localPath).Length; } catch { /* 크기 모름 → 0 */ }
+
+        const int steps = 25;
+        for (int i = 1; i <= steps; i++)
+        {
+            await Task.Delay(120, ct);
+            progress?.Report(i / (double)steps);
+        }
+
+        var dir = remoteDirectory == "/" ? "/" : remoteDirectory.TrimEnd('/');
+        var name = Path.GetFileName(localPath);
+        Ensure(dir).RemoveAll(e => !e.IsDirectory && e.Name == name); // 같은 이름은 덮어쓰기
+        AddFile(dir, name, size, ageDays: 0);
+    }
 }

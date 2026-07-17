@@ -21,7 +21,8 @@
         BorderThickness="1"
         CornerRadius="12"
         PointerEntered="Card_PointerEntered"
-        PointerExited="Card_PointerExited">
+        PointerExited="Card_PointerExited"
+        Tapped="Card_Tapped">
 
         <Grid ColumnSpacing="14">
             <Grid.ColumnDefinitions>

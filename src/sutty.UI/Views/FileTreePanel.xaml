@@ -30,7 +30,7 @@
                 TextWrapping="Wrap" />
         </StackPanel>
 
-        <!--  파일 트리 (FileZilla 스타일)  -->
+        <!--  파일 트리: 탐색기에서 파일을 끌어다 놓으면 그 위치로 업로드  -->
         <Border
             Grid.Row="1"
             Padding="6"
@@ -38,14 +38,23 @@
             <Grid>
                 <TreeView
                     x:Name="FileTree"
-                    AllowDrop="False"
+                    AllowDrop="True"
                     CanDragItems="False"
                     CanReorderItems="False"
+                    DragOver="Tree_DragOver"
+                    Drop="Tree_Drop"
+                    Expanding="FileTree_Expanding"
                     ItemsSource="{x:Bind RootNodes}"
                     SelectionMode="Single">
                     <TreeView.ItemTemplate>
                         <DataTemplate x:DataType="vm:FileNode">
-                            <TreeViewItem IsExpanded="{x:Bind IsExpandedInitially}" ItemsSource="{x:Bind Children}">
+                            <TreeViewItem
+                                AllowDrop="True"
+                                DragOver="Node_DragOver"
+                                Drop="Node_Drop"
+                                HasUnrealizedChildren="{x:Bind HasUnrealizedChildren, Mode=OneWay}"
+                                IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
+                                ItemsSource="{x:Bind Children}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <FontIcon
                                         FontSize="14"
@@ -60,6 +69,33 @@
                                         FontSize="11"
                                         Foreground="{StaticResource TextFaint}"
                                         Text="{x:Bind SizeText}" />
+
+                                    <!--  업로드 중일 때만: 진행 바 + % + 취소(X)  -->
+                                    <ProgressBar
+                                        Width="64"
+                                        VerticalAlignment="Center"
+                                        Maximum="1"
+                                        Visibility="{x:Bind IsUploading, Mode=OneWay}"
+                                        Value="{x:Bind Progress, Mode=OneWay}" />
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontSize="11"
+                                        Foreground="{StaticResource AccentBlue}"
+                                        Text="{x:Bind ProgressText, Mode=OneWay}"
+                                        Visibility="{x:Bind IsUploading, Mode=OneWay}" />
+                                    <Button
+                                        Padding="3"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="CancelUpload_Click"
+                                        ToolTipService.ToolTip="Cancel upload"
+                                        Visibility="{x:Bind IsUploading, Mode=OneWay}">
+                                        <FontIcon
+                                            FontSize="10"
+                                            Foreground="{StaticResource TextMuted}"
+                                            Glyph="&#xE711;" />
+                                    </Button>
                                 </StackPanel>
                             </TreeViewItem>
                         </DataTemplate>

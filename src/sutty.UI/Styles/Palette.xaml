@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
     sutty 공용 팔레트 & 스타일.
-    navy brand (#121E31 ~ #0B111E) 기준. 모든 패널/컨트롤이 여기 키를 참조한다.
+    navy brand 기반 다크 테마. 모든 패널/컨트롤이 여기 키를 참조한다.
+    (MainWindow 루트가 RequestedTheme=Dark 이므로 기본 컨트롤도 다크로 렌더링됨)
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -11,45 +12,57 @@
         <!--  라이트/다크 관계없이 앱 전체를 다크 네이비로 (lightweight styling)  -->
         <ResourceDictionary x:Key="Default">
             <!--  TextBox / PasswordBox  -->
-            <SolidColorBrush x:Key="TextControlBackground" Color="#0A1019" />
-            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#0E1724" />
-            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#0E1724" />
-            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#1E2E48" />
-            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#2A3E5C" />
-            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#4E8FEF" />
-            <SolidColorBrush x:Key="TextControlForeground" Color="#E1E8F2" />
-            <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#E1E8F2" />
-            <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#E1E8F2" />
-            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#3E5470" />
-            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#3E5470" />
-            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#3E5470" />
+            <SolidColorBrush x:Key="TextControlBackground" Color="#0B111C" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#101927" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#101927" />
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#24334E" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#31456B" />
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#5B9CFF" />
+            <SolidColorBrush x:Key="TextControlForeground" Color="#E8EDF5" />
+            <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#E8EDF5" />
+            <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#E8EDF5" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#55647E" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#55647E" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#55647E" />
 
             <!--  ComboBox  -->
-            <SolidColorBrush x:Key="ComboBoxBackground" Color="#0A1019" />
-            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#0E1724" />
-            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#0E1724" />
-            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#1E2E48" />
-            <SolidColorBrush x:Key="ComboBoxForeground" Color="#E1E8F2" />
-            <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#121E31" />
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#0B111C" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#101927" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#101927" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#24334E" />
+            <SolidColorBrush x:Key="ComboBoxForeground" Color="#E8EDF5" />
+            <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#141C2B" />
+
+            <!--  TabView (타이틀바 세션 탭)  -->
+            <SolidColorBrush x:Key="TabViewBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewItemHeaderBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#141C2B" />
+            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundPointerOver" Color="#10161F" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForeground" Color="#8B99B0" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForegroundSelected" Color="#E8EDF5" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForegroundPointerOver" Color="#C7D2E3" />
+            <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#8B99B0" />
+            <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#5B9CFF" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
     <!--  ===== 팔레트 =====  -->
-    <SolidColorBrush x:Key="PanelBg" Color="#0D1520" />
-    <SolidColorBrush x:Key="CardBg" Color="#121E31" />
-    <SolidColorBrush x:Key="CardBgHover" Color="#1A2B42" />
-    <SolidColorBrush x:Key="CardBorder" Color="#1E2E48" />
-    <SolidColorBrush x:Key="InputBg" Color="#0A1019" />
-    <SolidColorBrush x:Key="PillBg" Color="#0E1926" />
-    <SolidColorBrush x:Key="TextPrimary" Color="#E1E8F2" />
-    <SolidColorBrush x:Key="TextMuted" Color="#5A6E8A" />
-    <SolidColorBrush x:Key="TextFaint" Color="#3E5470" />
-    <SolidColorBrush x:Key="AccentBlue" Color="#4E8FEF" />
+    <SolidColorBrush x:Key="AppBg" Color="#0B0F17" />
+    <SolidColorBrush x:Key="PanelBg" Color="#0E141F" />
+    <SolidColorBrush x:Key="CardBg" Color="#141C2B" />
+    <SolidColorBrush x:Key="CardBgHover" Color="#1B2536" />
+    <SolidColorBrush x:Key="CardBorder" Color="#24334E" />
+    <SolidColorBrush x:Key="InputBg" Color="#0B111C" />
+    <SolidColorBrush x:Key="PillBg" Color="#101927" />
+    <SolidColorBrush x:Key="TextPrimary" Color="#E8EDF5" />
+    <SolidColorBrush x:Key="TextMuted" Color="#8B99B0" />
+    <SolidColorBrush x:Key="TextFaint" Color="#55647E" />
+    <SolidColorBrush x:Key="AccentBlue" Color="#5B9CFF" />
     <SolidColorBrush x:Key="AccentTeal" Color="#38B2BD" />
     <SolidColorBrush x:Key="StatusGreen" Color="#3FB68B" />
     <SolidColorBrush x:Key="StatusAmber" Color="#E9B44C" />
     <SolidColorBrush x:Key="StatusRed" Color="#E95420" />
-    <SolidColorBrush x:Key="TerminalBg" Color="#0A0E14" />
+    <SolidColorBrush x:Key="TerminalBg" Color="#090D14" />
     <SolidColorBrush x:Key="TerminalFg" Color="#C9D6E4" />
 
     <!--  ===== 공용 스타일 =====  -->

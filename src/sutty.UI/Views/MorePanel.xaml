@@ -8,7 +8,15 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid>
-        <TextBlock>Text Panel</TextBlock>
-    </Grid>
+    <StackPanel Spacing="6">
+        <TextBlock
+            FontSize="20"
+            FontWeight="Medium"
+            Foreground="{StaticResource TextPrimary}"
+            Text="More" />
+        <TextBlock
+            FontSize="12"
+            Foreground="{StaticResource TextMuted}"
+            Text="Nothing here yet — port forwarding, snippets and macros will live here." />
+    </StackPanel>
 </UserControl>

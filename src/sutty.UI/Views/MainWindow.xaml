@@ -11,12 +11,35 @@
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
-    <Grid>
+
+    <!--  루트에 다크 테마 고정: 기본 컨트롤(NavView, TabView, 다이얼로그)도 팔레트와 어울리게  -->
+    <Grid RequestedTheme="Dark">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="336" />
         </Grid.ColumnDefinitions>
+
+        <!--  타이틀 스트립 배경 (시각용, 전체 폭)  -->
+        <Border
+            Grid.Column="0"
+            Grid.ColumnSpan="3"
+            Height="40"
+            VerticalAlignment="Top"
+            Background="{StaticResource AppBg}" />
+
+        <!--
+            창 드래그 영역: 탭/버튼 같은 인터랙티브 컨트롤은 이 위에 그려지므로
+            빈 곳 어디서든 드래그로 창을 옮길 수 있다. (SetTitleBar 대상)
+        -->
+        <Grid
+            x:Name="TitleBarDragRegion"
+            Grid.Column="1"
+            Grid.ColumnSpan="2"
+            Height="40"
+            VerticalAlignment="Top"
+            Background="Transparent" />
+
         <!--  ── Column 0: Logo + Left Nav Rail ──  -->
         <Grid Grid.Column="0">
             <Grid.RowDefinitions>
@@ -25,8 +48,8 @@
             </Grid.RowDefinitions>
             <Grid.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Offset="0.0" Color="#121E31" />
-                    <GradientStop Offset="1.0" Color="#0B111E" />
+                    <GradientStop Offset="0.0" Color="#131C2E" />
+                    <GradientStop Offset="1.0" Color="#0B0F17" />
                 </LinearGradientBrush>
             </Grid.Background>
 
@@ -81,28 +104,30 @@
                 </NavigationView.FooterMenuItems>
             </NavigationView>
         </Grid>
+
         <!--  ── Column 1: Tabs + Main Content ──  -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="40" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <!--  TabView: Tabs  -->
-            <!--  세션 탭: Connect 할 때마다 코드에서 TabViewItem이 추가된다  -->
+
+            <!--
+                세션 탭: Connect 할 때마다 코드에서 TabViewItem이 추가된다.
+                HorizontalAlignment=Left 로 탭 폭만큼만 차지 → 나머지는 드래그 영역.
+            -->
             <TabView
                 x:Name="TitleTabs"
                 Grid.Row="0"
+                HorizontalAlignment="Left"
                 VerticalAlignment="Stretch"
                 IsAddTabButtonVisible="False"
                 SelectionChanged="TitleTabs_SelectionChanged"
                 TabCloseRequested="TitleTabs_TabCloseRequested"
-                TabWidthMode="SizeToContent">
-                <TabView.TabStripFooter>
-                    <Grid x:Name="CustomDragRegion" Background="Transparent" />
-                </TabView.TabStripFooter>
-            </TabView>
+                TabWidthMode="SizeToContent" />
+
             <!--  Main Content: 선택된 탭의 SessionView  -->
-            <Grid Grid.Row="1" Background="{ThemeResource LayerFillColorAltBrush}">
+            <Grid Grid.Row="1" Background="{StaticResource PanelBg}">
                 <ContentControl
                     x:Name="SessionHost"
                     HorizontalContentAlignment="Stretch"
@@ -130,18 +155,20 @@
                 </StackPanel>
             </Grid>
         </Grid>
+
         <!--  ── Column 2: Right Panel ──  -->
         <Grid Grid.Column="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="40" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <Border Grid.Row="0" />
             <Border
                 Grid.Row="1"
-                Padding="12,8,12,8"
+                Padding="14,10,14,10"
                 VerticalAlignment="Stretch"
-                Background="{StaticResource PanelBg}">
+                Background="{StaticResource PanelBg}"
+                BorderBrush="{StaticResource CardBorder}"
+                BorderThickness="1,0,0,0">
                 <ContentControl
                     x:Name="RightPanel"
                     HorizontalContentAlignment="Stretch"
@@ -149,4 +176,4 @@
             </Border>
         </Grid>
     </Grid>
-</Window>   
+</Window>

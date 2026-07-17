@@ -26,7 +26,7 @@ namespace sutty.UI.Views
 
 
             ExtendsContentIntoTitleBar = true;
-            SetTitleBar(CustomDragRegion);
+            SetTitleBar(TitleBarDragRegion);
 
             System.IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
             WindowId windowId =
@@ -61,7 +61,7 @@ namespace sutty.UI.Views
                 RightPanel.Content = item.Tag switch
                 {
                     "Home" => CreateHomePanel(),
-                    "Search" => new HostListPanel(),
+                    "Search" => CreateHostListPanel(),
                     "Folder" => CreateFileTreePanel(),
                     "More" => new MorePanel(),
                     _ => null
@@ -76,6 +76,24 @@ namespace sutty.UI.Views
                 OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this)
             };
             panel.ConnectRequested += async (_, info) => await OpenSessionTabAsync(info);
+            return panel;
+        }
+
+        private HostListPanel CreateHostListPanel()
+        {
+            var panel = new HostListPanel();
+            // History 카드 클릭 → 바로 연결 (샘플 호스트는 mock 세션으로)
+            panel.ConnectRequested += async (_, host) =>
+            {
+                host.LastConnected = DateTime.Now;
+                await OpenSessionTabAsync(new SshConnectionInfo
+                {
+                    Host = string.IsNullOrWhiteSpace(host.IP) ? host.Hostname : host.IP,
+                    DisplayName = host.Hostname,
+                    Username = host.Username,
+                    UseMockSession = true,
+                });
+            };
             return panel;
         }
 

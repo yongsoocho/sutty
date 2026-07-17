@@ -12,6 +12,7 @@ public sealed class MockSshSession : ISshSession
     public Guid Id { get; } = Guid.NewGuid();
     public SshConnectionInfo Info { get; }
     public SessionState State { get; private set; } = SessionState.Idle;
+    public string? LastError => null;
     public ISftpService Sftp { get; }
 
     public event EventHandler<SessionState>? StateChanged;
@@ -30,6 +31,14 @@ public sealed class MockSshSession : ISshSession
         SetState(SessionState.Connecting);
         await Task.Delay(700, ct); // 핸드셰이크 + 인증 흉내
         SetState(SessionState.Connected);
+    }
+
+    public async Task<string> RunCommandAsync(string command, CancellationToken ct = default)
+    {
+        await Task.Delay(150, ct); // 왕복 흉내
+        return command.Contains("uname")
+            ? "Welcome to Ubuntu 22.04.4 LTS (GNU/Linux 5.15.0-105-generic x86_64)\n * Documentation: https://help.ubuntu.com"
+            : $"mock: '{command}' executed.";
     }
 
     public async Task DisconnectAsync()

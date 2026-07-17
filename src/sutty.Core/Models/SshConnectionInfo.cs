@@ -24,6 +24,9 @@ public sealed class SshConnectionInfo
     public bool Compression { get; set; }
     public bool X11Forwarding { get; set; }
 
+    /// <summary>true면 실제 네트워크 없이 MockSshSession으로 연다 (데모/샘플 호스트용).</summary>
+    public bool UseMockSession { get; set; }
+
     /// <summary>탭 헤더 등에 쓸 표시 이름. DisplayName이 없으면 user@host.</summary>
     public string Title =>
         !string.IsNullOrWhiteSpace(DisplayName) ? DisplayName

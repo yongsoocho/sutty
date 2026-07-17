@@ -68,6 +68,9 @@ namespace sutty.UI
         // the framework calls automatically once startup is ready.
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
+            // 설정을 가장 먼저 로드해 둔다 (UI가 기본값으로 참조하기 전에).
+            sutty.Setting.SettingsService.Load();
+
             // Create the main window (its constructor sets the title bar, icon,
             // navigation, etc. — see MainWindow.xaml.cs).
             _window = new MainWindow();

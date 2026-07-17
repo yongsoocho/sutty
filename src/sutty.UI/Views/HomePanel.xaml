@@ -266,7 +266,7 @@
                     </StackPanel>
                 </Expander>
 
-                <!--  Connect — 브랜드 네이비 + 블루 글로우  -->
+                <!--  Connect — 액센트 블루 (화면에서 가장 눈에 띄는 버튼)  -->
                 <Button
                     x:Name="ConnectButton"
                     Height="48"
@@ -277,29 +277,29 @@
                     CornerRadius="10"
                     FontSize="15"
                     FontWeight="SemiBold"
-                    Foreground="#E1E8F2">
+                    Foreground="#FFFFFF">
                     <Button.Background>
                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                            <GradientStop Offset="0.0" Color="#1A3050" />
-                            <GradientStop Offset="1.0" Color="#121E31" />
+                            <GradientStop Offset="0.0" Color="#3E7BE8" />
+                            <GradientStop Offset="1.0" Color="#2B5FC7" />
                         </LinearGradientBrush>
                     </Button.Background>
                     <Button.BorderBrush>
-                        <SolidColorBrush Color="#2A4468" />
+                        <SolidColorBrush Color="#5B9CFF" />
                     </Button.BorderBrush>
                     <Button.BorderThickness>1</Button.BorderThickness>
                     <Button.Resources>
                         <LinearGradientBrush x:Key="ButtonBackgroundPointerOver" StartPoint="0,0" EndPoint="1,0">
-                            <GradientStop Offset="0.0" Color="#22395C" />
-                            <GradientStop Offset="1.0" Color="#1A2B42" />
+                            <GradientStop Offset="0.0" Color="#4C89F2" />
+                            <GradientStop Offset="1.0" Color="#3568D0" />
                         </LinearGradientBrush>
                         <LinearGradientBrush x:Key="ButtonBackgroundPressed" StartPoint="0,0" EndPoint="1,0">
-                            <GradientStop Offset="0.0" Color="#0E1826" />
-                            <GradientStop Offset="1.0" Color="#0B111E" />
+                            <GradientStop Offset="0.0" Color="#2E5FB8" />
+                            <GradientStop Offset="1.0" Color="#224A9C" />
                         </LinearGradientBrush>
                         <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#FFFFFF" />
-                        <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#B0BDD0" />
-                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#3B5A8A" />
+                        <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#D6E4FF" />
+                        <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#7DB0FF" />
                     </Button.Resources>
                 </Button>
 

@@ -9,4 +9,11 @@ namespace sutty.Core.Sftp;
 public interface ISftpService
 {
     Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(string path, CancellationToken ct = default);
+
+    /// <summary>
+    /// 로컬 파일을 원격 디렉터리에 업로드한다.
+    /// progress는 0.0~1.0, ct 취소 시 부분 업로드는 정리하고 OperationCanceledException을 던진다.
+    /// </summary>
+    Task UploadFileAsync(string localPath, string remoteDirectory,
+        IProgress<double>? progress = null, CancellationToken ct = default);
 }
