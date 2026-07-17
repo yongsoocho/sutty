@@ -36,9 +36,29 @@ public sealed class MockSshSession : ISshSession
     public async Task<string> RunCommandAsync(string command, CancellationToken ct = default)
     {
         await Task.Delay(150, ct); // 왕복 흉내
-        return command.Contains("uname")
-            ? "Welcome to Ubuntu 22.04.4 LTS (GNU/Linux 5.15.0-105-generic x86_64)\n * Documentation: https://help.ubuntu.com"
-            : $"mock: '{command}' executed.";
+
+        var user = string.IsNullOrWhiteSpace(Info.Username) ? "admin" : Info.Username;
+
+        // "cd <cwd> 2>/dev/null; cd <target> && pwd" — cd 흐름 흉내 (경로 추적용)
+        if (command.Contains("&& pwd"))
+        {
+            var idx = command.LastIndexOf("cd ", StringComparison.Ordinal);
+            var target = command[(idx + 3)..].Replace("&& pwd", "").Trim();
+            return target switch
+            {
+                "~" or "" => $"/home/{user}",
+                _ when target.StartsWith('/') => target.TrimEnd('/'),
+                _ => $"/home/{user}/{target.TrimEnd('/')}",
+            };
+        }
+
+        if (command.Contains("uname"))
+            return "Welcome to Ubuntu 22.04.4 LTS (GNU/Linux 5.15.0-105-generic x86_64)\n * Documentation: https://help.ubuntu.com";
+
+        // 앞에 붙는 "cd xxx 2>/dev/null; " 프리픽스는 떼고 사용자가 친 명령만 보여준다
+        var semi = command.IndexOf("; ", StringComparison.Ordinal);
+        var userCommand = semi >= 0 ? command[(semi + 2)..] : command;
+        return $"mock: '{userCommand}' executed.";
     }
 
     public async Task DisconnectAsync()

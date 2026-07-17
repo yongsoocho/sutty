@@ -14,17 +14,20 @@
             <StackPanel Spacing="18">
                 <!--  헤더  -->
                 <StackPanel Spacing="8">
-                    <TextBlock
-                        FontSize="20"
-                        FontWeight="Medium"
-                        Foreground="{StaticResource TextPrimary}"
-                        Text="Connect" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Border Background="{ThemeResource AccentBlue}" Style="{StaticResource HeaderDot}" />
+                        <TextBlock
+                            FontSize="20"
+                            FontWeight="Medium"
+                            Foreground="{ThemeResource TextPrimary}"
+                            Text="Connect" />
+                    </StackPanel>
                     <ComboBox
                         x:Name="VaultCombo"
                         MinWidth="140"
                         Background="Transparent"
                         BorderThickness="0"
-                        Foreground="{StaticResource AccentBlue}"
+                        Foreground="{ThemeResource AccentBlue}"
                         SelectedIndex="0">
                         <ComboBoxItem Content="Team Vault" />
                         <ComboBoxItem Content="Personal Vault" />
@@ -57,11 +60,11 @@
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <TextBlock
                                         FontSize="13"
-                                        Foreground="{StaticResource TextPrimary}"
+                                        Foreground="{ThemeResource AccentBlue}"
                                         Text="admin" />
                                     <FontIcon
                                         FontSize="11"
-                                        Foreground="{StaticResource TextMuted}"
+                                        Foreground="{ThemeResource TextMuted}"
                                         Glyph="&#xE711;" />
                                 </StackPanel>
                             </Border>
@@ -69,11 +72,11 @@
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <TextBlock
                                         FontSize="13"
-                                        Foreground="{StaticResource TextPrimary}"
+                                        Foreground="{ThemeResource AccentTeal}"
                                         Text="personal" />
                                     <FontIcon
                                         FontSize="11"
-                                        Foreground="{StaticResource TextMuted}"
+                                        Foreground="{ThemeResource TextMuted}"
                                         Glyph="&#xE711;" />
                                 </StackPanel>
                             </Border>
@@ -81,11 +84,11 @@
                                 Width="32"
                                 Height="32"
                                 Padding="0"
-                                Background="{StaticResource PillBg}"
-                                BorderBrush="{StaticResource CardBorder}"
+                                Background="{ThemeResource PillBg}"
+                                BorderBrush="{ThemeResource CardBorder}"
                                 Content="+"
                                 CornerRadius="14"
-                                Foreground="{StaticResource TextMuted}" />
+                                Foreground="{ThemeResource TextMuted}" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -102,7 +105,7 @@
                             <TextBlock
                                 VerticalAlignment="Center"
                                 FontWeight="SemiBold"
-                                Foreground="{StaticResource TextPrimary}"
+                                Foreground="{ThemeResource TextPrimary}"
                                 Text="SSH on" />
                             <NumberBox
                                 x:Name="PortBox"
@@ -114,7 +117,7 @@
                                 Value="22" />
                             <TextBlock
                                 VerticalAlignment="Center"
-                                Foreground="{StaticResource TextMuted}"
+                                Foreground="{ThemeResource TextMuted}"
                                 Text="port" />
                         </StackPanel>
 
@@ -131,7 +134,7 @@
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Center"
                                     FontSize="15"
-                                    Foreground="{StaticResource TextMuted}"
+                                    Foreground="{ThemeResource TextMuted}"
                                     Glyph="&#xE77B;"
                                     IsHitTestVisible="False" />
                             </Grid>
@@ -180,12 +183,12 @@
                                     <Button
                                         Grid.Column="1"
                                         MinHeight="40"
-                                        Background="{StaticResource PillBg}"
-                                        BorderBrush="{StaticResource CardBorder}"
+                                        Background="{ThemeResource PillBg}"
+                                        BorderBrush="{ThemeResource CardBorder}"
                                         Click="BrowseKey_Click"
                                         Content="Browse"
                                         CornerRadius="8"
-                                        Foreground="{StaticResource TextPrimary}" />
+                                        Foreground="{ThemeResource TextPrimary}" />
                                 </Grid>
                             </StackPanel>
                             <StackPanel>
@@ -200,14 +203,14 @@
                         <Border
                             x:Name="AgentPanel"
                             Padding="12"
-                            Background="{StaticResource InputBg}"
-                            BorderBrush="{StaticResource CardBorder}"
+                            Background="{ThemeResource InputBg}"
+                            BorderBrush="{ThemeResource CardBorder}"
                             BorderThickness="1"
                             CornerRadius="8"
                             Visibility="Collapsed">
                             <TextBlock
                                 FontSize="13"
-                                Foreground="{StaticResource TextMuted}"
+                                Foreground="{ThemeResource TextMuted}"
                                 Text="Uses keys loaded in your running SSH agent (ssh-agent / Pageant). No key file or password needed."
                                 TextWrapping="Wrap" />
                         </Border>
@@ -215,14 +218,14 @@
                         <Border
                             x:Name="KbiPanel"
                             Padding="12"
-                            Background="{StaticResource InputBg}"
-                            BorderBrush="{StaticResource CardBorder}"
+                            Background="{ThemeResource InputBg}"
+                            BorderBrush="{ThemeResource CardBorder}"
                             BorderThickness="1"
                             CornerRadius="8"
                             Visibility="Collapsed">
                             <TextBlock
                                 FontSize="13"
-                                Foreground="{StaticResource TextMuted}"
+                                Foreground="{ThemeResource TextMuted}"
                                 Text="The server will prompt for responses (e.g. one-time codes / 2FA) at connect time."
                                 TextWrapping="Wrap" />
                         </Border>
@@ -233,8 +236,8 @@
                 <Expander
                     x:Name="AdvancedExpander"
                     HorizontalAlignment="Stretch"
-                    Background="{StaticResource CardBg}"
-                    BorderBrush="{StaticResource CardBorder}"
+                    Background="{ThemeResource CardBg}"
+                    BorderBrush="{ThemeResource CardBorder}"
                     CornerRadius="12"
                     Header="Advanced">
                     <StackPanel Padding="0,8,0,4" Spacing="12">
@@ -258,11 +261,11 @@
                         <CheckBox
                             x:Name="CompressionCheck"
                             Content="Enable compression"
-                            Foreground="{StaticResource TextPrimary}" />
+                            Foreground="{ThemeResource TextPrimary}" />
                         <CheckBox
                             x:Name="X11Check"
                             Content="X11 forwarding"
-                            Foreground="{StaticResource TextPrimary}" />
+                            Foreground="{ThemeResource TextPrimary}" />
                     </StackPanel>
                 </Expander>
 

@@ -5,6 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:sutty.UI.ViewModels"
     HorizontalAlignment="Stretch"
     VerticalAlignment="Stretch"
     mc:Ignorable="d">
@@ -13,53 +14,241 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!--  세션 헤더: 상태 점 + 제목 + 상태 텍스트  -->
+        <!--  세션 헤더: 상태 점 + 제목 + 상태 텍스트 + Paste 버튼  -->
         <Border
             Grid.Row="0"
-            Padding="14,10"
-            Background="{StaticResource PanelBg}"
-            BorderBrush="{StaticResource CardBorder}"
+            Padding="14,8"
+            Background="{ThemeResource PanelBg}"
+            BorderBrush="{ThemeResource CardBorder}"
             BorderThickness="0,0,0,1">
-            <StackPanel Orientation="Horizontal" Spacing="10">
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
                 <Ellipse
                     x:Name="StatusDot"
+                    Grid.Column="0"
                     Width="9"
                     Height="9"
                     VerticalAlignment="Center"
-                    Fill="{StaticResource TextFaint}" />
+                    Fill="{StaticResource StatusIdle}" />
                 <TextBlock
                     x:Name="TitleText"
+                    Grid.Column="1"
                     VerticalAlignment="Center"
                     FontSize="13"
                     FontWeight="SemiBold"
-                    Foreground="{StaticResource TextPrimary}" />
+                    Foreground="{ThemeResource TextPrimary}" />
                 <TextBlock
                     x:Name="StateText"
+                    Grid.Column="2"
                     VerticalAlignment="Center"
                     FontSize="12"
-                    Foreground="{StaticResource TextMuted}" />
-            </StackPanel>
+                    Foreground="{ThemeResource TextMuted}" />
+
+                <!--  클립보드 내용을 명령으로 실행  -->
+                <Button
+                    x:Name="PasteButton"
+                    Grid.Column="3"
+                    Padding="10,5"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource PillBg}"
+                    BorderBrush="{ThemeResource CardBorder}"
+                    Click="Paste_Click"
+                    CornerRadius="7"
+                    IsEnabled="False"
+                    ToolTipService.ToolTip="Paste clipboard as a command and run it">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon
+                            FontSize="12"
+                            Foreground="{ThemeResource TextMuted}"
+                            Glyph="&#xE77F;" />
+                        <TextBlock
+                            FontSize="12"
+                            Foreground="{ThemeResource TextPrimary}"
+                            Text="Paste" />
+                    </StackPanel>
+                </Button>
+            </Grid>
         </Border>
 
-        <!--  모의 터미널 (실제 SSH 채널은 sutty.Core에서 올 예정)  -->
-        <Border
-            Grid.Row="1"
-            Margin="10"
-            Background="{StaticResource TerminalBg}"
-            BorderBrush="{StaticResource CardBorder}"
-            BorderThickness="1"
-            CornerRadius="8">
-            <ScrollViewer x:Name="TermScroll" Padding="14" VerticalScrollBarVisibility="Auto">
-                <TextBlock
-                    x:Name="TermText"
-                    FontFamily="Cascadia Mono, Consolas"
-                    FontSize="13"
-                    Foreground="{StaticResource TerminalFg}"
-                    IsTextSelectionEnabled="True"
-                    TextWrapping="Wrap" />
+        <!--  노트북 셀 목록: 명령 한 줄 = 입력 블록 + 출력 블록  -->
+        <Border Grid.Row="1" Background="{ThemeResource TerminalBg}">
+            <ScrollViewer
+                x:Name="CellsScroll"
+                Padding="12,10"
+                VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="CellsList" ItemsSource="{x:Bind Cells}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CommandCell">
+                            <!--  Jupyter처럼 입력/출력이 각각 독립된 박스  -->
+                            <StackPanel Margin="0,0,0,12" Spacing="6">
+
+                                <!--  입력 박스: In [n] + 명령 + paste  -->
+                                <Border
+                                    Background="{ThemeResource InputBg}"
+                                    BorderBrush="{ThemeResource CardBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Visibility="{x:Bind HasCommand}">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="4" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!--  액센트 왼쪽 바  -->
+                                        <Border
+                                            Grid.Column="0"
+                                            Background="{ThemeResource AccentBlue}"
+                                            CornerRadius="7,0,0,7" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Margin="8,10,0,10"
+                                            VerticalAlignment="Top"
+                                            FontSize="12"
+                                            Foreground="{ThemeResource AccentBlue}"
+                                            Text="{x:Bind InLabel}" />
+                                        <TextBlock
+                                            Grid.Column="2"
+                                            Margin="0,9"
+                                            FontSize="13"
+                                            Foreground="{ThemeResource TextPrimary}"
+                                            IsTextSelectionEnabled="True"
+                                            Text="{x:Bind Command}"
+                                            TextWrapping="Wrap" />
+                                        <ProgressRing
+                                            Grid.Column="3"
+                                            Width="14"
+                                            Height="14"
+                                            VerticalAlignment="Center"
+                                            IsActive="{x:Bind IsRunning, Mode=OneWay}"
+                                            Visibility="{x:Bind IsRunning, Mode=OneWay}" />
+                                        <!--  이 박스의 명령을 아래 입력줄로  -->
+                                        <Button
+                                            Grid.Column="4"
+                                            Margin="0,4,4,0"
+                                            Padding="4"
+                                            VerticalAlignment="Top"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="PasteCell_Click"
+                                            Tag="command"
+                                            ToolTipService.ToolTip="Paste this command into the input line">
+                                            <FontIcon
+                                                FontSize="11"
+                                                Foreground="{ThemeResource TextMuted}"
+                                                Glyph="&#xE77F;" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <!--  출력 박스: stdout + paste  -->
+                                <Border
+                                    Background="{ThemeResource CardBg}"
+                                    BorderBrush="{ThemeResource CardBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Visibility="{x:Bind HasOutput, Mode=OneWay}">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Margin="12,9"
+                                            FontSize="13"
+                                            Foreground="{ThemeResource TerminalFg}"
+                                            IsTextSelectionEnabled="True"
+                                            Text="{x:Bind Output, Mode=OneWay}"
+                                            TextWrapping="Wrap" />
+                                        <!--  이 박스의 출력을 아래 입력줄로  -->
+                                        <Button
+                                            Grid.Column="1"
+                                            Margin="0,4,4,0"
+                                            Padding="4"
+                                            VerticalAlignment="Top"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="PasteCell_Click"
+                                            Tag="output"
+                                            ToolTipService.ToolTip="Paste this output into the input line">
+                                            <FontIcon
+                                                FontSize="11"
+                                                Foreground="{ThemeResource TextMuted}"
+                                                Glyph="&#xE77F;" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </ScrollViewer>
+        </Border>
+
+        <!--  명령 입력 줄  -->
+        <Border
+            Grid.Row="2"
+            Padding="12,8"
+            Background="{ThemeResource PanelBg}"
+            BorderBrush="{ThemeResource CardBorder}"
+            BorderThickness="0,1,0,0">
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    x:Name="InputPrompt"
+                    Grid.Column="0"
+                    MaxWidth="300"
+                    VerticalAlignment="Center"
+                    FontSize="13"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource AccentBlue}"
+                    Text="$"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="현재 경로" />
+                <TextBox
+                    x:Name="CommandBox"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    CornerRadius="7"
+                    FontSize="13"
+                    IsEnabled="False"
+                    KeyDown="CommandBox_KeyDown"
+                    PlaceholderText="Type a command and press Enter" />
+                <Button
+                    x:Name="RunButton"
+                    Grid.Column="2"
+                    Width="36"
+                    Height="32"
+                    Padding="0"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource PillBg}"
+                    BorderBrush="{ThemeResource CardBorder}"
+                    Click="Run_Click"
+                    CornerRadius="7"
+                    IsEnabled="False"
+                    ToolTipService.ToolTip="Run (Enter)">
+                    <FontIcon
+                        FontSize="12"
+                        Foreground="{ThemeResource AccentBlue}"
+                        Glyph="&#xE768;" />
+                </Button>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

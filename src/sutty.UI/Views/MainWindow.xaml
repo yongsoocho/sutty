@@ -6,27 +6,33 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:sutty.UI.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:sizers="using:CommunityToolkit.WinUI.Controls"
     Title="sutty"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <!--  루트에 다크 테마 고정: 기본 컨트롤(NavView, TabView, 다이얼로그)도 팔레트와 어울리게  -->
-    <Grid RequestedTheme="Dark">
+    <!--  테마(Dark/Light)는 코드에서 설정값으로 지정하고, 우상단 토글로 전환한다  -->
+    <Grid x:Name="Root">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="336" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition
+                x:Name="RightPanelColumn"
+                Width="336"
+                MaxWidth="800"
+                MinWidth="220" />
         </Grid.ColumnDefinitions>
 
         <!--  타이틀 스트립 배경 (시각용, 전체 폭)  -->
         <Border
             Grid.Column="0"
-            Grid.ColumnSpan="3"
+            Grid.ColumnSpan="4"
             Height="40"
             VerticalAlignment="Top"
-            Background="{StaticResource AppBg}" />
+            Background="{ThemeResource AppBg}" />
 
         <!--
             창 드래그 영역: 탭/버튼 같은 인터랙티브 컨트롤은 이 위에 그려지므로
@@ -35,24 +41,40 @@
         <Grid
             x:Name="TitleBarDragRegion"
             Grid.Column="1"
-            Grid.ColumnSpan="2"
+            Grid.ColumnSpan="3"
             Height="40"
             VerticalAlignment="Top"
             Background="Transparent" />
 
+        <!--  다크/라이트 토글 (캡션 버튼 왼쪽)  -->
+        <Button
+            x:Name="ThemeToggle"
+            Grid.Column="3"
+            Width="34"
+            Height="30"
+            Margin="0,5,150,0"
+            Padding="0"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Background="Transparent"
+            BorderThickness="0"
+            Click="ThemeToggle_Click"
+            ToolTipService.ToolTip="Switch dark / light theme">
+            <FontIcon
+                x:Name="ThemeToggleIcon"
+                FontSize="14"
+                Foreground="{ThemeResource TextMuted}"
+                Glyph="&#xE706;" />
+        </Button>
+
         <!--  ── Column 0: Logo + Left Nav Rail ──  -->
-        <Grid Grid.Column="0">
+        <Grid Grid.Column="0" Background="{ThemeResource RailBg}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="40" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <Grid.Background>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Offset="0.0" Color="#131C2E" />
-                    <GradientStop Offset="1.0" Color="#0B0F17" />
-                </LinearGradientBrush>
-            </Grid.Background>
 
+            <!--  컬러 로고 (lightunplated 흰색 버전은 라이트 테마에서 안 보임)  -->
             <Image
                 Grid.Row="0"
                 Width="24"
@@ -60,7 +82,7 @@
                 Margin="0,8,0,0"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
-                Source="ms-appx:///Assets/sutty.altform-lightunplated_targetsize-48.png" />
+                Source="ms-appx:///Assets/sutty.targetsize-48.png" />
             <NavigationView
                 x:Name="LeftNav"
                 Grid.Row="1"
@@ -86,6 +108,13 @@
                     <NavigationViewItem Content="Folder" Tag="Folder">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE8B7;" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+
+                    <!--  Command: 자주 쓰는 명령어 playbook  -->
+                    <NavigationViewItem Content="Command" Tag="Command">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE943;" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
@@ -127,7 +156,7 @@
                 TabWidthMode="SizeToContent" />
 
             <!--  Main Content: 선택된 탭의 SessionView  -->
-            <Grid Grid.Row="1" Background="{StaticResource PanelBg}">
+            <Grid Grid.Row="1" Background="{ThemeResource PanelBg}">
                 <ContentControl
                     x:Name="SessionHost"
                     HorizontalContentAlignment="Stretch"
@@ -140,24 +169,33 @@
                     <FontIcon
                         HorizontalAlignment="Center"
                         FontSize="34"
-                        Foreground="{StaticResource TextFaint}"
+                        Foreground="{ThemeResource TextFaint}"
                         Glyph="&#xE756;" />
                     <TextBlock
                         HorizontalAlignment="Center"
-                        Foreground="{StaticResource TextMuted}"
+                        Foreground="{ThemeResource TextMuted}"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
                         Text="No active sessions" />
                     <TextBlock
                         HorizontalAlignment="Center"
                         FontSize="12"
-                        Foreground="{StaticResource TextFaint}"
+                        Foreground="{ThemeResource TextFaint}"
                         Text="Connect from the Home panel to open a session tab" />
                 </StackPanel>
             </Grid>
         </Grid>
 
-        <!--  ── Column 2: Right Panel ──  -->
-        <Grid Grid.Column="2">
+        <!--  ── Column 2: 오른쪽 패널 크기 조절 스플리터 ──  -->
+        <sizers:GridSplitter
+            Grid.Column="2"
+            Width="6"
+            Margin="0,40,0,0"
+            Background="Transparent"
+            ResizeBehavior="BasedOnAlignment"
+            ResizeDirection="Columns" />
+
+        <!--  ── Column 3: Right Panel ──  -->
+        <Grid x:Name="RightPanelHost" Grid.Column="3">
             <Grid.RowDefinitions>
                 <RowDefinition Height="40" />
                 <RowDefinition Height="*" />
@@ -166,8 +204,8 @@
                 Grid.Row="1"
                 Padding="14,10,14,10"
                 VerticalAlignment="Stretch"
-                Background="{StaticResource PanelBg}"
-                BorderBrush="{StaticResource CardBorder}"
+                Background="{ThemeResource SidePanelBg}"
+                BorderBrush="{ThemeResource CardBorder}"
                 BorderThickness="1,0,0,0">
                 <ContentControl
                     x:Name="RightPanel"

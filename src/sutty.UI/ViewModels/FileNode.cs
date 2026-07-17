@@ -62,17 +62,14 @@ public sealed partial class FileNode : ObservableObject
     public string Name => Entry.Name;
     public string FullPath => Entry.FullPath;
     public bool IsDirectory => Entry.IsDirectory;
+    public bool IsFile => !Entry.IsDirectory; // 아이콘 Visibility 바인딩용
 
     /// <summary>업로드 대상 디렉터리: 디렉터리면 자기 자신, 파일이면 부모 경로.</summary>
     public string DirectoryPath => IsDirectory ? FullPath : RemotePath.GetDirectory(FullPath);
 
     public string ProgressText => $"{Progress:P0}";
 
-    // Segoe Fluent Icons: E8B7 = Folder, E8A5 = Document
-    public string Glyph => IsDirectory ? "" : "";
-
-    public Brush GlyphBrush =>
-        (Brush)Application.Current.Resources[IsDirectory ? "AccentBlue" : "TextMuted"];
+    // 아이콘(E8B7 폴더 / E8A5 파일)과 색은 FileTreePanel.xaml에서 ThemeResource로 지정
 
     public string SizeText => IsDirectory ? "" : FormatSize(Entry.Size);
 

@@ -50,7 +50,10 @@ namespace sutty.UI.Views
             {
                 SuggestedStartLocation = PickerLocationId.Desktop
             };
-            picker.FileTypeFilter.Add("*"); // 키 파일은 확장자가 없는 경우가 많음
+            picker.FileTypeFilter.Add(".pem");  // AWS 등에서 받는 PEM 키
+            picker.FileTypeFilter.Add(".key");
+            picker.FileTypeFilter.Add(".ppk");  // 선택은 되지만 연결 시 변환 안내가 뜸
+            picker.FileTypeFilter.Add("*");     // id_rsa, id_ed25519 등 확장자 없는 키
 
             // WinUI3 데스크톱에서는 피커에 윈도우 핸들을 연결해야 한다
             if (OwnerWindowHandle != IntPtr.Zero)
@@ -67,6 +70,14 @@ namespace sutty.UI.Views
             if (string.IsNullOrEmpty(host))
             {
                 HostBox.Focus(FocusState.Programmatic);
+                return;
+            }
+
+            // Public key 인증인데 키 파일이 비어 있으면 먼저 채우게 한다
+            var method = (SshAuthMethod)AuthCombo.SelectedIndex;
+            if (method == SshAuthMethod.PublicKey && string.IsNullOrWhiteSpace(KeyPathBox.Text))
+            {
+                KeyPathBox.Focus(FocusState.Programmatic);
                 return;
             }
 

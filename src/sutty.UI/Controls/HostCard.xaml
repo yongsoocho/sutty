@@ -6,83 +6,55 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <!--
-        React 비유:
-        이 UserControl 전체가 <HostCard /> 컴포넌트.
-        DependencyProperty(Host)가 props.
-        x:Bind가 JSX 안의 {props.hostname}.
-    -->
-
+    <!--  컴팩트 카드: 사진 없이 색 점 + 2줄 텍스트. 클릭하면 바로 연결.  -->
     <Border
         x:Name="CardRoot"
-        Padding="14"
-        Background="{StaticResource CardBg}"
-        BorderBrush="{StaticResource CardBorder}"
+        Padding="10,7"
+        Background="{ThemeResource CardBg}"
+        BorderBrush="{ThemeResource CardBorder}"
         BorderThickness="1"
-        CornerRadius="12"
+        CornerRadius="8"
         PointerEntered="Card_PointerEntered"
         PointerExited="Card_PointerExited"
         Tapped="Card_Tapped">
 
-        <Grid ColumnSpacing="14">
+        <Grid ColumnSpacing="10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <!--  로고  -->
                 <ColumnDefinition Width="*" />
-                <!--  텍스트  -->
                 <ColumnDefinition Width="Auto" />
-                <!--  시간  -->
             </Grid.ColumnDefinitions>
 
-            <!--  로고  -->
-            <Border
+            <!--  호스트 색 점 (기존 로고 배경색 재활용)  -->
+            <Ellipse
                 Grid.Column="0"
-                Width="44"
-                Height="44"
+                Width="9"
+                Height="9"
                 VerticalAlignment="Center"
-                Background="{x:Bind Host.LogoBg, FallbackValue=#1A2840}"
-                CornerRadius="10">
-                <Image
-                    Width="28"
-                    Height="28"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Source="{x:Bind Host.LogoImage}"
-                    Stretch="Uniform" />
-            </Border>
+                Fill="{x:Bind Host.LogoBg, FallbackValue=#5B9CFF}" />
 
-            <!--  호스트 정보  -->
-            <StackPanel
-                Grid.Column="1"
-                VerticalAlignment="Center"
-                Spacing="2">
-                <!--  hostname (볼드)  -->
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
                 <TextBlock
-                    FontSize="14"
+                    FontSize="13"
                     FontWeight="SemiBold"
-                    Foreground="{StaticResource TextPrimary}"
+                    Foreground="{ThemeResource TextPrimary}"
                     Text="{x:Bind Host.Hostname}"
                     TextTrimming="CharacterEllipsis" />
-                <!--  alias + IP  -->
-                <TextBlock FontSize="12" Foreground="{StaticResource TextMuted}">
+                <TextBlock
+                    FontSize="11"
+                    Foreground="{ThemeResource TextMuted}"
+                    TextTrimming="CharacterEllipsis">
                     <Run Text="{x:Bind Host.Alias}" />
                     <Run Text=" · " />
                     <Run Text="{x:Bind Host.IP}" />
                 </TextBlock>
-                <!--  태그  -->
-                <TextBlock
-                    FontSize="11"
-                    Foreground="{StaticResource TextFaint}"
-                    Text="{x:Bind Host.TagSummary}"
-                    Visibility="{x:Bind HasTags}" />
             </StackPanel>
 
-            <!--  마지막 접속  -->
             <TextBlock
                 Grid.Column="2"
                 VerticalAlignment="Center"
-                FontSize="11"
-                Foreground="{StaticResource TextFaint}"
+                FontSize="10"
+                Foreground="{ThemeResource TextFaint}"
                 Text="{x:Bind Host.LastConnectedText}" />
         </Grid>
     </Border>

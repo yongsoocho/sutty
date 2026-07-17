@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8" ?>
+<!--  파일 트리만 심플하게. 탐색기에서 파일을 끌어다 놓으면 그 위치로 업로드.  -->
 <UserControl
     x:Class="sutty.UI.Views.FileTreePanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -10,106 +11,101 @@
     VerticalAlignment="Stretch"
     mc:Ignorable="d">
 
-    <Grid RowSpacing="12">
+    <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!--  헤더  -->
-        <StackPanel Spacing="4">
-            <TextBlock
-                FontSize="20"
-                FontWeight="Medium"
-                Foreground="{StaticResource TextPrimary}"
-                Text="Files" />
-            <TextBlock
-                x:Name="SubtitleText"
-                FontSize="12"
-                Foreground="{StaticResource TextMuted}"
-                TextWrapping="Wrap" />
-        </StackPanel>
+        <TreeView
+            x:Name="FileTree"
+            AllowDrop="True"
+            CanDragItems="False"
+            CanReorderItems="False"
+            DragOver="Tree_DragOver"
+            Drop="Tree_Drop"
+            Expanding="FileTree_Expanding"
+            ItemsSource="{x:Bind RootNodes}"
+            SelectionMode="Single">
+            <TreeView.ItemTemplate>
+                <DataTemplate x:DataType="vm:FileNode">
+                    <TreeViewItem
+                        AllowDrop="True"
+                        DragOver="Node_DragOver"
+                        Drop="Node_Drop"
+                        HasUnrealizedChildren="{x:Bind HasUnrealizedChildren, Mode=OneWay}"
+                        IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
+                        ItemsSource="{x:Bind Children}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <!--  폴더/파일 아이콘 (테마에 따라 색만 바뀜)  -->
+                            <FontIcon
+                                FontSize="14"
+                                Foreground="{ThemeResource AccentBlue}"
+                                Glyph="&#xE8B7;"
+                                Visibility="{x:Bind IsDirectory}" />
+                            <FontIcon
+                                FontSize="14"
+                                Foreground="{ThemeResource TextMuted}"
+                                Glyph="&#xE8A5;"
+                                Visibility="{x:Bind IsFile}" />
+                            <TextBlock
+                                FontSize="13"
+                                Foreground="{ThemeResource TextPrimary}"
+                                Text="{x:Bind Name}" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="11"
+                                Foreground="{ThemeResource TextFaint}"
+                                Text="{x:Bind SizeText}" />
 
-        <!--  파일 트리: 탐색기에서 파일을 끌어다 놓으면 그 위치로 업로드  -->
-        <Border
+                            <!--  업로드 중일 때만: 진행 바 + % + 취소(X)  -->
+                            <ProgressBar
+                                Width="64"
+                                VerticalAlignment="Center"
+                                Maximum="1"
+                                Visibility="{x:Bind IsUploading, Mode=OneWay}"
+                                Value="{x:Bind Progress, Mode=OneWay}" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="11"
+                                Foreground="{ThemeResource AccentBlue}"
+                                Text="{x:Bind ProgressText, Mode=OneWay}"
+                                Visibility="{x:Bind IsUploading, Mode=OneWay}" />
+                            <Button
+                                Padding="3"
+                                VerticalAlignment="Center"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Click="CancelUpload_Click"
+                                ToolTipService.ToolTip="Cancel upload"
+                                Visibility="{x:Bind IsUploading, Mode=OneWay}">
+                                <FontIcon
+                                    FontSize="10"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Glyph="&#xE711;" />
+                            </Button>
+                        </StackPanel>
+                    </TreeViewItem>
+                </DataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+
+        <ProgressRing
+            x:Name="LoadingRing"
+            Width="28"
+            Height="28"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            IsActive="False" />
+
+        <!--  오류가 있을 때만 아래에 잠깐 표시  -->
+        <TextBlock
+            x:Name="StatusText"
             Grid.Row="1"
-            Padding="6"
-            Style="{StaticResource Card}">
-            <Grid>
-                <TreeView
-                    x:Name="FileTree"
-                    AllowDrop="True"
-                    CanDragItems="False"
-                    CanReorderItems="False"
-                    DragOver="Tree_DragOver"
-                    Drop="Tree_Drop"
-                    Expanding="FileTree_Expanding"
-                    ItemsSource="{x:Bind RootNodes}"
-                    SelectionMode="Single">
-                    <TreeView.ItemTemplate>
-                        <DataTemplate x:DataType="vm:FileNode">
-                            <TreeViewItem
-                                AllowDrop="True"
-                                DragOver="Node_DragOver"
-                                Drop="Node_Drop"
-                                HasUnrealizedChildren="{x:Bind HasUnrealizedChildren, Mode=OneWay}"
-                                IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
-                                ItemsSource="{x:Bind Children}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <FontIcon
-                                        FontSize="14"
-                                        Foreground="{x:Bind GlyphBrush}"
-                                        Glyph="{x:Bind Glyph}" />
-                                    <TextBlock
-                                        FontSize="13"
-                                        Foreground="{StaticResource TextPrimary}"
-                                        Text="{x:Bind Name}" />
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        FontSize="11"
-                                        Foreground="{StaticResource TextFaint}"
-                                        Text="{x:Bind SizeText}" />
-
-                                    <!--  업로드 중일 때만: 진행 바 + % + 취소(X)  -->
-                                    <ProgressBar
-                                        Width="64"
-                                        VerticalAlignment="Center"
-                                        Maximum="1"
-                                        Visibility="{x:Bind IsUploading, Mode=OneWay}"
-                                        Value="{x:Bind Progress, Mode=OneWay}" />
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        FontSize="11"
-                                        Foreground="{StaticResource AccentBlue}"
-                                        Text="{x:Bind ProgressText, Mode=OneWay}"
-                                        Visibility="{x:Bind IsUploading, Mode=OneWay}" />
-                                    <Button
-                                        Padding="3"
-                                        VerticalAlignment="Center"
-                                        Background="Transparent"
-                                        BorderThickness="0"
-                                        Click="CancelUpload_Click"
-                                        ToolTipService.ToolTip="Cancel upload"
-                                        Visibility="{x:Bind IsUploading, Mode=OneWay}">
-                                        <FontIcon
-                                            FontSize="10"
-                                            Foreground="{StaticResource TextMuted}"
-                                            Glyph="&#xE711;" />
-                                    </Button>
-                                </StackPanel>
-                            </TreeViewItem>
-                        </DataTemplate>
-                    </TreeView.ItemTemplate>
-                </TreeView>
-
-                <ProgressRing
-                    x:Name="LoadingRing"
-                    Width="28"
-                    Height="28"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    IsActive="False" />
-            </Grid>
-        </Border>
+            Margin="4,6,4,0"
+            FontSize="11"
+            Foreground="{StaticResource StatusRed}"
+            TextWrapping="Wrap"
+            Visibility="Collapsed" />
     </Grid>
 </UserControl>

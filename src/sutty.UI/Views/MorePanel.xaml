@@ -9,14 +9,17 @@
     mc:Ignorable="d">
 
     <StackPanel Spacing="6">
-        <TextBlock
-            FontSize="20"
-            FontWeight="Medium"
-            Foreground="{StaticResource TextPrimary}"
-            Text="More" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Border Background="{StaticResource StatusAmber}" Style="{StaticResource HeaderDot}" />
+            <TextBlock
+                FontSize="20"
+                FontWeight="Medium"
+                Foreground="{ThemeResource TextPrimary}"
+                Text="More" />
+        </StackPanel>
         <TextBlock
             FontSize="12"
-            Foreground="{StaticResource TextMuted}"
+            Foreground="{ThemeResource TextMuted}"
             Text="Nothing here yet — port forwarding, snippets and macros will live here." />
     </StackPanel>
 </UserControl>

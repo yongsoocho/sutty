@@ -21,12 +21,13 @@
 
                 <!--  헤더  -->
                 <StackPanel Spacing="18">
-                    <StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Border Background="{ThemeResource AccentTeal}" Style="{StaticResource HeaderDot}" />
                         <TextBlock
                             VerticalAlignment="Center"
                             FontSize="20"
                             FontWeight="Medium"
-                            Foreground="{StaticResource TextPrimary}"
+                            Foreground="{ThemeResource TextPrimary}"
                             Text="History" />
                     </StackPanel>
                     <StackPanel Spacing="8">
@@ -59,7 +60,7 @@
                 <!-- 카드 리스트 = React의 hosts.map(h => <HostCard />) -->
                 <ItemsRepeater x:Name="HostRepeater" ItemsSource="{x:Bind FilteredHosts}">
                     <ItemsRepeater.Layout>
-                        <StackLayout Spacing="8" />
+                        <StackLayout Spacing="6" />
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>
                         <DataTemplate x:DataType="vm:HostInfoModel">
@@ -74,7 +75,7 @@
                     Margin="0,40,0,0"
                     HorizontalAlignment="Center"
                     FontSize="14"
-                    Foreground="{StaticResource TextFaint}"
+                    Foreground="{ThemeResource TextFaint}"
                     Text="No hosts found"
                     Visibility="Collapsed" />
             </StackPanel>

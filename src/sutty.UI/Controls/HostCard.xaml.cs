@@ -28,10 +28,6 @@ public sealed partial class HostCard : UserControl
         set => SetValue(HostProperty, value);
     }
 
-    // 태그 유무 → Visibility 바인딩용
-    public Visibility HasTags =>
-        Host?.Tags.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-
     public HostCard()
     {
         this.InitializeComponent();
@@ -46,13 +42,11 @@ public sealed partial class HostCard : UserControl
             Clicked?.Invoke(this, Host);
     }
 
-    // ── 호버 효과 (배경색 살짝 밝게) — 팔레트 리소스 사용 ──
-
-    private static Brush Res(string key) => (Brush)Application.Current.Resources[key];
+    // ── 호버 효과 (배경색 살짝 밝게) — 현재 테마의 팔레트 브러시 사용 ──
 
     private void Card_PointerEntered(object sender, PointerRoutedEventArgs e)
-        => CardRoot.Background = Res("CardBgHover");
+        => CardRoot.Background = Helpers.ThemeResources.Brush(this, "CardBgHover");
 
     private void Card_PointerExited(object sender, PointerRoutedEventArgs e)
-        => CardRoot.Background = Res("CardBg");
+        => CardRoot.Background = Helpers.ThemeResources.Brush(this, "CardBg");
 }

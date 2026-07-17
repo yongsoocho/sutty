@@ -4,6 +4,11 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Project Path="src/sutty.Command/sutty.Command.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+    <Platform Solution="*|x86" Project="Any CPU" />
+  </Project>
   <Project Path="src/sutty.Core/sutty.Core.csproj">
     <Platform Solution="*|ARM64" Project="Any CPU" />
     <Platform Solution="*|x64" Project="Any CPU" />

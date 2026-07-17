@@ -33,17 +33,10 @@ namespace sutty.UI.Views
 
         public async Task LoadAsync(ISshSession? session)
         {
-            if (session is not null)
-            {
-                SubtitleText.Text = $"{session.Info.Title} · {session.Info.Host}:{session.Info.Port}";
-                _sftp = session.Sftp;
-            }
-            else
-            {
-                SubtitleText.Text = "No active session — showing demo server (mock)";
-                _sftp = new MockSftpService("demo");
-            }
+            // 활성 세션이 없으면 데모(mock) 트리를 보여준다
+            _sftp = session?.Sftp ?? new MockSftpService("demo");
 
+            ShowStatus(null);
             LoadingRing.IsActive = true;
             RootNodes.Clear();
 
@@ -56,9 +49,17 @@ namespace sutty.UI.Views
             }
             catch (Exception ex)
             {
-                SubtitleText.Text = $"Failed to list files: {ex.Message}";
+                ShowStatus($"Failed to list files: {ex.Message}");
             }
             LoadingRing.IsActive = false;
+        }
+
+        private void ShowStatus(string? message)
+        {
+            StatusText.Text = message ?? "";
+            StatusText.Visibility = string.IsNullOrEmpty(message)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
         }
 
         private async Task LoadChildrenAsync(FileNode dir)
@@ -198,7 +199,7 @@ namespace sutty.UI.Views
             catch (Exception ex)
             {
                 dirNode.Children.Remove(node);
-                SubtitleText.Text = $"Upload failed: {ex.Message}";
+                ShowStatus($"Upload failed: {ex.Message}");
             }
             finally
             {
