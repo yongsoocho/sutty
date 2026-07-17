@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="sutty.UI.Views.SessionView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch"
+    mc:Ignorable="d">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--  세션 헤더: 상태 점 + 제목 + 상태 텍스트  -->
+        <Border
+            Grid.Row="0"
+            Padding="14,10"
+            Background="{StaticResource PanelBg}"
+            BorderBrush="{StaticResource CardBorder}"
+            BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Ellipse
+                    x:Name="StatusDot"
+                    Width="9"
+                    Height="9"
+                    VerticalAlignment="Center"
+                    Fill="{StaticResource TextFaint}" />
+                <TextBlock
+                    x:Name="TitleText"
+                    VerticalAlignment="Center"
+                    FontSize="13"
+                    FontWeight="SemiBold"
+                    Foreground="{StaticResource TextPrimary}" />
+                <TextBlock
+                    x:Name="StateText"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Foreground="{StaticResource TextMuted}" />
+            </StackPanel>
+        </Border>
+
+        <!--  모의 터미널 (실제 SSH 채널은 sutty.Core에서 올 예정)  -->
+        <Border
+            Grid.Row="1"
+            Margin="10"
+            Background="{StaticResource TerminalBg}"
+            BorderBrush="{StaticResource CardBorder}"
+            BorderThickness="1"
+            CornerRadius="8">
+            <ScrollViewer x:Name="TermScroll" Padding="14" VerticalScrollBarVisibility="Auto">
+                <TextBlock
+                    x:Name="TermText"
+                    FontFamily="Cascadia Mono, Consolas"
+                    FontSize="13"
+                    Foreground="{StaticResource TerminalFg}"
+                    IsTextSelectionEnabled="True"
+                    TextWrapping="Wrap" />
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

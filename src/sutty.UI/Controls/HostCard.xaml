@@ -16,8 +16,8 @@
     <Border
         x:Name="CardRoot"
         Padding="14"
-        Background="#121E31"
-        BorderBrush="#1E2E48"
+        Background="{StaticResource CardBg}"
+        BorderBrush="{StaticResource CardBorder}"
         BorderThickness="1"
         CornerRadius="12"
         PointerEntered="Card_PointerEntered"
@@ -59,11 +59,11 @@
                 <TextBlock
                     FontSize="14"
                     FontWeight="SemiBold"
-                    Foreground="#E1E8F2"
+                    Foreground="{StaticResource TextPrimary}"
                     Text="{x:Bind Host.Hostname}"
                     TextTrimming="CharacterEllipsis" />
                 <!--  alias + IP  -->
-                <TextBlock FontSize="12" Foreground="#5A6E8A">
+                <TextBlock FontSize="12" Foreground="{StaticResource TextMuted}">
                     <Run Text="{x:Bind Host.Alias}" />
                     <Run Text=" · " />
                     <Run Text="{x:Bind Host.IP}" />
@@ -71,7 +71,7 @@
                 <!--  태그  -->
                 <TextBlock
                     FontSize="11"
-                    Foreground="#3E5470"
+                    Foreground="{StaticResource TextFaint}"
                     Text="{x:Bind Host.TagSummary}"
                     Visibility="{x:Bind HasTags}" />
             </StackPanel>
@@ -81,7 +81,7 @@
                 Grid.Column="2"
                 VerticalAlignment="Center"
                 FontSize="11"
-                Foreground="#3E5470"
+                Foreground="{StaticResource TextFaint}"
                 Text="{x:Bind Host.LastConnectedText}" />
         </Grid>
     </Border>

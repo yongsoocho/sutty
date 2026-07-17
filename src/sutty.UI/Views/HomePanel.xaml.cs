@@ -1,36 +1,13 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using sutty.Core.Models;
+using sutty.Setting;
 using System;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
 namespace sutty.UI.Views
 {
-    public enum SshAuthMethod
-    {
-        Password,
-        PublicKey,
-        Agent,
-        KeyboardInteractive
-    }
-
-    /// <summary>Connect 버튼을 눌렀을 때 호스트로 전달할 연결 정보.</summary>
-    public sealed class SshConnectionInfo
-    {
-        public string Host { get; set; } = "";
-        public int Port { get; set; } = 22;
-        public string DisplayName { get; set; } = "";
-        public string Username { get; set; } = "";
-        public SshAuthMethod AuthMethod { get; set; }
-        public string Password { get; set; } = "";
-        public string PrivateKeyPath { get; set; } = "";
-        public string Passphrase { get; set; } = "";
-        public string JumpHost { get; set; } = "";
-        public int KeepAliveSeconds { get; set; }
-        public bool Compression { get; set; }
-        public bool X11Forwarding { get; set; }
-    }
-
     public sealed partial class HomePanel : UserControl
     {
         /// <summary>Connect 버튼이 눌리면 수집된 연결 정보와 함께 발생한다.</summary>
@@ -46,6 +23,11 @@ namespace sutty.UI.Views
         public HomePanel()
         {
             this.InitializeComponent();
+
+            // 설정에 저장된 기본값 반영
+            var settings = SettingsService.Current;
+            PortBox.Value = settings.DefaultSshPort;
+            KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
         }
 
         // 인증 방식에 따라 보여줄 입력 패널 토글
@@ -81,10 +63,17 @@ namespace sutty.UI.Views
 
         private void Connect_Click(object sender, RoutedEventArgs e)
         {
+            var host = HostBox.Text.Trim();
+            if (string.IsNullOrEmpty(host))
+            {
+                HostBox.Focus(FocusState.Programmatic);
+                return;
+            }
+
             var info = new SshConnectionInfo
             {
-                Host = HostBox.Text.Trim(),
-                Port = (int)PortBox.Value,
+                Host = host,
+                Port = double.IsNaN(PortBox.Value) ? 22 : (int)PortBox.Value,
                 DisplayName = DisplayNameBox.Text.Trim(),
                 Username = UsernameBox.Text.Trim(),
                 AuthMethod = (SshAuthMethod)AuthCombo.SelectedIndex,
@@ -92,7 +81,7 @@ namespace sutty.UI.Views
                 PrivateKeyPath = KeyPathBox.Text.Trim(),
                 Passphrase = PassphraseBox.Password,
                 JumpHost = JumpHostBox.Text.Trim(),
-                KeepAliveSeconds = (int)KeepAliveBox.Value,
+                KeepAliveSeconds = double.IsNaN(KeepAliveBox.Value) ? 0 : (int)KeepAliveBox.Value,
                 Compression = CompressionCheck.IsChecked == true,
                 X11Forwarding = X11Check.IsChecked == true
             };

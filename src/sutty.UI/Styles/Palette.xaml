@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    sutty 공용 팔레트 & 스타일.
+    navy brand (#121E31 ~ #0B111E) 기준. 모든 패널/컨트롤이 여기 키를 참조한다.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.ThemeDictionaries>
+        <!--  라이트/다크 관계없이 앱 전체를 다크 네이비로 (lightweight styling)  -->
+        <ResourceDictionary x:Key="Default">
+            <!--  TextBox / PasswordBox  -->
+            <SolidColorBrush x:Key="TextControlBackground" Color="#0A1019" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#0E1724" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#0E1724" />
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#1E2E48" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#2A3E5C" />
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#4E8FEF" />
+            <SolidColorBrush x:Key="TextControlForeground" Color="#E1E8F2" />
+            <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#E1E8F2" />
+            <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#E1E8F2" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#3E5470" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#3E5470" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#3E5470" />
+
+            <!--  ComboBox  -->
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#0A1019" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#0E1724" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#0E1724" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#1E2E48" />
+            <SolidColorBrush x:Key="ComboBoxForeground" Color="#E1E8F2" />
+            <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#121E31" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+
+    <!--  ===== 팔레트 =====  -->
+    <SolidColorBrush x:Key="PanelBg" Color="#0D1520" />
+    <SolidColorBrush x:Key="CardBg" Color="#121E31" />
+    <SolidColorBrush x:Key="CardBgHover" Color="#1A2B42" />
+    <SolidColorBrush x:Key="CardBorder" Color="#1E2E48" />
+    <SolidColorBrush x:Key="InputBg" Color="#0A1019" />
+    <SolidColorBrush x:Key="PillBg" Color="#0E1926" />
+    <SolidColorBrush x:Key="TextPrimary" Color="#E1E8F2" />
+    <SolidColorBrush x:Key="TextMuted" Color="#5A6E8A" />
+    <SolidColorBrush x:Key="TextFaint" Color="#3E5470" />
+    <SolidColorBrush x:Key="AccentBlue" Color="#4E8FEF" />
+    <SolidColorBrush x:Key="AccentTeal" Color="#38B2BD" />
+    <SolidColorBrush x:Key="StatusGreen" Color="#3FB68B" />
+    <SolidColorBrush x:Key="StatusAmber" Color="#E9B44C" />
+    <SolidColorBrush x:Key="StatusRed" Color="#E95420" />
+    <SolidColorBrush x:Key="TerminalBg" Color="#0A0E14" />
+    <SolidColorBrush x:Key="TerminalFg" Color="#C9D6E4" />
+
+    <!--  ===== 공용 스타일 =====  -->
+    <Style x:Key="SectionHeader" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="2,0,0,10" />
+    </Style>
+
+    <Style x:Key="FieldLabel" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Margin" Value="2,0,0,5" />
+    </Style>
+
+    <Style x:Key="DarkInput" TargetType="TextBox">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="MinHeight" Value="40" />
+    </Style>
+
+    <Style x:Key="DarkPassword" TargetType="PasswordBox">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="MinHeight" Value="40" />
+    </Style>
+
+    <Style x:Key="Card" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource CardBg}" />
+        <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="16" />
+    </Style>
+
+    <Style x:Key="TagPill" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource PillBg}" />
+        <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="Padding" Value="10,5" />
+    </Style>
+</ResourceDictionary>

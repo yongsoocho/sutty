@@ -88,6 +88,7 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <!--  TabView: Tabs  -->
+            <!--  세션 탭: Connect 할 때마다 코드에서 TabViewItem이 추가된다  -->
             <TabView
                 x:Name="TitleTabs"
                 Grid.Row="0"
@@ -99,51 +100,34 @@
                 <TabView.TabStripFooter>
                     <Grid x:Name="CustomDragRegion" Background="Transparent" />
                 </TabView.TabStripFooter>
-                <TabViewItem
-                    x:Name="Tab1"
-                    Header="Tab 1"
-                    IsClosable="True"
-                    Tag="Tab1">
-                    <TabViewItem.IconSource>
-                        <FontIconSource Glyph="&#xE756;" />
-                    </TabViewItem.IconSource>
-                </TabViewItem>
-                <TabViewItem
-                    x:Name="Tab2"
-                    Header="Tab 2"
-                    IsClosable="True"
-                    Tag="Tab2">
-                    <TabViewItem.IconSource>
-                        <FontIconSource Glyph="&#xE756;" />
-                    </TabViewItem.IconSource>
-                </TabViewItem>
-                <TabViewItem
-                    x:Name="Tab3"
-                    Header="Tab 3"
-                    IsClosable="True"
-                    Tag="Tab3">
-                    <TabViewItem.IconSource>
-                        <FontIconSource Glyph="&#xE756;" />
-                    </TabViewItem.IconSource>
-                </TabViewItem>
-                <TabViewItem
-                    x:Name="Tab4"
-                    Header="Tab 4"
-                    IsClosable="True"
-                    Tag="Tab3">
-                    <TabViewItem.IconSource>
-                        <FontIconSource Glyph="&#xE756;" />
-                    </TabViewItem.IconSource>
-                </TabViewItem>
             </TabView>
-            <!--  Main Content  -->
+            <!--  Main Content: 선택된 탭의 SessionView  -->
             <Grid Grid.Row="1" Background="{ThemeResource LayerFillColorAltBrush}">
-                <TextBlock
-                    x:Name="ContentText"
+                <ContentControl
+                    x:Name="SessionHost"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch" />
+                <StackPanel
+                    x:Name="NoSessionState"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                    Text="Tab 1 Content" />
+                    Spacing="10">
+                    <FontIcon
+                        HorizontalAlignment="Center"
+                        FontSize="34"
+                        Foreground="{StaticResource TextFaint}"
+                        Glyph="&#xE756;" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Foreground="{StaticResource TextMuted}"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        Text="No active sessions" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontSize="12"
+                        Foreground="{StaticResource TextFaint}"
+                        Text="Connect from the Home panel to open a session tab" />
+                </StackPanel>
             </Grid>
         </Grid>
         <!--  ── Column 2: Right Panel ──  -->
@@ -157,7 +141,7 @@
                 Grid.Row="1"
                 Padding="12,8,12,8"
                 VerticalAlignment="Stretch"
-                Background="#0D1520">
+                Background="{StaticResource PanelBg}">
                 <ContentControl
                     x:Name="RightPanel"
                     HorizontalContentAlignment="Stretch"

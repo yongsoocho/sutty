@@ -26,7 +26,7 @@
                             VerticalAlignment="Center"
                             FontSize="20"
                             FontWeight="Medium"
-                            Foreground="#E1E8F2"
+                            Foreground="{StaticResource TextPrimary}"
                             Text="History" />
                     </StackPanel>
                     <StackPanel Spacing="8">
@@ -74,7 +74,7 @@
                     Margin="0,40,0,0"
                     HorizontalAlignment="Center"
                     FontSize="14"
-                    Foreground="#3E5470"
+                    Foreground="{StaticResource TextFaint}"
                     Text="No hosts found"
                     Visibility="Collapsed" />
             </StackPanel>

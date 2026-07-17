@@ -36,14 +36,13 @@ public sealed partial class HostCard : UserControl
         this.InitializeComponent();
     }
 
-    // ── 호버 효과 (배경색 살짝 밝게) ──
+    // ── 호버 효과 (배경색 살짝 밝게) — 팔레트 리소스 사용 ──
 
-    private static readonly SolidColorBrush _normalBg = new(Windows.UI.Color.FromArgb(255, 0x12, 0x1E, 0x31));
-    private static readonly SolidColorBrush _hoverBg = new(Windows.UI.Color.FromArgb(255, 0x1A, 0x2B, 0x42));
+    private static Brush Res(string key) => (Brush)Application.Current.Resources[key];
 
     private void Card_PointerEntered(object sender, PointerRoutedEventArgs e)
-        => CardRoot.Background = _hoverBg;
+        => CardRoot.Background = Res("CardBgHover");
 
     private void Card_PointerExited(object sender, PointerRoutedEventArgs e)
-        => CardRoot.Background = _normalBg;
+        => CardRoot.Background = Res("CardBg");
 }
