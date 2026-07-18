@@ -7,16 +7,16 @@ using sutty.Setting;
 using sutty.UI.ViewModels;
 using System;
 using System.Collections.ObjectModel;
+using System.Text;
 using System.Threading.Tasks;
-using Windows.ApplicationModel.DataTransfer;
 
 namespace sutty.UI.Views
 {
     /// <summary>
-    /// 탭 하나에 대응하는 세션 화면.
-    /// Jupyter 노트북처럼 [명령 입력 블록 + 출력 블록]이 셀 단위로 쌓인다.
-    /// - 아래 입력 줄에서 Enter → 새 셀 실행
-    /// - 헤더의 Paste → 클립보드 내용을 명령으로 바로 실행
+    /// 탭 하나에 대응하는 세션 화면. 보기 방식이 두 가지다 (헤더 토글, 설정에 저장):
+    /// - REPL: Jupyter처럼 [명령 입력 블록 + 출력 블록] 셀 단위, 블록마다 paste 버튼
+    /// - RAW : PuTTY처럼 검정 화면에 흰 글씨 텍스트 로그
+    /// 아래 입력 줄에서 Enter → 실행. 프롬프트에 현재 경로가 항상 표시된다.
     /// </summary>
     public sealed partial class SessionView : UserControl
     {
@@ -24,8 +24,10 @@ namespace sutty.UI.Views
         public ObservableCollection<CommandCell> Cells { get; } = [];
 
         private readonly string _prompt;
+        private readonly StringBuilder _rawLog = new(); // RAW 보기용 텍스트 로그
         private int _cellIndex; // Jupyter의 In [n] 번호
         private string _cwd = "~"; // 현재 원격 작업 디렉터리 (cd로 갱신)
+        private bool _isRaw;
 
         public SessionView(ISshSession session)
         {
@@ -38,6 +40,11 @@ namespace sutty.UI.Views
             CellsList.FontFamily = mono;
             CellsList.FontSize = settings.TerminalFontSize;
             CommandBox.FontFamily = mono;
+            RawText.FontFamily = mono;
+            RawText.FontSize = settings.TerminalFontSize;
+
+            _isRaw = settings.TerminalMode == "Raw";
+            ApplyViewMode();
 
             TitleText.Text = Session.Info.Title;
             UpdatePrompt();
@@ -51,6 +58,24 @@ namespace sutty.UI.Views
         {
             var user = string.IsNullOrWhiteSpace(session.Info.Username) ? "root" : session.Info.Username;
             return $"{user}@{session.Info.Host}";
+        }
+
+        // ── RAW ↔ REPL 보기 전환 ──
+
+        private void ApplyViewMode()
+        {
+            ReplView.Visibility = _isRaw ? Visibility.Collapsed : Visibility.Visible;
+            RawView.Visibility = _isRaw ? Visibility.Visible : Visibility.Collapsed;
+            ModeText.Text = _isRaw ? "RAW" : "REPL";
+        }
+
+        private void ModeToggle_Click(object sender, RoutedEventArgs e)
+        {
+            _isRaw = !_isRaw;
+            SettingsService.Current.TerminalMode = _isRaw ? "Raw" : "Repl";
+            SettingsService.Save(); // 다음 실행/다음 세션에도 유지
+            ApplyViewMode();
+            ScrollToBottom();
         }
 
         // ── 세션 상태 ──
@@ -77,7 +102,6 @@ namespace sutty.UI.Views
             var connected = state == SessionState.Connected;
             CommandBox.IsEnabled = connected;
             RunButton.IsEnabled = connected;
-            PasteButton.IsEnabled = connected;
 
             if (initial) return;
 
@@ -125,22 +149,26 @@ namespace sutty.UI.Views
         private void AddSystemCell(string message)
         {
             Cells.Add(new CommandCell { Output = message });
+            AppendRaw(message);
             ScrollToBottom();
         }
 
-        /// <summary>Command 패널(playbook) 등 외부에서 이 세션에 명령을 실행할 때 사용.</summary>
-        public Task RunExternalCommandAsync(string command) => RunCommandAsync(command);
+        /// <summary>
+        /// Command/Multi 패널 등 외부에서 이 세션에 명령을 실행할 때 사용.
+        /// 실행 결과(출력)를 돌려주므로 Multi 그리드가 셀에 미리보기를 띄울 수 있다.
+        /// </summary>
+        public Task<string> RunExternalCommandAsync(string command) => RunCommandAsync(command);
 
         // 프롬프트에 항상 현재 경로를 보여준다: user@host:~/path $
         private void UpdatePrompt()
             => InputPrompt.Text = $"{_prompt}:{_cwd} $";
 
-        private async Task RunCommandAsync(string command)
+        private async Task<string> RunCommandAsync(string command)
         {
             if (Session.State != SessionState.Connected)
             {
                 AddSystemCell("Not connected.");
-                return;
+                return "Not connected.";
             }
 
             var cell = new CommandCell
@@ -151,6 +179,7 @@ namespace sutty.UI.Views
                 IsRunning = true,
             };
             Cells.Add(cell);
+            AppendRaw($"{_prompt}:{_cwd} $ {command}");
             ScrollToBottom();
 
             try
@@ -160,7 +189,8 @@ namespace sutty.UI.Views
                 string output;
                 var trimmed = command.Trim();
 
-                if (trimmed == "cd" || trimmed.StartsWith("cd "))
+                // cd 추적은 한 줄짜리 cd 명령일 때만 (멀티라인은 그대로 실행)
+                if (!trimmed.Contains('\n') && (trimmed == "cd" || trimmed.StartsWith("cd ")))
                 {
                     var target = trimmed == "cd" ? "~" : trimmed[3..].Trim();
                     output = (await Session.RunCommandAsync(
@@ -189,12 +219,34 @@ namespace sutty.UI.Views
             {
                 cell.IsRunning = false;
             }
+
+            if (cell.Output.Length > 0)
+                AppendRaw(cell.Output);
             ScrollToBottom();
+
+            return cell.Output;
         }
 
-        private async void CommandBox_KeyDown(object sender, KeyRoutedEventArgs e)
+        // WinUI TextBox는 줄구분자로 '\r'을 쓴다 — 검사/전송 전에 '\n'으로 통일
+        private static string NormalizeNewlines(string text)
+            => text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        private async void CommandBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
             if (e.Key != Windows.System.VirtualKey.Enter) return;
+
+            // Shift+Enter → 줄바꿈 (기본 동작에 맡긴다)
+            var shiftDown = Microsoft.UI.Input.InputKeyboardSource
+                .GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+            if (shiftDown) return;
+
+            // 커서가 있는 줄이 연속 문자로 끝나면(\ = bash, ` = PowerShell) Enter도 줄바꿈
+            var caret = Math.Min(CommandBox.SelectionStart, CommandBox.Text.Length);
+            var currentLine = NormalizeNewlines(CommandBox.Text[..caret]).Split('\n')[^1].TrimEnd();
+            if (currentLine.EndsWith('\\') || currentLine.EndsWith('`')) return;
+
+            // 그 외의 Enter → 실행 (Handled로 줄바꿈 삽입을 막는다)
             e.Handled = true;
             await RunFromInputAsync();
         }
@@ -204,30 +256,11 @@ namespace sutty.UI.Views
 
         private async Task RunFromInputAsync()
         {
-            var command = CommandBox.Text.Trim();
+            var command = NormalizeNewlines(CommandBox.Text).Trim();
             if (command.Length == 0) return;
 
             CommandBox.Text = "";
             await RunCommandAsync(command);
-        }
-
-        // 클립보드 내용을 명령으로 실행
-        private async void Paste_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var content = Clipboard.GetContent();
-                if (!content.Contains(StandardDataFormats.Text)) return;
-
-                var text = (await content.GetTextAsync())?.Trim();
-                if (string.IsNullOrEmpty(text)) return;
-
-                await RunCommandAsync(text);
-            }
-            catch (Exception ex)
-            {
-                AddSystemCell($"Paste failed: {ex.Message}");
-            }
         }
 
         // 박스(입력/출력)의 내용을 아래 명령 입력줄로 가져온다 (바로 실행하진 않음)
@@ -244,10 +277,26 @@ namespace sutty.UI.Views
             CommandBox.Focus(FocusState.Programmatic);
         }
 
+        // ── 스크롤/로그 ──
+
+        private void AppendRaw(string line)
+        {
+            _rawLog.AppendLine(line);
+            RawText.Text = _rawLog.ToString();
+        }
+
         private void ScrollToBottom()
         {
-            CellsScroll.UpdateLayout();
-            CellsScroll.ChangeView(null, CellsScroll.ScrollableHeight, null, true);
+            if (_isRaw)
+            {
+                RawScroll.UpdateLayout();
+                RawScroll.ChangeView(null, RawScroll.ScrollableHeight, null, true);
+            }
+            else
+            {
+                CellsScroll.UpdateLayout();
+                CellsScroll.ChangeView(null, CellsScroll.ScrollableHeight, null, true);
+            }
         }
     }
 }

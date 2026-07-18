@@ -14,6 +14,7 @@ namespace sutty.UI.Views
     /// </summary>
     public sealed partial class CommandPanel : UserControl
     {
+        private readonly System.Collections.Generic.List<CommandItemVm> _all = [];
         public ObservableCollection<CommandItemVm> Items { get; } = [];
 
         /// <summary>치환 완료된 최종 명령을 현재 세션에서 실행해 달라는 신호.</summary>
@@ -27,9 +28,34 @@ namespace sutty.UI.Views
 
         private void Load()
         {
-            Items.Clear();
+            _all.Clear();
             foreach (var template in CommandStore.GetAll())
-                Items.Add(new CommandItemVm(template));
+                _all.Add(new CommandItemVm(template));
+            ApplyFilter("");
+        }
+
+        // ── 검색 ──
+
+        private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+        {
+            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+                ApplyFilter(sender.Text);
+        }
+
+        private void ApplyFilter(string query)
+        {
+            var q = query.Trim();
+
+            Items.Clear();
+            foreach (var vm in _all)
+            {
+                if (q.Length == 0 ||
+                    vm.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    vm.CommandText.Contains(q, StringComparison.OrdinalIgnoreCase))
+                {
+                    Items.Add(vm);
+                }
+            }
 
             EmptyText.Visibility = Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -41,8 +67,8 @@ namespace sutty.UI.Views
             if (name.Length == 0 || text.Length == 0) return;
 
             var template = CommandStore.Add(name, text);
-            Items.Insert(0, new CommandItemVm(template));
-            EmptyText.Visibility = Visibility.Collapsed;
+            _all.Insert(0, new CommandItemVm(template));
+            ApplyFilter(SearchBox.Text);
 
             NewNameBox.Text = "";
             NewTextBox.Text = "";
@@ -54,8 +80,8 @@ namespace sutty.UI.Views
             if ((sender as FrameworkElement)?.DataContext is not CommandItemVm vm) return;
 
             CommandStore.Delete(vm.Template.Id);
-            Items.Remove(vm);
-            EmptyText.Visibility = Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            _all.Remove(vm);
+            ApplyFilter(SearchBox.Text);
         }
 
         private void Run_Click(object sender, RoutedEventArgs e)

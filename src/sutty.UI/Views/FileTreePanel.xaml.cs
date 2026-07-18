@@ -18,29 +18,73 @@ namespace sutty.UI.Views
     /// 연결된 서버의 파일 트리를 보여주는 오른쪽 패널 (FileZilla의 리모트 트리에 해당).
     /// - 디렉터리는 처음 펼칠 때 서버에서 읽어오는 지연 로딩
     /// - 탐색기에서 파일을 끌어다 놓으면 해당 위치로 업로드 (진행도 + 취소 지원)
-    /// 활성 세션이 없으면 데모(mock) 서버 트리를 보여준다.
+    /// 활성 세션이 없으면 "세션 없음" 안내만 보여준다.
     /// </summary>
     public sealed partial class FileTreePanel : UserControl
     {
         public ObservableCollection<FileNode> RootNodes { get; } = [];
 
         private ISftpService? _sftp;
+        private ISshSession? _session;
 
         public FileTreePanel()
         {
             InitializeComponent();
         }
 
+        /// <summary>
+        /// 활성 세션의 서버 파일 트리를 보여준다.
+        /// 세션이 없으면 안내 문구를, 아직 연결 중이면 연결 완료 후 로드한다.
+        /// </summary>
         public async Task LoadAsync(ISshSession? session)
         {
-            // 활성 세션이 없으면 데모(mock) 트리를 보여준다
-            _sftp = session?.Sftp ?? new MockSftpService("demo");
+            // 이전 세션의 연결 대기 콜백 정리
+            if (_session is not null)
+                _session.StateChanged -= OnSessionStateChanged;
+            _session = session;
 
+            if (session is null)
+            {
+                _sftp = null;
+                RootNodes.Clear();
+                ShowStatus(null);
+                LoadingRing.IsActive = false;
+                EmptyState.Visibility = Visibility.Visible;
+                return;
+            }
+
+            EmptyState.Visibility = Visibility.Collapsed;
+
+            if (session.State != SessionState.Connected)
+            {
+                // 연결되면 다시 로드
+                RootNodes.Clear();
+                ShowStatus(null);
+                LoadingRing.IsActive = true;
+                session.StateChanged += OnSessionStateChanged;
+                return;
+            }
+
+            _sftp = session.Sftp;
+            await LoadTreeAsync(rootName: "/");
+        }
+
+        private void OnSessionStateChanged(object? sender, SessionState state)
+        {
+            if (sender is not ISshSession session || session != _session) return;
+            if (state != SessionState.Connected) return;
+
+            session.StateChanged -= OnSessionStateChanged;
+            DispatcherQueue.TryEnqueue(() => _ = LoadAsync(session));
+        }
+
+        private async Task LoadTreeAsync(string rootName)
+        {
             ShowStatus(null);
             LoadingRing.IsActive = true;
             RootNodes.Clear();
 
-            var root = new FileNode(new RemoteFileEntry { Name = "/", FullPath = "/", IsDirectory = true });
+            var root = new FileNode(new RemoteFileEntry { Name = rootName, FullPath = "/", IsDirectory = true });
             try
             {
                 await LoadChildrenAsync(root);

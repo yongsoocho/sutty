@@ -11,17 +11,7 @@ public static class CommandStore
     private static readonly object Gate = new();
     private static bool _initialized;
 
-    public static string DbPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "sutty", "commands.db");
-
-    private static SqliteConnection Open()
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);
-        var conn = new SqliteConnection($"Data Source={DbPath}");
-        conn.Open();
-        return conn;
-    }
+    private static SqliteConnection Open() => Db.Open();
 
     public static void EnsureInitialized()
     {

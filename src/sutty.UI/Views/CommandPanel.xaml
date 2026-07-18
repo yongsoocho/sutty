@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:h="using:sutty.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:sutty.UI.ViewModels"
     HorizontalAlignment="Stretch"
@@ -12,6 +13,7 @@
 
     <Grid RowSpacing="10">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -27,16 +29,24 @@
                 Text="Commands" />
         </StackPanel>
 
+        <!--  검색  -->
+        <AutoSuggestBox
+            x:Name="SearchBox"
+            Grid.Row="1"
+            PlaceholderText="{x:Bind h:Loc.T('명령어 검색...', 'Search commands...')}"
+            QueryIcon="Find"
+            TextChanged="SearchBox_TextChanged" />
+
         <!--  새 명령 추가  -->
         <Expander
             x:Name="AddExpander"
-            Grid.Row="1"
+            Grid.Row="2"
             HorizontalAlignment="Stretch"
             HorizontalContentAlignment="Stretch"
             Background="{ThemeResource CardBg}"
             BorderBrush="{ThemeResource CardBorder}"
             CornerRadius="10"
-            Header="+ New command">
+            Header="{x:Bind h:Loc.T('+ 새 명령', '+ New command')}">
             <StackPanel Padding="0,8,0,4" Spacing="10">
                 <TextBox
                     x:Name="NewNameBox"
@@ -50,7 +60,7 @@
                 <TextBlock
                     FontSize="11"
                     Foreground="{ThemeResource TextFaint}"
-                    Text="$1, $2 … 자리표시자를 넣으면 실행할 때 값을 입력받습니다."
+                    Text="{x:Bind h:Loc.T('$1, $2 … 자리표시자를 넣으면 실행할 때 값을 입력받습니다.', 'Use $1, $2 … placeholders to be prompted for values at run time.')}"
                     TextWrapping="Wrap" />
                 <Button
                     HorizontalAlignment="Stretch"
@@ -64,7 +74,7 @@
         </Expander>
 
         <!--  저장된 playbook 목록 (자주 쓰는 순)  -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
             <StackPanel Padding="0,0,0,16">
                 <ItemsControl x:Name="CommandsList" ItemsSource="{x:Bind Items}">
                     <ItemsControl.ItemTemplate>
@@ -161,7 +171,7 @@
                     HorizontalAlignment="Center"
                     FontSize="12"
                     Foreground="{ThemeResource TextFaint}"
-                    Text="No saved commands yet"
+                    Text="{x:Bind h:Loc.T('저장된 명령이 없습니다', 'No saved commands yet')}"
                     Visibility="Collapsed" />
             </StackPanel>
         </ScrollViewer>

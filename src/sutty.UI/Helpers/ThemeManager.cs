@@ -83,7 +83,7 @@ public static class ThemeManager
             ["TerminalBg"] = "#F6F8FA", ["TerminalFg"] = "#1F2328",
         }),
 
-        new("One Dark", true, "#2C313A", "#1B1F25", new Dictionary<string, string>
+        new("Atom One Dark", true, "#2C313A", "#1B1F25", new Dictionary<string, string>
         {
             ["AppBg"] = "#1B1F25", ["PanelBg"] = "#21252B", ["SidePanelBg"] = "#282C34",
             ["CardBg"] = "#2C313A", ["CardBgHover"] = "#333842", ["CardBorder"] = "#3E4451",

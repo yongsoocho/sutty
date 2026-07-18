@@ -6,10 +6,13 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <!--  컴팩트 카드: 사진 없이 색 점 + 2줄 텍스트. 클릭하면 바로 연결.  -->
+    <!--
+        작은 반응형 카드 (UniformGridLayout에서 한 줄에 여러 개).
+        정보는 그대로: alias / hostname / 마지막 접속. 클릭하면 바로 연결.
+    -->
     <Border
         x:Name="CardRoot"
-        Padding="10,7"
+        Padding="10,8"
         Background="{ThemeResource CardBg}"
         BorderBrush="{ThemeResource CardBorder}"
         BorderThickness="1"
@@ -18,44 +21,42 @@
         PointerExited="Card_PointerExited"
         Tapped="Card_Tapped">
 
-        <Grid ColumnSpacing="10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <!--  호스트 색 점 (기존 로고 배경색 재활용)  -->
-            <Ellipse
-                Grid.Column="0"
-                Width="9"
-                Height="9"
-                VerticalAlignment="Center"
-                Fill="{x:Bind Host.LogoBg, FallbackValue=#5B9CFF}" />
-
-            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <StackPanel Spacing="2">
+            <Grid ColumnSpacing="6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
                 <TextBlock
-                    FontSize="13"
+                    FontSize="12"
                     FontWeight="SemiBold"
                     Foreground="{ThemeResource TextPrimary}"
-                    Text="{x:Bind Host.Hostname}"
-                    TextTrimming="CharacterEllipsis" />
-                <TextBlock
-                    FontSize="11"
-                    Foreground="{ThemeResource TextMuted}"
-                    TextTrimming="CharacterEllipsis">
-                    <Run Text="{x:Bind Host.Alias}" />
-                    <Run Text=" · " />
-                    <Run Text="{x:Bind Host.IP}" />
-                </TextBlock>
-            </StackPanel>
-
+                    Text="{x:Bind Host.Alias}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind Host.Alias}" />
+                <!--  상단 고정 카드에만 보이는 접속 횟수 배지  -->
+                <Border
+                    Grid.Column="1"
+                    Padding="5,1"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource PillBg}"
+                    CornerRadius="8"
+                    Visibility="{x:Bind Host.HasCount}">
+                    <TextBlock
+                        FontSize="10"
+                        Foreground="{ThemeResource AccentBlue}"
+                        Text="{x:Bind Host.CountText}" />
+                </Border>
+            </Grid>
             <TextBlock
-                Grid.Column="2"
-                VerticalAlignment="Center"
+                FontSize="11"
+                Foreground="{ThemeResource TextMuted}"
+                Text="{x:Bind Host.Hostname}"
+                TextTrimming="CharacterEllipsis" />
+            <TextBlock
                 FontSize="10"
                 Foreground="{ThemeResource TextFaint}"
                 Text="{x:Bind Host.LastConnectedText}" />
-        </Grid>
+        </StackPanel>
     </Border>
 </UserControl>

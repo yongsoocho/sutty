@@ -1,22 +1,27 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
+using sutty.Command;
+using sutty.Setting;
 using sutty.UI.ViewModels;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace sutty.UI.Views;
 
+/// <summary>
+/// 접속 히스토리 (SQLite connection_log, append-only).
+/// - PINNED: 접속 횟수 TOP N 호스트 (설정에서 N 조절)
+/// - RECENT: 최근 접속 기록 최신순 (같은 서버도 접속마다 한 줄씩)
+/// 카드 클릭 → 바로 연결.
+/// </summary>
 public sealed partial class HostListPanel : UserControl
 {
-    // ═══════════════════════════════════════════════════
-    //  React 비유:
-    //  const [hosts, setHosts] = useState<HostInfoModel[]>([...])
-    //  ObservableCollection이 useState + 자동 리렌더 역할
-    // ═══════════════════════════════════════════════════
+    private readonly List<HostInfoModel> _allPinned = [];
+    private readonly List<HostInfoModel> _allRecent = [];
 
-    private readonly ObservableCollection<HostInfoModel> _allHosts = [];
+    public ObservableCollection<HostInfoModel> PinnedHosts { get; } = [];
     public ObservableCollection<HostInfoModel> FilteredHosts { get; } = [];
 
     /// <summary>카드를 클릭하면 해당 호스트로 연결해 달라는 신호.</summary>
@@ -25,85 +30,62 @@ public sealed partial class HostListPanel : UserControl
     public HostListPanel()
     {
         this.InitializeComponent();
-        LoadSampleData();
+        LoadFromStore();
         ApplyFilter("");
 
-        // ItemsRepeater가 만든 HostCard에 클릭 이벤트를 연결
-        HostRepeater.ElementPrepared += (_, args) =>
+        // ItemsRepeater가 만든 HostCard에 클릭 이벤트를 연결 (두 리스트 모두)
+        PinnedRepeater.ElementPrepared += OnElementPrepared;
+        HostRepeater.ElementPrepared += OnElementPrepared;
+    }
+
+    private void OnElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
+    {
+        if (args.Element is Controls.HostCard card)
         {
-            if (args.Element is Controls.HostCard card)
-            {
-                card.Clicked -= OnCardClicked;
-                card.Clicked += OnCardClicked;
-            }
-        };
+            card.Clicked -= OnCardClicked;
+            card.Clicked += OnCardClicked;
+        }
     }
 
     private void OnCardClicked(object? sender, HostInfoModel host)
         => ConnectRequested?.Invoke(this, host);
 
-    // ── 샘플 데이터 (나중에 DB/API로 교체) ──
+    // ── SQLite에서 로드 (보관 기한 정리 → TOP N + 최근 로그) ──
 
-    private void LoadSampleData()
+    private void LoadFromStore()
     {
-        var orangeBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0xE9, 0x54, 0x20));
-        var purpleBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x77, 0x21, 0x6F));
-        var tealBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x1A, 0x8C, 0x8C));
+        var settings = SettingsService.Current;
 
-        // React의 초기 state 배열과 같은 역할
-        HostInfoModel[] samples =
-        [
-            new()
-            {
-                Hostname      = "Dev Scheduler",
-                Alias         = "dev-scheduler",
-                IP            = "10.0.0.15",
-                Username      = "admin",
-                Tags          = ["ssh", "dev"],
-                LogoPath      = "ms-appx:///Assets/ubuntu.png",
-                LogoBg        = orangeBrush,
-                LastConnected = DateTime.Now.AddMinutes(-3),
-            },
-            new()
-            {
-                Hostname      = "Web Server us-1",
-                Alias         = "web-us-1",
-                IP            = "10.0.1.22",
-                Username      = "deploy",
-                Tags          = ["ssh", "dev", "cash"],
-                LogoPath      = "ms-appx:///Assets/debian.png",
-                LogoBg        = orangeBrush,
-                LastConnected = DateTime.Now.AddHours(-2),
-            },
-            new()
-            {
-                Hostname      = "Postgresql Replica-1",
-                Alias         = "pg-replica-1",
-                IP            = "10.0.2.10",
-                Username      = "postgres",
-                Tags          = ["ssh", "prod", "db"],
-                LogoPath      = "ms-appx:///Assets/postgres.png",
-                LogoBg        = purpleBrush,
-                LastConnected = DateTime.Now.AddDays(-1),
-            },
-            new()
-            {
-                Hostname      = "Web Server us-0",
-                Alias         = "web-us-0",
-                IP            = "10.0.1.20",
-                Username      = "ubuntu",
-                Tags          = ["ssh", "dev", "cash"],
-                LogoPath      = "ms-appx:///Assets/fedora.png",
-                LogoBg        = tealBrush,
-                LastConnected = null,
-            },
-        ];
+        HostHistoryStore.Purge(settings.HistoryRetentionDays);
 
-        foreach (var h in samples)
-            _allHosts.Add(h);
+        _allPinned.Clear();
+        foreach (var entry in HostHistoryStore.GetTop(settings.HistoryPinnedTop))
+        {
+            _allPinned.Add(new HostInfoModel
+            {
+                Alias = entry.Alias,
+                Hostname = entry.Hostname,
+                LastConnected = entry.ConnectedAt,
+                ConnectionCount = entry.ConnectionCount,
+                IsMock = entry.IsMock,
+            });
+        }
+
+        _allRecent.Clear();
+        foreach (var entry in HostHistoryStore.GetRecent(150))
+        {
+            _allRecent.Add(new HostInfoModel
+            {
+                Id = entry.Id,
+                Alias = entry.Alias,
+                Hostname = entry.Hostname,
+                LastConnected = entry.ConnectedAt,
+                IsMock = entry.IsMock,
+            });
+        }
     }
 
-    // ── 검색 필터 (React의 useMemo + filter에 해당) ──
+    // ── 검색 필터 (두 섹션 모두에 적용) ──
 
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
@@ -113,47 +95,24 @@ public sealed partial class HostListPanel : UserControl
 
     private void ApplyFilter(string query)
     {
-        var q = query.Trim().ToLowerInvariant();
+        var q = query.Trim();
 
-        var results = string.IsNullOrEmpty(q)
-            ? _allHosts.ToList()
-            : _allHosts.Where(h =>
-                h.Hostname.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                h.Alias.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                h.IP.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                h.Tags.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase))
-            ).ToList();
+        static bool Match(HostInfoModel h, string q) =>
+            h.Alias.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+            h.Hostname.Contains(q, StringComparison.OrdinalIgnoreCase);
+
+        PinnedHosts.Clear();
+        foreach (var h in _allPinned.Where(h => q.Length == 0 || Match(h, q)))
+            PinnedHosts.Add(h);
 
         FilteredHosts.Clear();
-        foreach (var h in results)
+        foreach (var h in _allRecent.Where(h => q.Length == 0 || Match(h, q)))
             FilteredHosts.Add(h);
 
-        EmptyState.Visibility = FilteredHosts.Count == 0
+        PinnedHeader.Visibility = PinnedHosts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        RecentHeader.Visibility = FilteredHosts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        EmptyState.Visibility = PinnedHosts.Count == 0 && FilteredHosts.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
-    }
-
-    // ── 호스트 추가 (React의 setHosts([...hosts, newHost])) ──
-
-    private void AddHost_Click(object sender, RoutedEventArgs e)
-    {
-        // TODO: 다이얼로그를 띄워 입력 받은 뒤 추가
-        // var newHost = await ShowAddHostDialog();
-        // _allHosts.Add(newHost);
-        // ApplyFilter(SearchBox.Text);
-    }
-
-    // ── 외부에서 호스트를 추가/삭제할 수 있는 public API ──
-
-    public void AddHost(HostInfoModel host)
-    {
-        _allHosts.Add(host);
-        ApplyFilter(SearchBox.Text);
-    }
-
-    public void RemoveHost(HostInfoModel host)
-    {
-        _allHosts.Remove(host);
-        ApplyFilter(SearchBox.Text);
     }
 }

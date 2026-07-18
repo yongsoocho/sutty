@@ -33,18 +33,22 @@ namespace sutty.UI.Views
             foreach (var preset in ThemeManager.Presets)
                 ThemeRadios.Items.Add(preset.Name);
             ThemeRadios.SelectedItem = ThemeManager.Find(s.Theme).Name;
+            DarkModeToggle.IsOn = ThemeManager.IsDark(s.Theme);
+            LanguageCombo.SelectedIndex = s.Language == "en" ? 1 : 0;
 
             FontFamilyBox.Text = s.TerminalFontFamily;
             FontSizeBox.Value = s.TerminalFontSize;
             DefaultPortBox.Value = s.DefaultSshPort;
             KeepAliveBox.Value = s.DefaultKeepAliveSeconds;
-            ConfirmCloseToggle.IsOn = s.ConfirmOnTabClose;
+            HistoryDaysBox.Value = s.HistoryRetentionDays;
+            HistoryTopBox.Value = s.HistoryPinnedTop;
 
             // 창 크기 — 0(기본값 사용)이면 빈 칸으로
             MainWidthBox.Value = s.MainWindowWidth > 0 ? s.MainWindowWidth : double.NaN;
             MainHeightBox.Value = s.MainWindowHeight > 0 ? s.MainWindowHeight : double.NaN;
             SettingWidthBox.Value = s.SettingWindowWidth > 0 ? s.SettingWindowWidth : double.NaN;
             SettingHeightBox.Value = s.SettingWindowHeight > 0 ? s.SettingWindowHeight : double.NaN;
+            PanelWidthBox.Value = s.RightPanelWidth > 0 ? s.RightPanelWidth : double.NaN;
 
             SettingsNav.SelectedItem = SettingsNav.MenuItems.First();
             _loading = false;
@@ -63,7 +67,6 @@ namespace sutty.UI.Views
             TerminalPane.Visibility = tag == "Terminal" ? Visibility.Visible : Visibility.Collapsed;
             ConnectionPane.Visibility = tag == "Connection" ? Visibility.Visible : Visibility.Collapsed;
             WindowPane.Visibility = tag == "Window" ? Visibility.Visible : Visibility.Collapsed;
-            BehaviorPane.Visibility = tag == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
         }
 
         // ── 테마: 선택 즉시 적용 + 저장 ──
@@ -71,10 +74,37 @@ namespace sutty.UI.Views
         private void ThemeRadios_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_loading || ThemeRadios.SelectedItem is not string themeName) return;
+            ApplyThemeChoice(themeName);
+        }
 
+        // 언어 변경: 즉시 저장 (이미 떠 있는 화면은 다시 열어야 반영)
+        private void LanguageCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading) return;
+
+            var s = SettingsService.Current;
+            s.Language = LanguageCombo.SelectedIndex == 1 ? "en" : "ko";
+            SettingsService.Save();
+        }
+
+        // 빠른 Dark ↔ Light 전환 (세부 테마는 아래 목록에서)
+        private void DarkModeToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            ApplyThemeChoice(DarkModeToggle.IsOn ? "Dark" : "Light");
+        }
+
+        private void ApplyThemeChoice(string themeName)
+        {
             var s = SettingsService.Current;
             s.Theme = themeName;
             SettingsService.Save();
+
+            // 라디오/토글 상태 동기화 (서로 이벤트를 다시 일으키지 않게 가드)
+            _loading = true;
+            ThemeRadios.SelectedItem = ThemeManager.Find(themeName).Name;
+            DarkModeToggle.IsOn = ThemeManager.IsDark(themeName);
+            _loading = false;
 
             RequestedTheme = ThemeManager.IsDark(themeName) ? ElementTheme.Dark : ElementTheme.Light;
             ThemeChanged?.Invoke(this, themeName);
@@ -95,7 +125,10 @@ namespace sutty.UI.Views
                 s.DefaultSshPort = (int)DefaultPortBox.Value;
             if (!double.IsNaN(KeepAliveBox.Value))
                 s.DefaultKeepAliveSeconds = (int)KeepAliveBox.Value;
-            s.ConfirmOnTabClose = ConfirmCloseToggle.IsOn;
+            if (!double.IsNaN(HistoryDaysBox.Value))
+                s.HistoryRetentionDays = (int)HistoryDaysBox.Value;
+            if (!double.IsNaN(HistoryTopBox.Value))
+                s.HistoryPinnedTop = (int)HistoryTopBox.Value;
 
             if (!double.IsNaN(MainWidthBox.Value))
                 s.MainWindowWidth = (int)MainWidthBox.Value;
@@ -105,6 +138,8 @@ namespace sutty.UI.Views
                 s.SettingWindowWidth = (int)SettingWidthBox.Value;
             if (!double.IsNaN(SettingHeightBox.Value))
                 s.SettingWindowHeight = (int)SettingHeightBox.Value;
+            if (!double.IsNaN(PanelWidthBox.Value))
+                s.RightPanelWidth = (int)PanelWidthBox.Value;
 
             SettingsService.Save();
             SavedText.Visibility = Visibility.Visible;

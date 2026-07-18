@@ -113,7 +113,7 @@
                                 CornerRadius="8"
                                 Maximum="65535"
                                 Minimum="1"
-                                SpinButtonPlacementMode="Compact"
+                                SpinButtonPlacementMode="Hidden"
                                 Value="22" />
                             <TextBlock
                                 VerticalAlignment="Center"

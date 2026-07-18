@@ -21,12 +21,23 @@ public sealed partial class FileNode : ObservableObject
     // [ObservableProperty]는 WinUI3에서 AOT 경고(MVVMTK0045)가 있어 수동 SetProperty 사용
 
     private bool _isExpanded;
-    /// <summary>펼침 상태 (TreeViewItem.IsExpanded와 양방향 바인딩).</summary>
+    /// <summary>펼침 상태 (TreeViewItem.IsExpanded와 양방향 바인딩). 폴더 아이콘도 함께 바뀐다.</summary>
     public bool IsExpanded
     {
         get => _isExpanded;
-        set => SetProperty(ref _isExpanded, value);
+        set
+        {
+            if (SetProperty(ref _isExpanded, value))
+            {
+                OnPropertyChanged(nameof(FolderClosedVisible));
+                OnPropertyChanged(nameof(FolderOpenVisible));
+            }
+        }
     }
+
+    // 닫힌 폴더(E8B7) / 열린 폴더(E838) 아이콘 전환용
+    public bool FolderClosedVisible => IsDirectory && !IsExpanded;
+    public bool FolderOpenVisible => IsDirectory && IsExpanded;
 
     private bool _hasUnrealizedChildren;
     /// <summary>true면 아직 자식을 서버에서 안 읽어옴 → 펼칠 때 지연 로딩.</summary>

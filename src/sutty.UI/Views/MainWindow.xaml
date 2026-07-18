@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:h="using:sutty.UI.Helpers"
     xmlns:local="using:sutty.UI.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:sizers="using:CommunityToolkit.WinUI.Controls"
@@ -45,27 +46,6 @@
             Height="40"
             VerticalAlignment="Top"
             Background="Transparent" />
-
-        <!--  다크/라이트 토글 (캡션 버튼 왼쪽)  -->
-        <Button
-            x:Name="ThemeToggle"
-            Grid.Column="3"
-            Width="34"
-            Height="30"
-            Margin="0,5,150,0"
-            Padding="0"
-            HorizontalAlignment="Right"
-            VerticalAlignment="Top"
-            Background="Transparent"
-            BorderThickness="0"
-            Click="ThemeToggle_Click"
-            ToolTipService.ToolTip="Switch dark / light theme">
-            <FontIcon
-                x:Name="ThemeToggleIcon"
-                FontSize="14"
-                Foreground="{ThemeResource TextMuted}"
-                Glyph="&#xE706;" />
-        </Button>
 
         <!--  ── Column 0: Logo + Left Nav Rail ──  -->
         <Grid Grid.Column="0" Background="{ThemeResource RailBg}">
@@ -118,9 +98,10 @@
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
-                    <NavigationViewItem Content="More" Tag="More">
+                    <!--  Multi: 여러 세션에 동시에 명령 브로드캐스트  -->
+                    <NavigationViewItem Content="Multi" Tag="Multi">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE712;" />
+                            <FontIcon Glyph="&#xE8A9;" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
                 </NavigationView.MenuItems>
@@ -155,12 +136,13 @@
                 TabCloseRequested="TitleTabs_TabCloseRequested"
                 TabWidthMode="SizeToContent" />
 
-            <!--  Main Content: 선택된 탭의 SessionView  -->
+            <!--  Main Content: 선택된 탭의 SessionView (Multi 모드에서는 4×4 그리드)  -->
             <Grid Grid.Row="1" Background="{ThemeResource PanelBg}">
                 <ContentControl
                     x:Name="SessionHost"
                     HorizontalContentAlignment="Stretch"
                     VerticalContentAlignment="Stretch" />
+                <local:MultiSessionGrid x:Name="MultiGrid" Visibility="Collapsed" />
                 <StackPanel
                     x:Name="NoSessionState"
                     HorizontalAlignment="Center"
@@ -175,12 +157,12 @@
                         HorizontalAlignment="Center"
                         Foreground="{ThemeResource TextMuted}"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
-                        Text="No active sessions" />
+                        Text="{x:Bind h:Loc.T('활성 세션 없음', 'No active sessions')}" />
                     <TextBlock
                         HorizontalAlignment="Center"
                         FontSize="12"
                         Foreground="{ThemeResource TextFaint}"
-                        Text="Connect from the Home panel to open a session tab" />
+                        Text="{x:Bind h:Loc.T('Home 패널에서 연결하면 세션 탭이 열립니다 (최대 16개)', 'Connect from the Home panel to open a session tab (max 16)')}" />
                 </StackPanel>
             </Grid>
         </Grid>

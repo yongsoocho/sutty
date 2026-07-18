@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:h="using:sutty.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:sutty.UI.ViewModels"
     HorizontalAlignment="Stretch"
@@ -53,34 +54,55 @@
                     FontSize="12"
                     Foreground="{ThemeResource TextMuted}" />
 
-                <!--  클립보드 내용을 명령으로 실행  -->
+                <!--  RAW(PuTTY식) ↔ REPL(대화 블록) 보기 전환. 설정에 저장됨.  -->
                 <Button
-                    x:Name="PasteButton"
+                    x:Name="ModeToggle"
                     Grid.Column="3"
                     Padding="10,5"
                     VerticalAlignment="Center"
                     Background="{ThemeResource PillBg}"
                     BorderBrush="{ThemeResource CardBorder}"
-                    Click="Paste_Click"
+                    Click="ModeToggle_Click"
                     CornerRadius="7"
-                    IsEnabled="False"
-                    ToolTipService.ToolTip="Paste clipboard as a command and run it">
+                    ToolTipService.ToolTip="RAW(PuTTY식 텍스트) / REPL(대화 블록) 전환">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon
                             FontSize="12"
                             Foreground="{ThemeResource TextMuted}"
-                            Glyph="&#xE77F;" />
+                            Glyph="&#xE8AB;" />
                         <TextBlock
+                            x:Name="ModeText"
                             FontSize="12"
+                            FontWeight="SemiBold"
                             Foreground="{ThemeResource TextPrimary}"
-                            Text="Paste" />
+                            Text="REPL" />
                     </StackPanel>
                 </Button>
             </Grid>
         </Border>
 
-        <!--  노트북 셀 목록: 명령 한 줄 = 입력 블록 + 출력 블록  -->
-        <Border Grid.Row="1" Background="{ThemeResource TerminalBg}">
+        <!--  RAW 보기: PuTTY처럼 검정 화면에 흰 글씨 (테마 무관)  -->
+        <Border
+            x:Name="RawView"
+            Grid.Row="1"
+            Background="#000000"
+            Visibility="Collapsed">
+            <ScrollViewer x:Name="RawScroll" Padding="12,10">
+                <TextBlock
+                    x:Name="RawText"
+                    FontFamily="Cascadia Mono, Consolas"
+                    FontSize="13"
+                    Foreground="#F2F2F2"
+                    IsTextSelectionEnabled="True"
+                    TextWrapping="Wrap" />
+            </ScrollViewer>
+        </Border>
+
+        <!--  REPL 보기(노트북 셀): 명령 한 줄 = 입력 블록 + 출력 블록  -->
+        <Border
+            x:Name="ReplView"
+            Grid.Row="1"
+            Background="{ThemeResource TerminalBg}">
             <ScrollViewer
                 x:Name="CellsScroll"
                 Padding="12,10"
@@ -221,15 +243,28 @@
                     Text="$"
                     TextTrimming="CharacterEllipsis"
                     ToolTipService.ToolTip="현재 경로" />
+                <!--
+                    멀티라인 입력:
+                    - Enter = 실행
+                    - Shift+Enter = 줄바꿈
+                    - 줄 끝이 \ (bash) 또는 ` (PowerShell)면 Enter도 줄바꿈 (연속 명령)
+                -->
+                <!--
+                    AcceptsReturn=True면 TextBox가 Enter를 내부에서 먼저 처리해 버려서
+                    KeyDown에는 안 들어온다 → 컨트롤보다 먼저 오는 PreviewKeyDown 사용.
+                -->
                 <TextBox
                     x:Name="CommandBox"
                     Grid.Column="1"
+                    MaxHeight="130"
                     VerticalAlignment="Center"
+                    AcceptsReturn="True"
                     CornerRadius="7"
                     FontSize="13"
                     IsEnabled="False"
-                    KeyDown="CommandBox_KeyDown"
-                    PlaceholderText="Type a command and press Enter" />
+                    PlaceholderText="{x:Bind h:Loc.T('Enter=실행 · Shift+Enter=줄바꿈', 'Enter = run · Shift+Enter = new line')}"
+                    PreviewKeyDown="CommandBox_PreviewKeyDown"
+                    TextWrapping="Wrap" />
                 <Button
                     x:Name="RunButton"
                     Grid.Column="2"

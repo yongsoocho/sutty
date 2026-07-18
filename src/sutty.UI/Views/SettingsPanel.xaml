@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:h="using:sutty.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
@@ -40,24 +41,48 @@
                         <FontIcon Glyph="&#xE740;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Behavior" Tag="Behavior">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE713;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
             </NavigationView.MenuItems>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <Grid Padding="20,12,20,20">
 
-                    <!--  ── Appearance: 테마 선택 (선택 즉시 적용/저장) ──  -->
+                    <!--  ── Appearance: 언어/테마 (선택 즉시 적용/저장) ──  -->
                     <StackPanel x:Name="AppearancePane" Spacing="14">
-                        <TextBlock Style="{StaticResource SectionHeader}" Text="Appearance" />
+                        <TextBlock Style="{StaticResource SectionHeader}" Text="{x:Bind h:Loc.T('모양 / 언어', 'Appearance')}" />
                         <TextBlock
                             Margin="2,-8,0,0"
                             FontSize="11"
                             Foreground="{ThemeResource TextFaint}"
-                            Text="테마를 고르면 즉시 적용되고 저장됩니다." />
+                            Text="{x:Bind h:Loc.T('선택하면 즉시 적용되고 저장됩니다.', 'Choices apply and save immediately.')}" />
+
+                        <!--  언어  -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Language / 언어" />
+                                <ComboBox
+                                    x:Name="LanguageCombo"
+                                    HorizontalAlignment="Stretch"
+                                    CornerRadius="8"
+                                    SelectionChanged="LanguageCombo_SelectionChanged">
+                                    <ComboBoxItem Content="한국어" />
+                                    <ComboBoxItem Content="English" />
+                                </ComboBox>
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="{ThemeResource TextFaint}"
+                                    Text="{x:Bind h:Loc.T('다시 여는 화면부터 적용됩니다 (완전 적용은 앱 재시작).', 'Applies to newly opened panels (restart for full effect).')}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}">
+                            <ToggleSwitch
+                                x:Name="DarkModeToggle"
+                                Header="Dark / Light"
+                                OffContent="Light"
+                                OnContent="Dark"
+                                Toggled="DarkModeToggle_Toggled" />
+                        </Border>
                         <Border Style="{StaticResource Card}">
                             <RadioButtons
                                 x:Name="ThemeRadios"
@@ -106,7 +131,7 @@
                                         CornerRadius="8"
                                         Maximum="65535"
                                         Minimum="1"
-                                        SpinButtonPlacementMode="Compact" />
+                                        SpinButtonPlacementMode="Hidden" />
                                 </StackPanel>
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource FieldLabel}" Text="Keep-alive interval (seconds)" />
@@ -114,6 +139,31 @@
                                         x:Name="KeepAliveBox"
                                         CornerRadius="8"
                                         Maximum="3600"
+                                        Minimum="0"
+                                        SpinButtonPlacementMode="Compact" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!--  접속 히스토리 (append-only 로그) 설정  -->
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Style="{StaticResource SectionHeader}" Text="History" />
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="{x:Bind h:Loc.T('보관 일수 (지난 기록은 자동 삭제)', 'Retention days (older logs auto-deleted)')}" />
+                                    <NumberBox
+                                        x:Name="HistoryDaysBox"
+                                        CornerRadius="8"
+                                        Maximum="365"
+                                        Minimum="1"
+                                        SpinButtonPlacementMode="Compact" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource FieldLabel}" Text="{x:Bind h:Loc.T('상단 고정 TOP 개수 (자주 접속한 호스트)', 'Pinned TOP count (most connected hosts)')}" />
+                                    <NumberBox
+                                        x:Name="HistoryTopBox"
+                                        CornerRadius="8"
+                                        Maximum="10"
                                         Minimum="0"
                                         SpinButtonPlacementMode="Compact" />
                                 </StackPanel>
@@ -132,7 +182,7 @@
                                 <TextBlock
                                     FontSize="11"
                                     Foreground="{ThemeResource TextFaint}"
-                                    Text="드래그로 조절한 크기도 자동 저장됩니다. 저장하면 즉시 적용."
+                                    Text="{x:Bind h:Loc.T('드래그로 조절한 크기도 자동 저장됩니다. 저장하면 즉시 적용.', 'Sizes changed by dragging are saved too. Save applies immediately.')}"
                                     TextWrapping="Wrap" />
                                 <TextBlock Style="{StaticResource FieldLabel}" Text="Main window (width × height)" />
                                 <Grid ColumnSpacing="8">
@@ -157,6 +207,14 @@
                                         PlaceholderText="height"
                                         SpinButtonPlacementMode="Hidden" />
                                 </Grid>
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="Right panel width (px, 220~800)" />
+                                <NumberBox
+                                    x:Name="PanelWidthBox"
+                                    CornerRadius="8"
+                                    Maximum="800"
+                                    Minimum="220"
+                                    PlaceholderText="width"
+                                    SpinButtonPlacementMode="Hidden" />
                                 <TextBlock Style="{StaticResource FieldLabel}" Text="Settings window (width × height)" />
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
@@ -184,19 +242,6 @@
                         </Border>
                     </StackPanel>
 
-                    <!--  ── Behavior ──  -->
-                    <StackPanel
-                        x:Name="BehaviorPane"
-                        Spacing="14"
-                        Visibility="Collapsed">
-                        <TextBlock Style="{StaticResource SectionHeader}" Text="Behavior" />
-                        <Border Style="{StaticResource Card}">
-                            <ToggleSwitch
-                                x:Name="ConfirmCloseToggle"
-                                Foreground="{ThemeResource TextMuted}"
-                                Header="Confirm before closing a connected tab" />
-                        </Border>
-                    </StackPanel>
                 </Grid>
             </ScrollViewer>
 

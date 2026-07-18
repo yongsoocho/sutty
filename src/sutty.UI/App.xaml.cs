@@ -58,6 +58,21 @@ namespace sutty.UI
             // (the merged resource dictionaries / themes) so they are available
             // to every window. Must run before any UI is created.
             InitializeComponent();
+
+            // 처리 안 된 예외를 파일로 남긴다 (%LOCALAPPDATA%\sutty\crash.log)
+            UnhandledException += (_, e) =>
+            {
+                try
+                {
+                    var path = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "sutty", "crash.log");
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+                    System.IO.File.AppendAllText(path,
+                        $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {e.Message}\n{e.Exception}\n----\n");
+                }
+                catch { /* 로그 실패는 무시 */ }
+            };
         }
 
         /// <summary>
