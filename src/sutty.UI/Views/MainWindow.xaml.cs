@@ -273,12 +273,49 @@ namespace sutty.UI.Views
             var session = _sessions.Create(info);
             var view = new SessionView(session);
 
+            // 리디자인 탭 헤더: [상태점] 세션이름 username
+            var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                VerticalAlignment = VerticalAlignment.Center,
+                Fill = (Brush)Application.Current.Resources["StatusIdle"],
+            };
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            header.Children.Add(dot);
+            header.Children.Add(new TextBlock
+            {
+                Text = info.Title,
+                FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            if (!string.IsNullOrWhiteSpace(info.Username))
+            {
+                header.Children.Add(new TextBlock
+                {
+                    Text = info.Username,
+                    FontSize = 11,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextFaint"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+            }
+
+            // 상태점 색을 세션 상태에 따라 갱신
+            session.StateChanged += (_, state) => DispatcherQueue.TryEnqueue(() =>
+                dot.Fill = (Brush)Application.Current.Resources[state switch
+                {
+                    SessionState.Connected => "StatusGreen",
+                    SessionState.Connecting or SessionState.Disconnecting => "StatusAmber",
+                    SessionState.Failed => "StatusRed",
+                    _ => "StatusIdle",
+                }]);
+
             var tab = new TabViewItem
             {
-                Header = info.Title,
+                Header = header,
                 IsClosable = true,
                 DataContext = view,
-                IconSource = new FontIconSource { Glyph = "" },
             };
 
             TitleTabs.TabItems.Add(tab);

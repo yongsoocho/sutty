@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
-    sutty 공용 팔레트 & 스타일.
-    Dark/Light 두 테마를 ThemeDictionaries로 정의한다.
-    팔레트 키를 쓸 때는 반드시 {ThemeResource ...} 로 참조할 것 (토글 시 자동 갱신).
-    상태 색(StatusGreen 등)은 테마와 무관하므로 메인 딕셔너리에 둔다.
-
-    영역 구분: RailBg(왼쪽 네비) > SidePanelBg(오른쪽 패널) > PanelBg(가운데 콘텐츠)
-    서로 명확히 다른 밝기/색조를 유지할 것.
+    sutty 공용 팔레트 & 스타일 — "Sutty 리디자인 / Deep Field" 디자인 원본(dc.html) 값 그대로.
+    다크(1a Deep Field)와 라이트(1c Deep Field Light) 두 벌.
+    시그니처 그라디언트: 파랑 #2E7CD6 → 틸 #14A79C (라이트: #2570C8 → #0FA396).
+    팔레트 키는 반드시 {ThemeResource ...} 로 참조 (토글 시 자동 갱신).
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -14,106 +11,178 @@
 
     <ResourceDictionary.ThemeDictionaries>
 
-        <!--  ═══════════ DARK (indigo navy) ═══════════  -->
+        <!--  ═══════════ DARK (1a Deep Field) ═══════════  -->
         <ResourceDictionary x:Key="Dark">
-            <SolidColorBrush x:Key="AppBg" Color="#0A0E16" />
-            <SolidColorBrush x:Key="PanelBg" Color="#0C1119" />
-            <SolidColorBrush x:Key="SidePanelBg" Color="#131D30" />
-            <LinearGradientBrush x:Key="RailBg" StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Offset="0.0" Color="#1C2749" />
-                <GradientStop Offset="1.0" Color="#0E1428" />
-            </LinearGradientBrush>
-            <SolidColorBrush x:Key="CardBg" Color="#1A2438" />
-            <SolidColorBrush x:Key="CardBgHover" Color="#223049" />
-            <SolidColorBrush x:Key="CardBorder" Color="#2B3C5C" />
-            <SolidColorBrush x:Key="InputBg" Color="#0D1523" />
-            <SolidColorBrush x:Key="PillBg" Color="#16233B" />
-            <SolidColorBrush x:Key="TextPrimary" Color="#EAF0F8" />
-            <SolidColorBrush x:Key="TextMuted" Color="#93A2BB" />
-            <SolidColorBrush x:Key="TextFaint" Color="#5C6C88" />
-            <SolidColorBrush x:Key="AccentBlue" Color="#5B9CFF" />
-            <SolidColorBrush x:Key="AccentTeal" Color="#2FC6B7" />
+            <SolidColorBrush x:Key="AppBg" Color="#0B0E11" />
+            <SolidColorBrush x:Key="PanelBg" Color="#0C1015" />
+            <SolidColorBrush x:Key="SidePanelBg" Color="#10141A" />
+            <SolidColorBrush x:Key="RailBg" Color="#0E1216" />
+            <SolidColorBrush x:Key="CardBg" Color="#151B22" />
+            <SolidColorBrush x:Key="CardBgHover" Color="#161C22" />
+            <SolidColorBrush x:Key="CardBorder" Color="#1E242B" />
+            <SolidColorBrush x:Key="InputBg" Color="#0C1015" />
+            <SolidColorBrush x:Key="PillBg" Color="#12171D" />
+            <SolidColorBrush x:Key="TextPrimary" Color="#E8EDF2" />
+            <SolidColorBrush x:Key="TextMuted" Color="#8C99A8" />
+            <SolidColorBrush x:Key="TextFaint" Color="#6E7C8B" />
+            <SolidColorBrush x:Key="AccentBlue" Color="#2BC7B5" />
+            <SolidColorBrush x:Key="AccentTeal" Color="#5BDCCB" />
             <SolidColorBrush x:Key="AccentViolet" Color="#8B7CF6" />
-            <SolidColorBrush x:Key="TerminalBg" Color="#0A0E15" />
-            <SolidColorBrush x:Key="TerminalFg" Color="#C9D6E4" />
+            <SolidColorBrush x:Key="TerminalBg" Color="#0C1015" />
+            <SolidColorBrush x:Key="TerminalFg" Color="#8C99A8" />
 
-            <!--  TextBox / PasswordBox (다크 전용 lightweight styling)  -->
-            <SolidColorBrush x:Key="TextControlBackground" Color="#0D1523" />
-            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#121D33" />
-            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#121D33" />
-            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#2B3C5C" />
-            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#3A507A" />
-            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#5B9CFF" />
-            <SolidColorBrush x:Key="TextControlForeground" Color="#EAF0F8" />
-            <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#EAF0F8" />
-            <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#EAF0F8" />
-            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#5C6C88" />
-            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#5C6C88" />
-            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#5C6C88" />
+            <!--  시그니처 그라디언트  -->
+            <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Offset="0" Color="#2E7CD6" />
+                <GradientStop Offset="1" Color="#14A79C" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentGradientHover" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Offset="0" Color="#4E9AF0" />
+                <GradientStop Offset="1" Color="#2BC7B5" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentIndicator" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Offset="0" Color="#2E7CD6" />
+                <GradientStop Offset="1" Color="#14A79C" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentTint" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Offset="0" Color="#382E7CD6" />
+                <GradientStop Offset="1" Color="#3814A79C" />
+            </LinearGradientBrush>
+
+            <!--  TextBox / PasswordBox  -->
+            <SolidColorBrush x:Key="TextControlBackground" Color="#0C1015" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#12171D" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#12171D" />
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#232C36" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#2E3A46" />
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#2BC7B5" />
+            <SolidColorBrush x:Key="TextControlForeground" Color="#E8EDF2" />
+            <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#E8EDF2" />
+            <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#E8EDF2" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#4F5D6B" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#4F5D6B" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#4F5D6B" />
 
             <!--  ComboBox  -->
-            <SolidColorBrush x:Key="ComboBoxBackground" Color="#0D1523" />
-            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#121D33" />
-            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#121D33" />
-            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#2B3C5C" />
-            <SolidColorBrush x:Key="ComboBoxForeground" Color="#EAF0F8" />
-            <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#1A2438" />
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#0C1015" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#12171D" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#12171D" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#232C36" />
+            <SolidColorBrush x:Key="ComboBoxForeground" Color="#E8EDF2" />
+            <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#151B22" />
 
-            <!--  TabView (타이틀바 세션 탭)  -->
+            <!--  TabView (세션 탭)  -->
             <SolidColorBrush x:Key="TabViewBackground" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackground" Color="Transparent" />
-            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#1A2438" />
-            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundPointerOver" Color="#101828" />
-            <SolidColorBrush x:Key="TabViewItemHeaderForeground" Color="#93A2BB" />
-            <SolidColorBrush x:Key="TabViewItemHeaderForegroundSelected" Color="#EAF0F8" />
-            <SolidColorBrush x:Key="TabViewItemHeaderForegroundPointerOver" Color="#C7D2E3" />
-            <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#93A2BB" />
-            <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#5B9CFF" />
+            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#151B22" />
+            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundPointerOver" Color="#12171D" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForeground" Color="#8C99A8" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForegroundSelected" Color="#E8EDF2" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForegroundPointerOver" Color="#B9C4CF" />
+            <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#8C99A8" />
+            <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#2BC7B5" />
+
+            <!--  NavigationView (왼쪽 레일): 선택 표시 = 세로 그라디언트 바 + 밝은 틸 아이콘  -->
+            <LinearGradientBrush x:Key="NavigationViewSelectionIndicatorForeground" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Offset="0" Color="#2E7CD6" />
+                <GradientStop Offset="1" Color="#14A79C" />
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#5BDCCB" />
+            <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPointerOver" Color="#5BDCCB" />
+            <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#6E7C8B" />
+            <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#B9C4CF" />
         </ResourceDictionary>
 
-        <!--  ═══════════ LIGHT ═══════════  -->
+        <!--  ═══════════ LIGHT (1c Deep Field Light) ═══════════  -->
         <ResourceDictionary x:Key="Light">
-            <SolidColorBrush x:Key="AppBg" Color="#E9EDF5" />
-            <SolidColorBrush x:Key="PanelBg" Color="#EFF3F8" />
-            <SolidColorBrush x:Key="SidePanelBg" Color="#FBFCFE" />
-            <LinearGradientBrush x:Key="RailBg" StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Offset="0.0" Color="#DFE6F3" />
-                <GradientStop Offset="1.0" Color="#CBD6E9" />
-            </LinearGradientBrush>
+            <SolidColorBrush x:Key="AppBg" Color="#EDF0F3" />
+            <SolidColorBrush x:Key="PanelBg" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="SidePanelBg" Color="#F7F9FA" />
+            <SolidColorBrush x:Key="RailBg" Color="#E4E9EE" />
             <SolidColorBrush x:Key="CardBg" Color="#FFFFFF" />
-            <SolidColorBrush x:Key="CardBgHover" Color="#F1F5FB" />
-            <SolidColorBrush x:Key="CardBorder" Color="#D5DDE9" />
+            <SolidColorBrush x:Key="CardBgHover" Color="#EDF0F3" />
+            <SolidColorBrush x:Key="CardBorder" Color="#D8DEE5" />
             <SolidColorBrush x:Key="InputBg" Color="#FFFFFF" />
-            <SolidColorBrush x:Key="PillBg" Color="#EBF0F8" />
-            <SolidColorBrush x:Key="TextPrimary" Color="#1A2433" />
-            <SolidColorBrush x:Key="TextMuted" Color="#59698B" />
-            <SolidColorBrush x:Key="TextFaint" Color="#8C9AB0" />
-            <SolidColorBrush x:Key="AccentBlue" Color="#2B6BE0" />
-            <SolidColorBrush x:Key="AccentTeal" Color="#0FA396" />
+            <SolidColorBrush x:Key="PillBg" Color="#E6EAEF" />
+            <SolidColorBrush x:Key="TextPrimary" Color="#1C2530" />
+            <SolidColorBrush x:Key="TextMuted" Color="#5A6875" />
+            <SolidColorBrush x:Key="TextFaint" Color="#93A0AC" />
+            <SolidColorBrush x:Key="AccentBlue" Color="#0FA396" />
+            <SolidColorBrush x:Key="AccentTeal" Color="#0B7C72" />
             <SolidColorBrush x:Key="AccentViolet" Color="#6A5AE0" />
-            <SolidColorBrush x:Key="TerminalBg" Color="#ECF0F6" />
-            <SolidColorBrush x:Key="TerminalFg" Color="#23292F" />
+            <SolidColorBrush x:Key="TerminalBg" Color="#F7F9FA" />
+            <SolidColorBrush x:Key="TerminalFg" Color="#48545F" />
 
-            <!--  TabView — 라이트에서도 탭이 카드처럼 보이게  -->
+            <!--  시그니처 그라디언트 (라이트)  -->
+            <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Offset="0" Color="#2570C8" />
+                <GradientStop Offset="1" Color="#0FA396" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentGradientHover" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Offset="0" Color="#2E7CD6" />
+                <GradientStop Offset="1" Color="#14A79C" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentIndicator" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Offset="0" Color="#2570C8" />
+                <GradientStop Offset="1" Color="#0FA396" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentTint" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Offset="0" Color="#242570C8" />
+                <GradientStop Offset="1" Color="#240FA396" />
+            </LinearGradientBrush>
+
+            <!--  TextBox / PasswordBox  -->
+            <SolidColorBrush x:Key="TextControlBackground" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#D2D9E0" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#C4CDD6" />
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#0FA396" />
+            <SolidColorBrush x:Key="TextControlForeground" Color="#1C2530" />
+            <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#1C2530" />
+            <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#1C2530" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#93A0AC" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#93A0AC" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#93A0AC" />
+
+            <!--  ComboBox  -->
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#F7F9FA" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#F7F9FA" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#D2D9E0" />
+            <SolidColorBrush x:Key="ComboBoxForeground" Color="#1C2530" />
+            <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#FFFFFF" />
+
+            <!--  TabView  -->
             <SolidColorBrush x:Key="TabViewBackground" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackground" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#FFFFFF" />
-            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundPointerOver" Color="#E2E9F4" />
-            <SolidColorBrush x:Key="TabViewItemHeaderForeground" Color="#59698B" />
-            <SolidColorBrush x:Key="TabViewItemHeaderForegroundSelected" Color="#1A2433" />
-            <SolidColorBrush x:Key="TabViewItemHeaderForegroundPointerOver" Color="#33405A" />
-            <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#59698B" />
-            <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#2B6BE0" />
+            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundPointerOver" Color="#E4E9EE" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForeground" Color="#5A6875" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForegroundSelected" Color="#1C2530" />
+            <SolidColorBrush x:Key="TabViewItemHeaderForegroundPointerOver" Color="#48545F" />
+            <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#5A6875" />
+            <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#0FA396" />
+
+            <!--  NavigationView  -->
+            <LinearGradientBrush x:Key="NavigationViewSelectionIndicatorForeground" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Offset="0" Color="#2570C8" />
+                <GradientStop Offset="1" Color="#0FA396" />
+            </LinearGradientBrush>
+            <SolidColorBrush x:Key="NavigationViewItemForegroundSelected" Color="#0B7C72" />
+            <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPointerOver" Color="#0B7C72" />
+            <SolidColorBrush x:Key="NavigationViewItemForeground" Color="#93A0AC" />
+            <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOver" Color="#48545F" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
-    <!--  ===== 테마 무관 상태 색 =====  -->
-    <SolidColorBrush x:Key="StatusGreen" Color="#3FB68B" />
+    <!--  ===== 테마 무관 상태 색 (디자인 원본) =====  -->
+    <SolidColorBrush x:Key="StatusGreen" Color="#34C08D" />
     <SolidColorBrush x:Key="StatusAmber" Color="#E9B44C" />
-    <SolidColorBrush x:Key="StatusRed" Color="#E95420" />
-    <SolidColorBrush x:Key="StatusIdle" Color="#7A889E" />
+    <SolidColorBrush x:Key="StatusRed" Color="#D64848" />
+    <SolidColorBrush x:Key="StatusIdle" Color="#6E7C8B" />
 
-    <!--  ===== 공용 스타일 (색은 ThemeResource로 테마 추적) =====  -->
+    <!--  ===== 공용 스타일 =====  -->
     <Style x:Key="SectionHeader" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{ThemeResource TextPrimary}" />
         <Setter Property="FontSize" Value="15" />
@@ -127,37 +196,46 @@
         <Setter Property="Margin" Value="2,0,0,5" />
     </Style>
 
+    <!--  리디자인: 대문자 작은 폼 라벨 (ADDRESS, USERNAME ...)  -->
+    <Style x:Key="FormLabel" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFaint}" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CharacterSpacing" Value="100" />
+        <Setter Property="Margin" Value="1,0,0,6" />
+    </Style>
+
     <Style x:Key="DarkInput" TargetType="TextBox">
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Padding" Value="12,8" />
-        <Setter Property="FontSize" Value="14" />
-        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="CornerRadius" Value="7" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="MinHeight" Value="38" />
     </Style>
 
     <Style x:Key="DarkPassword" TargetType="PasswordBox">
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Padding" Value="12,8" />
-        <Setter Property="FontSize" Value="14" />
-        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="CornerRadius" Value="7" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="MinHeight" Value="38" />
     </Style>
 
     <Style x:Key="Card" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource CardBg}" />
         <Setter Property="BorderBrush" Value="{ThemeResource CardBorder}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="12" />
-        <Setter Property="Padding" Value="16" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="14" />
     </Style>
 
     <Style x:Key="TagPill" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource PillBg}" />
         <Setter Property="BorderBrush" Value="{ThemeResource CardBorder}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="14" />
-        <Setter Property="Padding" Value="10,5" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="10,4" />
     </Style>
 
-    <!--  패널 제목 옆 색 점 (Connect=파랑, History=청록, Files=보라 ...)  -->
+    <!--  패널 제목 옆 색 점  -->
     <Style x:Key="HeaderDot" TargetType="Border">
         <Setter Property="Width" Value="8" />
         <Setter Property="Height" Value="8" />

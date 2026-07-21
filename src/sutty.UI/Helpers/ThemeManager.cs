@@ -33,24 +33,26 @@ public static class ThemeManager
 
     public static IReadOnlyList<ThemePreset> Presets { get; } =
     [
-        new("Dark", true, "#1C2749", "#0E1428", new Dictionary<string, string>
+        // 기본 다크 = "Sutty Deep Field" 디자인 원본 (1a) — Palette.xaml Dark 딕셔너리와 동일 값 유지
+        new("Dark", true, "#0E1216", "#0E1216", new Dictionary<string, string>
         {
-            ["AppBg"] = "#0A0E16", ["PanelBg"] = "#0C1119", ["SidePanelBg"] = "#131D30",
-            ["CardBg"] = "#1A2438", ["CardBgHover"] = "#223049", ["CardBorder"] = "#2B3C5C",
-            ["InputBg"] = "#0D1523", ["PillBg"] = "#16233B",
-            ["TextPrimary"] = "#EAF0F8", ["TextMuted"] = "#93A2BB", ["TextFaint"] = "#5C6C88",
-            ["AccentBlue"] = "#5B9CFF", ["AccentTeal"] = "#2FC6B7", ["AccentViolet"] = "#8B7CF6",
-            ["TerminalBg"] = "#0A0E15", ["TerminalFg"] = "#C9D6E4",
+            ["AppBg"] = "#0B0E11", ["PanelBg"] = "#0C1015", ["SidePanelBg"] = "#10141A",
+            ["CardBg"] = "#151B22", ["CardBgHover"] = "#161C22", ["CardBorder"] = "#1E242B",
+            ["InputBg"] = "#0C1015", ["PillBg"] = "#12171D",
+            ["TextPrimary"] = "#E8EDF2", ["TextMuted"] = "#8C99A8", ["TextFaint"] = "#6E7C8B",
+            ["AccentBlue"] = "#2BC7B5", ["AccentTeal"] = "#5BDCCB", ["AccentViolet"] = "#8B7CF6",
+            ["TerminalBg"] = "#0C1015", ["TerminalFg"] = "#8C99A8",
         }),
 
-        new("Light", false, "#DFE6F3", "#CBD6E9", new Dictionary<string, string>
+        // 라이트 = "Deep Field Light" 디자인 원본 (1c)
+        new("Light", false, "#E4E9EE", "#E4E9EE", new Dictionary<string, string>
         {
-            ["AppBg"] = "#E9EDF5", ["PanelBg"] = "#EFF3F8", ["SidePanelBg"] = "#FBFCFE",
-            ["CardBg"] = "#FFFFFF", ["CardBgHover"] = "#F1F5FB", ["CardBorder"] = "#D5DDE9",
-            ["InputBg"] = "#FFFFFF", ["PillBg"] = "#EBF0F8",
-            ["TextPrimary"] = "#1A2433", ["TextMuted"] = "#59698B", ["TextFaint"] = "#8C9AB0",
-            ["AccentBlue"] = "#2B6BE0", ["AccentTeal"] = "#0FA396", ["AccentViolet"] = "#6A5AE0",
-            ["TerminalBg"] = "#ECF0F6", ["TerminalFg"] = "#23292F",
+            ["AppBg"] = "#EDF0F3", ["PanelBg"] = "#FFFFFF", ["SidePanelBg"] = "#F7F9FA",
+            ["CardBg"] = "#FFFFFF", ["CardBgHover"] = "#EDF0F3", ["CardBorder"] = "#D8DEE5",
+            ["InputBg"] = "#FFFFFF", ["PillBg"] = "#E6EAEF",
+            ["TextPrimary"] = "#1C2530", ["TextMuted"] = "#5A6875", ["TextFaint"] = "#93A0AC",
+            ["AccentBlue"] = "#0FA396", ["AccentTeal"] = "#0B7C72", ["AccentViolet"] = "#6A5AE0",
+            ["TerminalBg"] = "#F7F9FA", ["TerminalFg"] = "#48545F",
         }),
 
         new("Dracula", true, "#2B2D3A", "#191A21", new Dictionary<string, string>

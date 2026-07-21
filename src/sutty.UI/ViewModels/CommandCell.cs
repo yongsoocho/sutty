@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using System;
 
 namespace sutty.UI.ViewModels;
 
@@ -16,10 +17,22 @@ public sealed class CommandCell : ObservableObject
     /// <summary>입력 블록 앞에 붙는 프롬프트 (예: admin@10.0.0.15).</summary>
     public string Prompt { get; set; } = "$";
 
-    /// <summary>몇 번째 명령인지 (Jupyter의 In [n]). 시스템 셀은 0.</summary>
+    /// <summary>몇 번째 명령인지. 시스템 셀은 0.</summary>
     public int Index { get; set; }
 
     public string InLabel => Index > 0 ? $"In [{Index}]" : "In [ ]";
+    public string IndexText => Index > 0 ? Index.ToString() : "";
+
+    /// <summary>명령 실행 시작 시각.</summary>
+    public DateTime StartedAt { get; set; } = DateTime.Now;
+
+    private string _timeText = "";
+    /// <summary>완료 후 "14:01:52 · 12ms" 형태로 채워지는 타임스탬프.</summary>
+    public string TimeText
+    {
+        get => _timeText;
+        set => SetProperty(ref _timeText, value);
+    }
 
     public bool HasCommand => !string.IsNullOrEmpty(Command);
 

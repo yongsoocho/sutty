@@ -54,15 +54,15 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <!--  컬러 로고 (lightunplated 흰색 버전은 라이트 테마에서 안 보임)  -->
+            <!--  디자인 원본 로고 (좀 더 크게)  -->
             <Image
                 Grid.Row="0"
-                Width="24"
-                Height="24"
-                Margin="0,8,0,0"
+                Width="32"
+                Height="32"
+                Margin="0,6,0,0"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
-                Source="ms-appx:///Assets/sutty.targetsize-48.png" />
+                Source="ms-appx:///Assets/sutty-48.png" />
             <NavigationView
                 x:Name="LeftNav"
                 Grid.Row="1"
@@ -91,10 +91,10 @@
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
-                    <!--  Command: 자주 쓰는 명령어 playbook  -->
+                    <!--  Command: 자주 쓰는 명령어 playbook (디자인: 번개 아이콘)  -->
                     <NavigationViewItem Content="Command" Tag="Command">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE943;" />
+                            <FontIcon Glyph="&#xE945;" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 

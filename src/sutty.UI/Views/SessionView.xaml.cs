@@ -4,19 +4,22 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Sessions;
 using sutty.Setting;
+using sutty.UI.Helpers;
 using sutty.UI.ViewModels;
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
+using Windows.UI;
 
 namespace sutty.UI.Views
 {
     /// <summary>
-    /// 탭 하나에 대응하는 세션 화면. 보기 방식이 두 가지다 (헤더 토글, 설정에 저장):
-    /// - REPL: Jupyter처럼 [명령 입력 블록 + 출력 블록] 셀 단위, 블록마다 paste 버튼
-    /// - RAW : PuTTY처럼 검정 화면에 흰 글씨 텍스트 로그
-    /// 아래 입력 줄에서 Enter → 실행. 프롬프트에 현재 경로가 항상 표시된다.
+    /// 탭 하나에 대응하는 세션 화면 (Deep Field 리디자인).
+    /// - REPL: ❯ N 명령 + 타임스탬프·소요시간, 들여쓴 출력 (플랫)
+    /// - RAW : PuTTY식 검정 화면
+    /// - 헤더의 CONNECTED 필은 업타임을 실시간 카운트
     /// </summary>
     public sealed partial class SessionView : UserControl
     {
@@ -25,14 +28,18 @@ namespace sutty.UI.Views
 
         private readonly string _prompt;
         private readonly StringBuilder _rawLog = new(); // RAW 보기용 텍스트 로그
-        private int _cellIndex; // Jupyter의 In [n] 번호
+        private int _cellIndex;
         private string _cwd = "~"; // 현재 원격 작업 디렉터리 (cd로 갱신)
         private bool _isRaw;
+
+        private DateTime _connectedAt;
+        private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _uptimeTimer;
 
         public SessionView(ISshSession session)
         {
             Session = session;
-            _prompt = BuildPrompt(session);
+            var user = string.IsNullOrWhiteSpace(session.Info.Username) ? "root" : session.Info.Username;
+            _prompt = $"{user}@{session.Info.Host}";
             InitializeComponent();
 
             var settings = SettingsService.Current;
@@ -42,62 +49,104 @@ namespace sutty.UI.Views
             CommandBox.FontFamily = mono;
             RawText.FontFamily = mono;
             RawText.FontSize = settings.TerminalFontSize;
+            InputPrompt.FontFamily = mono;
 
             _isRaw = settings.TerminalMode == "Raw";
             ApplyViewMode();
 
-            TitleText.Text = Session.Info.Title;
+            TitleText.Text = $"{user}@{Session.Info.Title} · {Session.Info.Host}:{Session.Info.Port}";
             UpdatePrompt();
+
+            // 업타임 카운터 (연결 중일 때 1초마다 갱신)
+            _uptimeTimer = DispatcherQueue.CreateTimer();
+            _uptimeTimer.Interval = TimeSpan.FromSeconds(1);
+            _uptimeTimer.IsRepeating = true;
+            _uptimeTimer.Tick += (_, _) => UpdateStatusPill(Session.State);
 
             // StateChanged는 백그라운드 스레드에서 올 수 있으므로 UI 스레드로 마샬링
             Session.StateChanged += OnStateChanged;
             ApplyState(Session.State, initial: true);
         }
 
-        private static string BuildPrompt(ISshSession session)
-        {
-            var user = string.IsNullOrWhiteSpace(session.Info.Username) ? "root" : session.Info.Username;
-            return $"{user}@{session.Info.Host}";
-        }
+        // ── RAW ↔ REPL 세그먼트 토글 ──
 
-        // ── RAW ↔ REPL 보기 전환 ──
+        private void ReplBtn_Click(object sender, RoutedEventArgs e) => SetViewMode(isRaw: false);
+        private void RawBtn_Click(object sender, RoutedEventArgs e) => SetViewMode(isRaw: true);
 
-        private void ApplyViewMode()
+        private void SetViewMode(bool isRaw)
         {
-            ReplView.Visibility = _isRaw ? Visibility.Collapsed : Visibility.Visible;
-            RawView.Visibility = _isRaw ? Visibility.Visible : Visibility.Collapsed;
-            ModeText.Text = _isRaw ? "RAW" : "REPL";
-        }
-
-        private void ModeToggle_Click(object sender, RoutedEventArgs e)
-        {
-            _isRaw = !_isRaw;
+            if (_isRaw == isRaw) return;
+            _isRaw = isRaw;
             SettingsService.Current.TerminalMode = _isRaw ? "Raw" : "Repl";
             SettingsService.Save(); // 다음 실행/다음 세션에도 유지
             ApplyViewMode();
             ScrollToBottom();
         }
 
-        // ── 세션 상태 ──
+        private void ApplyViewMode()
+        {
+            ReplView.Visibility = _isRaw ? Visibility.Collapsed : Visibility.Visible;
+            RawView.Visibility = _isRaw ? Visibility.Visible : Visibility.Collapsed;
+
+            var active = ThemeResources.Brush(this, "CardBgHover");
+            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            ReplBtn.Background = _isRaw ? transparent : active;
+            RawBtn.Background = _isRaw ? active : transparent;
+            ReplBtn.Foreground = ThemeResources.Brush(this, _isRaw ? "TextMuted" : "TextPrimary");
+            RawBtn.Foreground = ThemeResources.Brush(this, _isRaw ? "TextPrimary" : "TextMuted");
+        }
+
+        // ── 세션 상태 / 업타임 필 ──
 
         private void OnStateChanged(object? sender, SessionState state)
             => DispatcherQueue.TryEnqueue(() => ApplyState(state));
+
+        // 디자인 원본 상태 색: 초록 #34C08D / 앰버 #E9B44C / 빨강 #D64848 / 회색 #6E7C8B
+        private static Color StatusColor(SessionState state) => state switch
+        {
+            SessionState.Connected => Color.FromArgb(255, 0x34, 0xC0, 0x8D),
+            SessionState.Connecting or SessionState.Disconnecting => Color.FromArgb(255, 0xE9, 0xB4, 0x4C),
+            SessionState.Failed => Color.FromArgb(255, 0xD6, 0x48, 0x48),
+            _ => Color.FromArgb(255, 0x6E, 0x7C, 0x8B),
+        };
+
+        private void UpdateStatusPill(SessionState state)
+        {
+            var label = state switch
+            {
+                SessionState.Connecting => "CONNECTING",
+                SessionState.Connected => $"CONNECTED {DateTime.Now - _connectedAt:hh\\:mm\\:ss}",
+                SessionState.Disconnecting => "DISCONNECTING",
+                SessionState.Disconnected => "DISCONNECTED",
+                SessionState.Failed => "FAILED",
+                _ => "READY",
+            };
+            var color = StatusColor(state);
+
+            StatusPillText.Text = label;
+            StatusPillText.Foreground = new SolidColorBrush(color);
+            StatusPill.Background = new SolidColorBrush(Color.FromArgb(36, color.R, color.G, color.B));
+        }
 
         private void ApplyState(SessionState state, bool initial = false)
         {
             var info = Session.Info;
 
-            (string label, string brushKey) = state switch
+            if (state == SessionState.Connected)
             {
-                SessionState.Connecting => ("connecting…", "StatusAmber"),
-                SessionState.Connected => ("connected", "StatusGreen"),
-                SessionState.Disconnecting => ("disconnecting…", "StatusAmber"),
-                SessionState.Disconnected => ("disconnected", "StatusIdle"),
-                SessionState.Failed => ("failed", "StatusRed"),
-                _ => ("ready", "StatusIdle"),
-            };
-            StateText.Text = $"{info.Host}:{info.Port} · {label}";
-            StatusDot.Fill = (Brush)Application.Current.Resources[brushKey];
+                if (!_uptimeTimer.IsRunning)
+                {
+                    _connectedAt = DateTime.Now;
+                    _uptimeTimer.Start();
+                }
+            }
+            else
+            {
+                _uptimeTimer.Stop();
+            }
+
+            UpdateStatusPill(state);
+            SftpPill.Visibility = state == SessionState.Connected ? Visibility.Visible : Visibility.Collapsed;
 
             var connected = state == SessionState.Connected;
             CommandBox.IsEnabled = connected;
@@ -159,9 +208,9 @@ namespace sutty.UI.Views
         /// </summary>
         public Task<string> RunExternalCommandAsync(string command) => RunCommandAsync(command);
 
-        // 프롬프트에 항상 현재 경로를 보여준다: user@host:~/path $
+        // 프롬프트에 항상 현재 경로를 보여준다: /var/www ❯
         private void UpdatePrompt()
-            => InputPrompt.Text = $"{_prompt}:{_cwd} $";
+            => InputPrompt.Text = $"{_cwd} ❯";
 
         private async Task<string> RunCommandAsync(string command)
         {
@@ -177,11 +226,13 @@ namespace sutty.UI.Views
                 Prompt = _prompt,
                 Index = ++_cellIndex,
                 IsRunning = true,
+                StartedAt = DateTime.Now,
             };
             Cells.Add(cell);
             AppendRaw($"{_prompt}:{_cwd} $ {command}");
             ScrollToBottom();
 
+            var watch = Stopwatch.StartNew();
             try
             {
                 // exec 채널은 명령마다 새로 열려 상태가 안 남으므로
@@ -217,7 +268,9 @@ namespace sutty.UI.Views
             }
             finally
             {
+                watch.Stop();
                 cell.IsRunning = false;
+                cell.TimeText = $"{cell.StartedAt:HH:mm:ss} · {FormatDuration(watch.ElapsedMilliseconds)}";
             }
 
             if (cell.Output.Length > 0)
@@ -226,6 +279,9 @@ namespace sutty.UI.Views
 
             return cell.Output;
         }
+
+        private static string FormatDuration(long ms) =>
+            ms < 1000 ? $"{ms}ms" : $"{ms / 1000.0:0.#}s";
 
         // WinUI TextBox는 줄구분자로 '\r'을 쓴다 — 검사/전송 전에 '\n'으로 통일
         private static string NormalizeNewlines(string text)
@@ -263,7 +319,7 @@ namespace sutty.UI.Views
             await RunCommandAsync(command);
         }
 
-        // 박스(입력/출력)의 내용을 아래 명령 입력줄로 가져온다 (바로 실행하진 않음)
+        // 줄(명령/출력)의 내용을 아래 명령 입력줄로 가져온다 (바로 실행하진 않음)
         private void PasteCell_Click(object sender, RoutedEventArgs e)
         {
             if (sender is not FrameworkElement el || el.DataContext is not CommandCell cell)
