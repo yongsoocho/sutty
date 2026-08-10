@@ -23,6 +23,7 @@ public sealed class SshConnectionInfo
     public int KeepAliveSeconds { get; set; }
     public bool Compression { get; set; }
     public bool X11Forwarding { get; set; }
+    public List<string> Tags { get; set; } = [];
 
     /// <summary>true면 실제 네트워크 없이 MockSshSession으로 연다 (데모/샘플 호스트용).</summary>
     public bool UseMockSession { get; set; }

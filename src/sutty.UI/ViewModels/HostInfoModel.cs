@@ -1,10 +1,11 @@
 using System;
+using System.Collections.Generic;
 
 namespace sutty.UI.ViewModels;
 
 /// <summary>
 /// History 패널 카드 하나에 표시할 접속 히스토리 (SQLite host_history에서 로드).
-/// alias(표시 이름) + hostname(주소) + 마지막 접속 시각만 가진다.
+/// 비밀번호/passphrase를 제외한 연결 초안과 표시 정보를 가진다.
 /// </summary>
 public class HostInfoModel
 {
@@ -16,10 +17,20 @@ public class HostInfoModel
     /// <summary>데모(샘플) 항목이면 true → 연결 시 mock 세션 사용.</summary>
     public bool IsMock { get; set; }
 
+    /// <summary>True when the user explicitly pinned this host.</summary>
+    public bool IsPinned { get; set; }
+
+    public string Username { get; set; } = "";
+    public int Port { get; set; } = 22;
+    public string AuthMethod { get; set; } = "Password";
+    public string PrivateKeyPath { get; set; } = "";
+    public List<string> Tags { get; set; } = [];
+
     /// <summary>상단 고정(TOP) 카드일 때만 채워지는 총 접속 횟수.</summary>
     public int ConnectionCount { get; set; }
 
     public bool HasCount => ConnectionCount > 0;
+    public bool HasTags => Tags.Count > 0;
     public string CountText => $"{ConnectionCount}×";
 
     /// <summary>"3 min ago", "2 days ago" 등 사람이 읽기 편한 시간</summary>

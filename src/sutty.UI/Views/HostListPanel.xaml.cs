@@ -12,19 +12,20 @@ namespace sutty.UI.Views;
 
 /// <summary>
 /// 접속 히스토리 (SQLite connection_log, append-only).
-/// - PINNED: 접속 횟수 TOP N 호스트 (설정에서 N 조절)
+/// - PINNED: 사용자가 직접 고정한 호스트
 /// - RECENT: 최근 접속 기록 최신순 (같은 서버도 접속마다 한 줄씩)
-/// 카드 클릭 → 바로 연결.
+/// 카드 클릭 → mock은 바로 연결, 실제 호스트는 Home에 비밀 없는 초안을 불러온다.
 /// </summary>
 public sealed partial class HostListPanel : UserControl
 {
     private readonly List<HostInfoModel> _allPinned = [];
     private readonly List<HostInfoModel> _allRecent = [];
+    private string _currentQuery = "";
 
     public ObservableCollection<HostInfoModel> PinnedHosts { get; } = [];
     public ObservableCollection<HostInfoModel> FilteredHosts { get; } = [];
 
-    /// <summary>카드를 클릭하면 해당 호스트로 연결해 달라는 신호.</summary>
+    /// <summary>카드를 활성화하면 mock 연결 또는 실제 연결 초안 열기를 요청한다.</summary>
     public event EventHandler<HostInfoModel>? ConnectRequested;
 
     public HostListPanel()
@@ -44,22 +45,47 @@ public sealed partial class HostListPanel : UserControl
         {
             card.Clicked -= OnCardClicked;
             card.Clicked += OnCardClicked;
+            card.PinToggled -= OnPinToggled;
+            card.PinToggled += OnPinToggled;
         }
     }
 
     private void OnCardClicked(object? sender, HostInfoModel host)
         => ConnectRequested?.Invoke(this, host);
 
-    // ── SQLite에서 로드 (보관 기한 정리 → TOP N + 최근 로그) ──
+    /// <summary>설정 변경 후 보관 기한과 pin 목록을 현재 화면에 다시 적용한다.</summary>
+    public void RefreshFromStore()
+    {
+        LoadFromStore();
+        ApplyFilter(_currentQuery);
+    }
+
+    public void RefreshLanguage() => Bindings.Update();
+
+    private void OnPinToggled(object? sender, HostInfoModel host)
+    {
+        HostHistoryStore.SetPinned(
+            host.Hostname,
+            host.Alias,
+            host.IsMock,
+            !host.IsPinned,
+            host.Username,
+            host.Port,
+            host.AuthMethod,
+            host.PrivateKeyPath,
+            host.Tags);
+
+        RefreshFromStore();
+    }
+
+    // ── SQLite에서 로드 (보관 기한 정리 → 고정 호스트 + 최근 로그) ──
 
     private void LoadFromStore()
     {
-        var settings = SettingsService.Current;
-
-        HostHistoryStore.Purge(settings.HistoryRetentionDays);
+        HostHistoryStore.Purge(SettingsService.Current.HistoryRetentionDays);
 
         _allPinned.Clear();
-        foreach (var entry in HostHistoryStore.GetTop(settings.HistoryPinnedTop))
+        foreach (var entry in HostHistoryStore.GetPinned())
         {
             _allPinned.Add(new HostInfoModel
             {
@@ -68,6 +94,12 @@ public sealed partial class HostListPanel : UserControl
                 LastConnected = entry.ConnectedAt,
                 ConnectionCount = entry.ConnectionCount,
                 IsMock = entry.IsMock,
+                IsPinned = true,
+                Username = entry.Username,
+                Port = entry.Port,
+                AuthMethod = entry.AuthMethod,
+                PrivateKeyPath = entry.PrivateKeyPath,
+                Tags = [.. entry.Tags],
             });
         }
 
@@ -81,6 +113,12 @@ public sealed partial class HostListPanel : UserControl
                 Hostname = entry.Hostname,
                 LastConnected = entry.ConnectedAt,
                 IsMock = entry.IsMock,
+                IsPinned = entry.IsPinned,
+                Username = entry.Username,
+                Port = entry.Port,
+                AuthMethod = entry.AuthMethod,
+                PrivateKeyPath = entry.PrivateKeyPath,
+                Tags = [.. entry.Tags],
             });
         }
     }
@@ -95,11 +133,14 @@ public sealed partial class HostListPanel : UserControl
 
     private void ApplyFilter(string query)
     {
+        _currentQuery = query;
         var q = query.Trim();
 
         static bool Match(HostInfoModel h, string q) =>
             h.Alias.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-            h.Hostname.Contains(q, StringComparison.OrdinalIgnoreCase);
+            h.Hostname.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+            h.Username.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+            h.Tags.Any(tag => tag.Contains(q, StringComparison.OrdinalIgnoreCase));
 
         PinnedHosts.Clear();
         foreach (var h in _allPinned.Where(h => q.Length == 0 || Match(h, q)))

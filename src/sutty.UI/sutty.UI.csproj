@@ -24,7 +24,6 @@
     <Content Include="Assets\**\*.png" CopyToOutputDirectory="PreserveNewest" />
     <None Remove="Controls\HostCard.xaml" />
     <None Remove="Views\HomePanel.xaml" />
-    <None Remove="Views\MorePanel.xaml" />
     <!-- The .ico used by AppWindow.SetIcon (title bar / taskbar / Alt+Tab). -->
     <Content Include="Assets\sutty.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
@@ -54,11 +53,6 @@
   </ItemGroup>
   <ItemGroup>
     <Page Update="Views\HostListPanel.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-  </ItemGroup>
-  <ItemGroup>
-    <Page Update="Views\MorePanel.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
   </ItemGroup>

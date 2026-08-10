@@ -20,19 +20,19 @@
         </Grid.RowDefinitions>
 
         <!--  헤더  -->
-        <StackPanel Orientation="Horizontal" Spacing="8">
-            <Border Background="{ThemeResource AccentTeal}" Style="{StaticResource HeaderDot}" />
-            <TextBlock
-                FontSize="20"
-                FontWeight="Medium"
-                Foreground="{ThemeResource TextPrimary}"
-                Text="Commands" />
-        </StackPanel>
+        <TextBlock
+            FontSize="15"
+            FontWeight="SemiBold"
+            Foreground="{ThemeResource TextPrimary}"
+            Text="Commands" />
 
         <!--  검색  -->
         <AutoSuggestBox
             x:Name="SearchBox"
             Grid.Row="1"
+            MinHeight="36"
+            CornerRadius="7"
+            FontSize="12.5"
             PlaceholderText="{x:Bind h:Loc.T('명령어 검색...', 'Search commands...')}"
             QueryIcon="Find"
             TextChanged="SearchBox_TextChanged" />
@@ -45,48 +45,62 @@
             HorizontalContentAlignment="Stretch"
             Background="{ThemeResource CardBg}"
             BorderBrush="{ThemeResource CardBorder}"
-            CornerRadius="10"
+            CornerRadius="8"
+            FontSize="12"
+            Foreground="{ThemeResource AccentTeal}"
             Header="{x:Bind h:Loc.T('+ 새 명령', '+ New command')}">
-            <StackPanel Padding="0,8,0,4" Spacing="10">
+            <StackPanel Padding="0,8,0,10" Spacing="8">
                 <TextBox
                     x:Name="NewNameBox"
+                    FontSize="12"
+                    MinHeight="34"
                     PlaceholderText="Name (e.g. Create LV)"
                     Style="{StaticResource DarkInput}" />
                 <TextBox
                     x:Name="NewTextBox"
                     FontFamily="Cascadia Mono, Consolas"
+                    FontSize="11.5"
+                    MinHeight="34"
                     PlaceholderText="lvcreate -n $1 -L $2"
                     Style="{StaticResource DarkInput}" />
                 <TextBlock
-                    FontSize="11"
-                    Foreground="{ThemeResource TextFaint}"
+                    FontSize="10.5"
+                    Foreground="{ThemeResource TextMuted}"
                     Text="{x:Bind h:Loc.T('$1, $2 … 자리표시자를 넣으면 실행할 때 값을 입력받습니다.', 'Use $1, $2 … placeholders to be prompted for values at run time.')}"
                     TextWrapping="Wrap" />
                 <Button
+                    Height="30"
                     HorizontalAlignment="Stretch"
-                    Background="{ThemeResource AccentBlue}"
+                    Background="{ThemeResource AccentGradient}"
+                    BorderThickness="0"
                     Click="Add_Click"
                     Content="Add"
-                    CornerRadius="8"
+                    CornerRadius="7"
+                    FontSize="12"
                     FontWeight="SemiBold"
-                    Foreground="#FFFFFF" />
+                    Foreground="#FFFFFF">
+                    <Button.Resources>
+                        <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
+                        <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                    </Button.Resources>
+                </Button>
             </StackPanel>
         </Expander>
 
         <!--  저장된 playbook 목록 (자주 쓰는 순)  -->
         <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
-            <StackPanel Padding="0,0,0,16">
+            <StackPanel Padding="0,0,0,12">
                 <ItemsControl x:Name="CommandsList" ItemsSource="{x:Bind Items}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:CommandItemVm">
                             <Border
-                                Margin="0,0,0,8"
-                                Padding="12,10"
+                                Margin="0,0,0,6"
+                                Padding="11,10"
                                 Background="{ThemeResource CardBg}"
                                 BorderBrush="{ThemeResource CardBorder}"
                                 BorderThickness="1"
-                                CornerRadius="10">
-                                <StackPanel Spacing="8">
+                                CornerRadius="8">
+                                <StackPanel Spacing="7">
                                     <Grid ColumnSpacing="6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -95,7 +109,7 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock
                                             VerticalAlignment="Center"
-                                            FontSize="13"
+                                            FontSize="12.5"
                                             FontWeight="SemiBold"
                                             Foreground="{ThemeResource TextPrimary}"
                                             Text="{x:Bind Name}"
@@ -103,11 +117,13 @@
                                         <!--  실행 (자리표시자가 있으면 입력칸이 펼쳐짐)  -->
                                         <Button
                                             Grid.Column="1"
-                                            Padding="6,4"
-                                            Background="{ThemeResource PillBg}"
-                                            BorderBrush="{ThemeResource CardBorder}"
+                                            Width="22"
+                                            Height="22"
+                                            Padding="0"
+                                            Background="{ThemeResource AccentTint}"
+                                            BorderThickness="0"
                                             Click="Run_Click"
-                                            CornerRadius="6"
+                                            CornerRadius="5"
                                             ToolTipService.ToolTip="Run in current session">
                                             <FontIcon
                                                 FontSize="11"
@@ -116,7 +132,9 @@
                                         </Button>
                                         <Button
                                             Grid.Column="2"
-                                            Padding="6,4"
+                                            Width="22"
+                                            Height="22"
+                                            Padding="0"
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Click="Delete_Click"
@@ -128,12 +146,17 @@
                                         </Button>
                                     </Grid>
 
-                                    <TextBlock
-                                        FontFamily="Cascadia Mono, Consolas"
-                                        FontSize="11"
-                                        Foreground="{ThemeResource TextMuted}"
-                                        Text="{x:Bind CommandText}"
-                                        TextWrapping="Wrap" />
+                                    <Border
+                                        Padding="8,6"
+                                        Background="{ThemeResource InputBg}"
+                                        CornerRadius="5">
+                                        <TextBlock
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="11"
+                                            Foreground="{ThemeResource TextMuted}"
+                                            Text="{x:Bind CommandText}"
+                                            TextWrapping="Wrap" />
+                                    </Border>
 
                                     <!--  $n 입력칸: Run을 누르면 펼쳐진다  -->
                                     <StackPanel Spacing="6" Visibility="{x:Bind ShowParams, Mode=OneWay}">
@@ -142,22 +165,31 @@
                                                 <DataTemplate x:DataType="vm:CommandParamVm">
                                                     <TextBox
                                                         Margin="0,0,0,6"
+                                                        MinHeight="32"
+                                                        CornerRadius="6"
                                                         FontFamily="Cascadia Mono, Consolas"
-                                                        FontSize="12"
+                                                        FontSize="11.5"
                                                         PlaceholderText="{x:Bind Label}"
                                                         Text="{x:Bind Value, Mode=TwoWay}" />
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
                                         <Button
+                                            Height="30"
                                             HorizontalAlignment="Stretch"
-                                            Background="{ThemeResource AccentBlue}"
+                                            Background="{ThemeResource AccentGradient}"
+                                            BorderThickness="0"
                                             Click="Execute_Click"
                                             Content="Run"
                                             CornerRadius="6"
-                                            FontSize="12"
+                                            FontSize="11.5"
                                             FontWeight="SemiBold"
-                                            Foreground="#FFFFFF" />
+                                            Foreground="#FFFFFF">
+                                            <Button.Resources>
+                                                <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
+                                                <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                                            </Button.Resources>
+                                        </Button>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -170,7 +202,7 @@
                     Margin="0,30,0,0"
                     HorizontalAlignment="Center"
                     FontSize="12"
-                    Foreground="{ThemeResource TextFaint}"
+                    Foreground="{ThemeResource TextMuted}"
                     Text="{x:Bind h:Loc.T('저장된 명령이 없습니다', 'No saved commands yet')}"
                     Visibility="Collapsed" />
             </StackPanel>

@@ -11,39 +11,39 @@
 
     <Border Background="Transparent">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel Padding="0,0,0,20" Spacing="12">
+            <StackPanel Padding="0,0,0,12" Spacing="12">
 
                 <!--  헤더  -->
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Border Background="{ThemeResource AccentTeal}" Style="{StaticResource HeaderDot}" />
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="20"
-                        FontWeight="Medium"
-                        Foreground="{ThemeResource TextPrimary}"
-                        Text="History" />
-                </StackPanel>
+                <TextBlock
+                    FontSize="15"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextPrimary}"
+                    Text="History" />
 
                 <!--  검색  -->
                 <AutoSuggestBox
                     x:Name="SearchBox"
+                    MinHeight="36"
+                    CornerRadius="7"
+                    FontSize="12.5"
                     PlaceholderText="{x:Bind h:Loc.T('호스트 검색...', 'Search hosts...')}"
                     QueryIcon="Find"
                     TextChanged="SearchBox_TextChanged" />
 
-                <!--  ★ 자주 접속 TOP N (상단 고정)  -->
+                <!--  사용자가 직접 고정한 호스트  -->
                 <TextBlock
                     x:Name="PinnedHeader"
-                    FontSize="11"
+                    CharacterSpacing="80"
+                    FontSize="10.5"
                     FontWeight="SemiBold"
-                    Foreground="{ThemeResource TextFaint}"
-                    Text="{x:Bind h:Loc.T('PINNED · 자주 접속', 'PINNED · most connected')}" />
+                    Foreground="{ThemeResource TextMuted}"
+                    Text="PINNED" />
                 <ItemsRepeater x:Name="PinnedRepeater" ItemsSource="{x:Bind PinnedHosts}">
                     <ItemsRepeater.Layout>
                         <UniformGridLayout
                             ItemsStretch="Fill"
                             MinColumnSpacing="6"
-                            MinItemWidth="148"
+                            MinItemWidth="136"
                             MinRowSpacing="6" />
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>
@@ -57,17 +57,14 @@
                 <TextBlock
                     x:Name="RecentHeader"
                     Margin="0,4,0,0"
-                    FontSize="11"
+                    CharacterSpacing="80"
+                    FontSize="10.5"
                     FontWeight="SemiBold"
-                    Foreground="{ThemeResource TextFaint}"
+                    Foreground="{ThemeResource TextMuted}"
                     Text="RECENT" />
                 <ItemsRepeater x:Name="HostRepeater" ItemsSource="{x:Bind FilteredHosts}">
                     <ItemsRepeater.Layout>
-                        <UniformGridLayout
-                            ItemsStretch="Fill"
-                            MinColumnSpacing="6"
-                            MinItemWidth="148"
-                            MinRowSpacing="6" />
+                        <StackLayout Spacing="6" />
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>
                         <DataTemplate x:DataType="vm:HostInfoModel">
@@ -79,10 +76,10 @@
                 <!--  빈 상태  -->
                 <TextBlock
                     x:Name="EmptyState"
-                    Margin="0,40,0,0"
+                    Margin="0,32,0,0"
                     HorizontalAlignment="Center"
-                    FontSize="14"
-                    Foreground="{ThemeResource TextFaint}"
+                    FontSize="12"
+                    Foreground="{ThemeResource TextMuted}"
                     Text="{x:Bind h:Loc.T('접속 기록이 없습니다', 'No hosts found')}"
                     Visibility="Collapsed" />
             </StackPanel>

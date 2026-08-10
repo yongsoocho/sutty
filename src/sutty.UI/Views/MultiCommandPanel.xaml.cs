@@ -17,6 +17,8 @@ namespace sutty.UI.Views
     /// </summary>
     public sealed partial class MultiCommandPanel : UserControl
     {
+        public void RefreshLanguage() => Bindings.Update();
+
         public ObservableCollection<CommandItemVm> Items { get; } = [];
 
         /// <summary>체크된 모든 세션에서 이 명령을 실행해 달라는 신호.</summary>

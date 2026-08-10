@@ -12,14 +12,42 @@
     VerticalAlignment="Stretch"
     mc:Ignorable="d">
 
-    <Grid>
+    <Grid RowSpacing="10">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+                VerticalAlignment="Center"
+                FontSize="15"
+                FontWeight="SemiBold"
+                Foreground="{ThemeResource TextPrimary}"
+                Text="Files" />
+            <Border
+                Grid.Column="1"
+                Padding="8,2"
+                VerticalAlignment="Center"
+                Background="{ThemeResource AccentTint}"
+                CornerRadius="10">
+                <TextBlock
+                    CharacterSpacing="40"
+                    FontSize="10.5"
+                    Foreground="{ThemeResource AccentTeal}"
+                    Text="SFTP" />
+            </Border>
+        </Grid>
+
         <TreeView
             x:Name="FileTree"
+            Grid.Row="1"
             AllowDrop="True"
             CanDragItems="False"
             CanReorderItems="False"
@@ -35,46 +63,61 @@
                         DragOver="Node_DragOver"
                         Drop="Node_Drop"
                         HasUnrealizedChildren="{x:Bind HasUnrealizedChildren, Mode=OneWay}"
+                        HorizontalContentAlignment="Stretch"
                         IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
-                        ItemsSource="{x:Bind Children}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
+                        ItemsSource="{x:Bind Children}"
+                        MinHeight="26"
+                        Padding="0">
+                        <Grid MinHeight="24">
+                            <Border
+                                Background="{ThemeResource AccentTint}"
+                                CornerRadius="5"
+                                Opacity="0.45"
+                                Visibility="{x:Bind IsUploading, Mode=OneWay}" />
+                            <StackPanel
+                                Margin="6,3"
+                                Orientation="Horizontal"
+                                Spacing="7">
                             <!--  폴더 아이콘: 닫힘=E8B7, 펼침=열린 폴더 E838 + 청록색으로 구별  -->
                             <FontIcon
-                                FontSize="14"
+                                FontSize="13"
                                 Foreground="{ThemeResource AccentBlue}"
                                 Glyph="&#xE8B7;"
                                 Visibility="{x:Bind FolderClosedVisible, Mode=OneWay}" />
                             <FontIcon
-                                FontSize="14"
+                                FontSize="13"
                                 Foreground="{ThemeResource AccentTeal}"
                                 Glyph="&#xE838;"
                                 Visibility="{x:Bind FolderOpenVisible, Mode=OneWay}" />
                             <FontIcon
-                                FontSize="14"
+                                FontSize="13"
                                 Foreground="{ThemeResource TextMuted}"
                                 Glyph="&#xE8A5;"
                                 Visibility="{x:Bind IsFile}" />
                             <TextBlock
-                                FontSize="13"
+                                FontFamily="Cascadia Mono, Consolas"
+                                FontSize="12"
                                 Foreground="{ThemeResource TextPrimary}"
                                 Text="{x:Bind Name}" />
                             <TextBlock
                                 VerticalAlignment="Center"
-                                FontSize="11"
+                                FontFamily="Cascadia Mono, Consolas"
+                                FontSize="10"
                                 Foreground="{ThemeResource TextFaint}"
                                 Text="{x:Bind SizeText}" />
 
                             <!--  업로드 중일 때만: 진행 바 + % + 취소(X)  -->
                             <ProgressBar
-                                Width="64"
+                                Width="56"
                                 VerticalAlignment="Center"
                                 Maximum="1"
                                 Visibility="{x:Bind IsUploading, Mode=OneWay}"
                                 Value="{x:Bind Progress, Mode=OneWay}" />
                             <TextBlock
                                 VerticalAlignment="Center"
-                                FontSize="11"
-                                Foreground="{ThemeResource AccentBlue}"
+                                FontFamily="Cascadia Mono, Consolas"
+                                FontSize="10"
+                                Foreground="{ThemeResource AccentTeal}"
                                 Text="{x:Bind ProgressText, Mode=OneWay}"
                                 Visibility="{x:Bind IsUploading, Mode=OneWay}" />
                             <Button
@@ -90,7 +133,8 @@
                                     Foreground="{ThemeResource TextMuted}"
                                     Glyph="&#xE711;" />
                             </Button>
-                        </StackPanel>
+                            </StackPanel>
+                        </Grid>
                     </TreeViewItem>
                 </DataTemplate>
             </TreeView.ItemTemplate>
@@ -98,6 +142,7 @@
 
         <ProgressRing
             x:Name="LoadingRing"
+            Grid.Row="1"
             Width="28"
             Height="28"
             HorizontalAlignment="Center"
@@ -107,6 +152,7 @@
         <!--  세션이 없을 때  -->
         <StackPanel
             x:Name="EmptyState"
+            Grid.Row="1"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             Spacing="8"
@@ -114,7 +160,7 @@
             <FontIcon
                 HorizontalAlignment="Center"
                 FontSize="26"
-                Foreground="{ThemeResource TextFaint}"
+                Foreground="{ThemeResource TextMuted}"
                 Glyph="&#xE8CE;" />
             <TextBlock
                 HorizontalAlignment="Center"
@@ -125,17 +171,45 @@
             <TextBlock
                 HorizontalAlignment="Center"
                 FontSize="11"
-                Foreground="{ThemeResource TextFaint}"
+                Foreground="{ThemeResource TextMuted}"
                 Text="{x:Bind h:Loc.T('서버에 연결하면 파일 트리가 표시됩니다', 'Connect to a server to browse its files')}"
                 TextWrapping="Wrap" />
         </StackPanel>
 
         <!--  오류가 있을 때만 아래에 잠깐 표시  -->
+        <StackPanel
+            x:Name="SftpUnavailableState"
+            Grid.Row="1"
+            HorizontalAlignment="Center"
+            MaxWidth="240"
+            VerticalAlignment="Center"
+            Spacing="8"
+            Visibility="Collapsed">
+            <FontIcon
+                HorizontalAlignment="Center"
+                FontSize="26"
+                Foreground="{ThemeResource StatusRed}"
+                Glyph="&#xE783;" />
+            <TextBlock
+                HorizontalAlignment="Center"
+                FontSize="13"
+                FontWeight="SemiBold"
+                Foreground="{ThemeResource TextPrimary}"
+                Text="{x:Bind h:Loc.T('SFTP 사용 불가', 'SFTP unavailable')}" />
+            <TextBlock
+                HorizontalAlignment="Center"
+                FontSize="11"
+                Foreground="{ThemeResource TextMuted}"
+                Text="{x:Bind h:Loc.T('SSH 터미널은 계속 사용할 수 있습니다.', 'The SSH terminal is still available.')}"
+                TextAlignment="Center"
+                TextWrapping="Wrap" />
+        </StackPanel>
+
         <TextBlock
             x:Name="StatusText"
-            Grid.Row="1"
-            Margin="4,6,4,0"
-            FontSize="11"
+            Grid.Row="2"
+            Margin="4,0"
+            FontSize="10.5"
             Foreground="{StaticResource StatusRed}"
             TextWrapping="Wrap"
             Visibility="Collapsed" />

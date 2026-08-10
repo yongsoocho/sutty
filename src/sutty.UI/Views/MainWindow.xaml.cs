@@ -69,7 +69,7 @@ namespace sutty.UI.Views
         {
             var saved = SettingsService.Current.RightPanelWidth;
             if (saved > 0)
-                RightPanelColumn.Width = new GridLength(Math.Clamp(saved, 220, 800));
+                RightPanelColumn.Width = new GridLength(Math.Clamp(saved, 300, 800));
 
             _panelWidthSaveTimer = DispatcherQueue.CreateTimer();
             _panelWidthSaveTimer.Interval = TimeSpan.FromMilliseconds(600);
@@ -103,10 +103,48 @@ namespace sutty.UI.Views
         private void ApplyTheme(string theme)
         {
             Helpers.ThemeManager.Apply(theme, Root);
+            var preset = Helpers.ThemeManager.Find(theme);
+            ApplyTitleBarColors(this, preset);
 
             // 설정 창이 열려 있으면 같이 바꿔 준다
             if (_settingWindow?.Content is FrameworkElement settingRoot)
+            {
                 settingRoot.RequestedTheme = Root.RequestedTheme;
+                ApplyTitleBarColors(_settingWindow, preset);
+            }
+        }
+
+        private static void ApplyTitleBarColors(Window window, Helpers.ThemePreset preset)
+        {
+            var titleBar = window.AppWindow.TitleBar;
+            var appBackground = ParseColor(preset.Colors["AppBg"]);
+            var foreground = ParseColor(preset.Colors["TextPrimary"]);
+            var inactiveForeground = ParseColor(preset.Colors["TextFaint"]);
+            var hoverBackground = ParseColor(preset.Colors["CardBgHover"]);
+            var pressedBackground = ParseColor(preset.Colors["PillBg"]);
+
+            titleBar.BackgroundColor = appBackground;
+            titleBar.ForegroundColor = foreground;
+            titleBar.InactiveBackgroundColor = appBackground;
+            titleBar.InactiveForegroundColor = inactiveForeground;
+            titleBar.ButtonBackgroundColor = appBackground;
+            titleBar.ButtonForegroundColor = foreground;
+            titleBar.ButtonHoverBackgroundColor = hoverBackground;
+            titleBar.ButtonHoverForegroundColor = foreground;
+            titleBar.ButtonPressedBackgroundColor = pressedBackground;
+            titleBar.ButtonPressedForegroundColor = foreground;
+            titleBar.ButtonInactiveBackgroundColor = appBackground;
+            titleBar.ButtonInactiveForegroundColor = inactiveForeground;
+        }
+
+        private static Windows.UI.Color ParseColor(string hex)
+        {
+            hex = hex.TrimStart('#');
+            return Windows.UI.Color.FromArgb(
+                255,
+                Convert.ToByte(hex[..2], 16),
+                Convert.ToByte(hex[2..4], 16),
+                Convert.ToByte(hex[4..6], 16));
         }
 
         // ── 왼쪽 네비게이션 ──
@@ -157,17 +195,59 @@ namespace sutty.UI.Views
         private HostListPanel CreateHostListPanel()
         {
             var panel = new HostListPanel();
-            // History 카드 클릭 → 바로 연결 (데모 항목은 mock 세션으로)
+            // Demo records stay one-click. Real records open a secret-free draft so
+            // the user must enter the password/passphrase again before connecting.
             panel.ConnectRequested += async (_, host) =>
             {
-                await OpenSessionTabAsync(new SshConnectionInfo
+                if (host.IsMock)
                 {
-                    Host = host.Hostname,
-                    DisplayName = host.Alias,
-                    UseMockSession = host.IsMock,
-                });
+                    await OpenSessionTabAsync(new SshConnectionInfo
+                    {
+                        Host = host.Hostname,
+                        DisplayName = host.Alias,
+                        UseMockSession = true,
+                    });
+                    return;
+                }
+
+                OpenHistoryDraft(host);
             };
             return panel;
+        }
+
+        private void OpenHistoryDraft(ViewModels.HostInfoModel host)
+        {
+            var authMethod = Enum.TryParse<SshAuthMethod>(host.AuthMethod, true, out var parsed) &&
+                             parsed is SshAuthMethod.Password or SshAuthMethod.PublicKey
+                ? parsed
+                : SshAuthMethod.Password;
+
+            var draft = new SshConnectionInfo
+            {
+                Host = host.Hostname,
+                Port = host.Port is >= 1 and <= 65535 ? host.Port : 22,
+                DisplayName = host.Alias,
+                Username = host.Username,
+                AuthMethod = authMethod,
+                PrivateKeyPath = authMethod == SshAuthMethod.PublicKey ? host.PrivateKeyPath : "",
+                Password = "",
+                Passphrase = "",
+                Tags = [.. host.Tags],
+            };
+
+            var homeItem = LeftNav.MenuItems[0];
+            LeftNav.SelectedItem = homeItem;
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!ReferenceEquals(LeftNav.SelectedItem, homeItem)) return;
+
+                if (RightPanel.Content is not HomePanel home)
+                {
+                    home = CreateHomePanel();
+                    RightPanel.Content = home;
+                }
+                home.ApplyConnectionDraft(draft);
+            });
         }
 
         private FileTreePanel CreateFileTreePanel()
@@ -268,7 +348,15 @@ namespace sutty.UI.Views
             }
 
             // 접속 히스토리에 기록 (append-only: 접속마다 새 행 추가)
-            sutty.Command.HostHistoryStore.Append(info.Title, info.Host, info.UseMockSession);
+            sutty.Command.HostHistoryStore.Append(
+                info.Title,
+                info.Host,
+                info.UseMockSession,
+                info.Username,
+                info.Port,
+                info.AuthMethod.ToString(),
+                info.AuthMethod == SshAuthMethod.PublicKey ? info.PrivateKeyPath : "",
+                info.Tags);
 
             var session = _sessions.Create(info);
             var view = new SessionView(session);
@@ -276,10 +364,10 @@ namespace sutty.UI.Views
             // 리디자인 탭 헤더: [상태점] 세션이름 username
             var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
             {
-                Width = 8,
-                Height = 8,
+                Width = 7,
+                Height = 7,
                 VerticalAlignment = VerticalAlignment.Center,
-                Fill = (Brush)Application.Current.Resources["StatusIdle"],
+                Fill = Helpers.ThemeResources.Brush(Root, "StatusIdle"),
             };
             var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             header.Children.Add(dot);
@@ -292,24 +380,31 @@ namespace sutty.UI.Views
             });
             if (!string.IsNullOrWhiteSpace(info.Username))
             {
-                header.Children.Add(new TextBlock
+                var metadata = new TextBlock
                 {
                     Text = info.Username,
                     FontSize = 11,
                     Foreground = Helpers.ThemeResources.Brush(Root, "TextFaint"),
                     VerticalAlignment = VerticalAlignment.Center,
-                });
+                };
+                metadata.ActualThemeChanged += (_, _) =>
+                    metadata.Foreground = Helpers.ThemeResources.Brush(Root, "TextFaint");
+                header.Children.Add(metadata);
             }
 
-            // 상태점 색을 세션 상태에 따라 갱신
-            session.StateChanged += (_, state) => DispatcherQueue.TryEnqueue(() =>
-                dot.Fill = (Brush)Application.Current.Resources[state switch
+            void UpdateStatusDot(SessionState state) =>
+                dot.Fill = Helpers.ThemeResources.Brush(Root, state switch
                 {
                     SessionState.Connected => "StatusGreen",
                     SessionState.Connecting or SessionState.Disconnecting => "StatusAmber",
                     SessionState.Failed => "StatusRed",
                     _ => "StatusIdle",
-                }]);
+                });
+
+            // 상태와 테마가 바뀔 때 코드로 만든 탭 표시도 함께 갱신한다.
+            dot.ActualThemeChanged += (_, _) => UpdateStatusDot(session.State);
+            session.StateChanged += (_, state) =>
+                DispatcherQueue.TryEnqueue(() => UpdateStatusDot(state));
 
             var tab = new TabViewItem
             {
@@ -378,17 +473,18 @@ namespace sutty.UI.Views
             if (_settingWindow is null)
             {
                 var panel = new SettingsPanel();
-                panel.Saved += (_, _) => ApplyWindowSizesFromSettings();
+                panel.SettingsChanged += (_, args) => ApplySettingsChanges(args.Changes);
                 panel.ThemeChanged += (_, themeName) => ApplyTheme(themeName);
 
                 _settingWindow = new Window
                 {
-                    Title = "sutty — Settings",
+                    Title = "Sutty — Settings",
                     ExtendsContentIntoTitleBar = true,
-                    SystemBackdrop = new MicaBackdrop(),
                     Content = panel,
                 };
                 _settingWindow.AppWindow.SetIcon(_appIconPath); // 설정 창에도 앱 아이콘
+                panel.RequestedTheme = Root.RequestedTheme;
+                ApplyTitleBarColors(_settingWindow, Helpers.ThemeManager.Find(SettingsService.Current.Theme));
                 _settingWindow.Closed += (_, _) => _settingWindow = null;
 
                 // 저장된 크기로 열고, 드래그 리사이즈도 기억
@@ -400,6 +496,52 @@ namespace sutty.UI.Views
             }
 
             DispatcherQueue.TryEnqueue(() => BringToFront(_settingWindow));
+        }
+
+        private void ApplySettingsChanges(SettingChangeKind changes)
+        {
+            if (changes.HasFlag(SettingChangeKind.TerminalAppearance) ||
+                changes.HasFlag(SettingChangeKind.TerminalMode))
+            {
+                foreach (var view in GetOpenSessionViews())
+                    view.ApplyTerminalSettings();
+            }
+
+            if (changes.HasFlag(SettingChangeKind.Language))
+            {
+                Bindings.Update();
+                foreach (var view in GetOpenSessionViews())
+                    view.RefreshLanguage();
+                MultiGrid.RefreshLanguage();
+
+                // 입력 중인 Home 폼이나 검색 상태를 잃지 않고 현재 패널의
+                // one-time localization binding만 다시 평가한다.
+                switch (RightPanel.Content)
+                {
+                    case HomePanel localizedHome: localizedHome.RefreshLanguage(); break;
+                    case HostListPanel localizedHistory: localizedHistory.RefreshLanguage(); break;
+                    case FileTreePanel localizedFiles: localizedFiles.RefreshLanguage(); break;
+                    case CommandPanel localizedCommands: localizedCommands.RefreshLanguage(); break;
+                    case MultiCommandPanel localizedMulti: localizedMulti.RefreshLanguage(); break;
+                }
+            }
+
+            var applyDefaultPort = (changes & SettingChangeKind.ConnectionPort) != 0;
+            var applyDefaultKeepAlive = (changes & SettingChangeKind.ConnectionKeepAlive) != 0;
+            if ((applyDefaultPort || applyDefaultKeepAlive) &&
+                RightPanel.Content is HomePanel homePanel)
+            {
+                homePanel.ApplyConnectionDefaults(applyDefaultPort, applyDefaultKeepAlive);
+            }
+
+            if (changes.HasFlag(SettingChangeKind.History) &&
+                RightPanel.Content is HostListPanel historyPanel)
+            {
+                historyPanel.RefreshFromStore();
+            }
+
+            if (changes.HasFlag(SettingChangeKind.Window))
+                ApplyWindowSizesFromSettings();
         }
 
         // 설정 패널에서 저장한 창 크기 숫자를 즉시 반영
@@ -415,7 +557,7 @@ namespace sutty.UI.Views
 
             // 오른쪽 패널 폭도 숫자로 지정 가능
             if (s.RightPanelWidth > 0)
-                RightPanelColumn.Width = new GridLength(Math.Clamp(s.RightPanelWidth, 220, 800));
+                RightPanelColumn.Width = new GridLength(Math.Clamp(s.RightPanelWidth, 300, 800));
         }
 
         private static void BringToFront(Window window)

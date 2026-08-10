@@ -36,23 +36,31 @@ public static class ThemeManager
         // 기본 다크 = "Sutty Deep Field" 디자인 원본 (1a) — Palette.xaml Dark 딕셔너리와 동일 값 유지
         new("Dark", true, "#0E1216", "#0E1216", new Dictionary<string, string>
         {
-            ["AppBg"] = "#0B0E11", ["PanelBg"] = "#0C1015", ["SidePanelBg"] = "#10141A",
-            ["CardBg"] = "#151B22", ["CardBgHover"] = "#161C22", ["CardBorder"] = "#1E242B",
-            ["InputBg"] = "#0C1015", ["PillBg"] = "#12171D",
+            ["AppBg"] = "#0B0E11", ["PanelBg"] = "#0A0D10", ["SidePanelBg"] = "#10141A",
+            ["CardBg"] = "#12171D", ["CardBgHover"] = "#161C22", ["CardBorder"] = "#242D37",
+            ["ActiveTabBg"] = "#151B22", ["ShellBorder"] = "#1E242B",
+            ["InputBg"] = "#0C1015", ["InputBorder"] = "#232C36", ["PillBg"] = "#12171D",
+            ["Divider"] = "#171D23", ["OutputGuide"] = "#1E2830", ["TextPlaceholder"] = "#4F5D6B",
             ["TextPrimary"] = "#E8EDF2", ["TextMuted"] = "#8C99A8", ["TextFaint"] = "#6E7C8B",
-            ["AccentBlue"] = "#2BC7B5", ["AccentTeal"] = "#5BDCCB", ["AccentViolet"] = "#8B7CF6",
-            ["TerminalBg"] = "#0C1015", ["TerminalFg"] = "#8C99A8",
+            ["AccentBlue"] = "#2BC7B5", ["AccentTeal"] = "#5BDCCB", ["AccentViolet"] = "#78A9EE",
+            ["GradientStart"] = "#2E7CD6", ["GradientEnd"] = "#14A79C",
+            ["GradientHoverStart"] = "#4E9AF0", ["GradientHoverEnd"] = "#2BC7B5",
+            ["TerminalBg"] = "#0A0D10", ["TerminalFg"] = "#9FB0C0",
         }),
 
         // 라이트 = "Deep Field Light" 디자인 원본 (1c)
         new("Light", false, "#E4E9EE", "#E4E9EE", new Dictionary<string, string>
         {
             ["AppBg"] = "#EDF0F3", ["PanelBg"] = "#FFFFFF", ["SidePanelBg"] = "#F7F9FA",
-            ["CardBg"] = "#FFFFFF", ["CardBgHover"] = "#EDF0F3", ["CardBorder"] = "#D8DEE5",
-            ["InputBg"] = "#FFFFFF", ["PillBg"] = "#E6EAEF",
+            ["CardBg"] = "#FFFFFF", ["CardBgHover"] = "#D9E0E7", ["CardBorder"] = "#D8DEE5",
+            ["ActiveTabBg"] = "#FFFFFF", ["ShellBorder"] = "#D8DEE5",
+            ["InputBg"] = "#FFFFFF", ["InputBorder"] = "#D2D9E0", ["PillBg"] = "#EDF0F3",
+            ["Divider"] = "#E6EAEF", ["OutputGuide"] = "#E1E6EB", ["TextPlaceholder"] = "#93A0AC",
             ["TextPrimary"] = "#1C2530", ["TextMuted"] = "#5A6875", ["TextFaint"] = "#93A0AC",
-            ["AccentBlue"] = "#0FA396", ["AccentTeal"] = "#0B7C72", ["AccentViolet"] = "#6A5AE0",
-            ["TerminalBg"] = "#F7F9FA", ["TerminalFg"] = "#48545F",
+            ["AccentBlue"] = "#0FA396", ["AccentTeal"] = "#0B7C72", ["AccentViolet"] = "#2570C8",
+            ["GradientStart"] = "#2570C8", ["GradientEnd"] = "#0FA396",
+            ["GradientHoverStart"] = "#2E7CD6", ["GradientHoverEnd"] = "#14A79C",
+            ["TerminalBg"] = "#FFFFFF", ["TerminalFg"] = "#48545F",
         }),
 
         new("Dracula", true, "#2B2D3A", "#191A21", new Dictionary<string, string>
@@ -124,7 +132,9 @@ public static class ThemeManager
                 if (preset.Colors.TryGetValue(key, out var hex))
                     SetBrush(dict, key, hex);
 
+            ApplyRoleBrushes(dict, preset);
             ApplyDerivedControlBrushes(dict, preset);
+            ApplyAccentBrushes(dict, preset);
             ApplyRail(dict, preset);
         }
 
@@ -135,35 +145,108 @@ public static class ThemeManager
     private static void ApplyDerivedControlBrushes(ResourceDictionary dict, ThemePreset p)
     {
         var c = p.Colors;
+        var inputBorder = Role(p, "InputBorder", "CardBorder");
+        var placeholder = Role(p, "TextPlaceholder", "TextFaint");
+        var activeTab = Role(p, "ActiveTabBg", "CardBg");
+        var shellBorder = Role(p, "ShellBorder", "CardBorder");
 
         SetBrush(dict, "TextControlBackground", c["InputBg"]);
-        SetBrush(dict, "TextControlBackgroundPointerOver", c["CardBgHover"]);
-        SetBrush(dict, "TextControlBackgroundFocused", c["CardBgHover"]);
-        SetBrush(dict, "TextControlBorderBrush", c["CardBorder"]);
-        SetBrush(dict, "TextControlBorderBrushPointerOver", c["CardBorder"]);
+        SetBrush(dict, "TextControlBackgroundPointerOver", c["InputBg"]);
+        SetBrush(dict, "TextControlBackgroundFocused", c["InputBg"]);
+        SetBrush(dict, "TextControlBorderBrush", inputBorder);
+        SetBrush(dict, "TextControlBorderBrushPointerOver", inputBorder);
         SetBrush(dict, "TextControlBorderBrushFocused", c["AccentBlue"]);
         SetBrush(dict, "TextControlForeground", c["TextPrimary"]);
         SetBrush(dict, "TextControlForegroundPointerOver", c["TextPrimary"]);
         SetBrush(dict, "TextControlForegroundFocused", c["TextPrimary"]);
-        SetBrush(dict, "TextControlPlaceholderForeground", c["TextFaint"]);
-        SetBrush(dict, "TextControlPlaceholderForegroundPointerOver", c["TextFaint"]);
-        SetBrush(dict, "TextControlPlaceholderForegroundFocused", c["TextFaint"]);
+        SetBrush(dict, "TextControlPlaceholderForeground", placeholder);
+        SetBrush(dict, "TextControlPlaceholderForegroundPointerOver", placeholder);
+        SetBrush(dict, "TextControlPlaceholderForegroundFocused", placeholder);
 
         SetBrush(dict, "ComboBoxBackground", c["InputBg"]);
-        SetBrush(dict, "ComboBoxBackgroundPointerOver", c["CardBgHover"]);
-        SetBrush(dict, "ComboBoxBackgroundPressed", c["CardBgHover"]);
-        SetBrush(dict, "ComboBoxBorderBrush", c["CardBorder"]);
+        SetBrush(dict, "ComboBoxBackgroundPointerOver", c["InputBg"]);
+        SetBrush(dict, "ComboBoxBackgroundPressed", c["InputBg"]);
+        SetBrush(dict, "ComboBoxBorderBrush", inputBorder);
         SetBrush(dict, "ComboBoxForeground", c["TextPrimary"]);
         SetBrush(dict, "ComboBoxDropDownBackground", c["CardBg"]);
 
-        SetBrush(dict, "TabViewItemHeaderBackgroundSelected", c["CardBg"]);
+        SetBrush(dict, "TabViewItemHeaderBackgroundSelected", activeTab);
+        SetBrush(dict, "TabViewItemHeaderDragBackground", activeTab);
         SetBrush(dict, "TabViewItemHeaderBackgroundPointerOver", c["PillBg"]);
         SetBrush(dict, "TabViewItemHeaderForeground", c["TextMuted"]);
         SetBrush(dict, "TabViewItemHeaderForegroundSelected", c["TextPrimary"]);
         SetBrush(dict, "TabViewItemHeaderForegroundPointerOver", c["TextPrimary"]);
         SetBrush(dict, "TabViewItemIconForeground", c["TextMuted"]);
         SetBrush(dict, "TabViewItemIconForegroundSelected", c["AccentBlue"]);
+        SetBrush(dict, "TabViewItemSeparator", shellBorder);
+
+        SetBrush(dict, "NavigationViewItemBackgroundPointerOver", c["CardBgHover"]);
+        SetBrush(dict, "NavigationViewItemBackgroundPressed", c["PillBg"]);
+        SetBrush(dict, "NavigationViewItemBackgroundSelected", activeTab);
+        SetBrush(dict, "NavigationViewItemBackgroundSelectedPointerOver", c["CardBgHover"]);
+        SetBrush(dict, "NavigationViewItemBackgroundSelectedPressed", c["PillBg"]);
+        SetBrush(dict, "NavigationViewItemForeground", c["TextFaint"]);
+        SetBrush(dict, "NavigationViewItemForegroundPointerOver", c["TextPrimary"]);
+        SetBrush(dict, "NavigationViewItemForegroundSelected", c["AccentTeal"]);
+        SetBrush(dict, "NavigationViewItemForegroundSelectedPointerOver", c["AccentTeal"]);
     }
+
+    private static void ApplyRoleBrushes(ResourceDictionary dict, ThemePreset p)
+    {
+        SetBrush(dict, "ActiveTabBg", Role(p, "ActiveTabBg", "CardBg"));
+        SetBrush(dict, "ShellBorder", Role(p, "ShellBorder", "CardBorder"));
+        SetBrush(dict, "InputBorder", Role(p, "InputBorder", "CardBorder"));
+        SetBrush(dict, "Divider", Role(p, "Divider", "CardBorder"));
+        SetBrush(dict, "OutputGuide", Role(p, "OutputGuide", "CardBorder"));
+        SetBrush(dict, "TextPlaceholder", Role(p, "TextPlaceholder", "TextFaint"));
+    }
+
+    private static void ApplyAccentBrushes(ResourceDictionary dict, ThemePreset p)
+    {
+        var start = Role(p, "GradientStart", "AccentBlue");
+        var end = Role(p, "GradientEnd", "AccentTeal");
+        var hoverStart = Role(p, "GradientHoverStart", "GradientStart", "AccentBlue");
+        var hoverEnd = Role(p, "GradientHoverEnd", "GradientEnd", "AccentTeal");
+
+        ApplyAccentBrushesToDictionary(dict, p.IsDark, start, end, hoverStart, hoverEnd);
+
+        // Button.Resources의 pressed/hover 별칭은 컨트롤 생성 시점의 테마
+        // 그라디언트를 보관한다. 비활성 딕셔너리도 같은 값으로 갱신해 두면
+        // 시작 테마와 설정 테마가 달라도 런타임 전환 색이 남지 않는다.
+        var inactiveTheme = FindPaletteThemeDictionary(p.IsDark ? "Light" : "Dark");
+        if (inactiveTheme is not null && !ReferenceEquals(inactiveTheme, dict))
+            ApplyAccentBrushesToDictionary(inactiveTheme, p.IsDark, start, end, hoverStart, hoverEnd);
+    }
+
+    private static void ApplyAccentBrushesToDictionary(
+        ResourceDictionary dict,
+        bool isDark,
+        string start,
+        string end,
+        string hoverStart,
+        string hoverEnd)
+    {
+        SetGradient(dict, "AccentGradient", start, end);
+        SetGradient(dict, "AccentGradientHover", hoverStart, hoverEnd);
+        SetGradient(dict, "AccentIndicator", start, end);
+        SetGradient(dict, "NavigationViewSelectionIndicatorForeground", start, end);
+
+        var alpha = isDark ? (byte)0x38 : (byte)0x24;
+        SetGradient(dict, "AccentTint", start, end, alpha);
+        SetGradient(dict, "NavigationViewItemBackgroundSelected", start, end, alpha);
+        SetGradient(dict, "NavigationViewItemBackgroundSelectedPointerOver", start, end, alpha);
+        SetGradient(dict, "NavigationViewItemBackgroundSelectedPressed", start, end, alpha);
+    }
+
+    private static string Role(ThemePreset p, string role, string fallback) =>
+        p.Colors.TryGetValue(role, out var value) ? value : p.Colors[fallback];
+
+    private static string Role(ThemePreset p, string role, string fallbackRole, string fallbackCore) =>
+        p.Colors.TryGetValue(role, out var value)
+            ? value
+            : p.Colors.TryGetValue(fallbackRole, out var fallback)
+                ? fallback
+                : p.Colors[fallbackCore];
 
     private static void ApplyRail(ResourceDictionary dict, ThemePreset p)
     {
@@ -184,6 +267,26 @@ public static class ThemeManager
     {
         if (dict.TryGetValue(key, out var value) && value is SolidColorBrush brush)
             brush.Color = Parse(hex);
+    }
+
+    private static void SetGradient(
+        ResourceDictionary dict,
+        string key,
+        string start,
+        string end,
+        byte alpha = 255)
+    {
+        if (!dict.TryGetValue(key, out var value) ||
+            value is not LinearGradientBrush gradient ||
+            gradient.GradientStops.Count < 2)
+        {
+            return;
+        }
+
+        var startColor = Parse(start);
+        var endColor = Parse(end);
+        gradient.GradientStops[0].Color = Color.FromArgb(alpha, startColor.R, startColor.G, startColor.B);
+        gradient.GradientStops[^1].Color = Color.FromArgb(alpha, endColor.R, endColor.G, endColor.B);
     }
 
     private static ResourceDictionary? FindPaletteThemeDictionary(string themeKey)

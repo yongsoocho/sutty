@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 namespace sutty.Command;
 
 /// <summary>
-/// %LOCALAPPDATA%\sutty\commands.db (SQLite)에 명령어 playbook을 저장한다.
+/// %LOCALAPPDATA%\sutty\sutty.db (SQLite)에 명령어 playbook을 저장한다.
 /// 설정(단일 객체)은 JSON, 행이 늘어나는 명령어 목록은 SQLite — 용도에 맞게 분리.
 /// </summary>
 public static class CommandStore

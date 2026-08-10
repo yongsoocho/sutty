@@ -9,8 +9,54 @@
     VerticalAlignment="Stretch"
     mc:Ignorable="d">
 
+    <UserControl.Resources>
+        <Style
+            x:Key="DeepFieldFormLabel"
+            BasedOn="{StaticResource FormLabel}"
+            TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,0,5" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="CharacterSpacing" Value="40" />
+            <Setter Property="Foreground" Value="{ThemeResource TextMuted}" />
+        </Style>
+        <Style
+            x:Key="DeepFieldInput"
+            BasedOn="{StaticResource DarkInput}"
+            TargetType="TextBox">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="FontSize" Value="12.5" />
+        </Style>
+        <Style
+            x:Key="DeepFieldPassword"
+            BasedOn="{StaticResource DarkPassword}"
+            TargetType="PasswordBox">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="MinHeight" Value="34" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="FontSize" Value="12.5" />
+        </Style>
+        <Style x:Key="DeepFieldAuthButton" TargetType="Button">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style
+            x:Key="DeepFieldTagPill"
+            BasedOn="{StaticResource TagPill}"
+            TargetType="Border">
+            <Setter Property="Padding" Value="9,3" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+    </UserControl.Resources>
+
     <!--  Deep Field 리디자인: 카드 없는 플랫 폼 + 대문자 라벨 + 하단 고정 Connect  -->
-    <Grid RowSpacing="12">
+    <Grid Margin="2,6" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -27,24 +73,27 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock
                         VerticalAlignment="Center"
-                        FontSize="16"
+                        FontSize="15"
                         FontWeight="SemiBold"
                         Foreground="{ThemeResource TextPrimary}"
                         Text="{x:Bind h:Loc.T('새 연결', 'New connection')}" />
                     <Border
                         Grid.Column="1"
-                        Padding="2,0"
+                        Padding="0"
                         Background="{ThemeResource PillBg}"
                         BorderBrush="{ThemeResource CardBorder}"
                         BorderThickness="1"
                         CornerRadius="12">
                         <ComboBox
                             x:Name="VaultCombo"
-                            MinWidth="110"
+                            Height="24"
+                            MinHeight="24"
+                            MinWidth="96"
+                            Padding="8,0"
                             Background="Transparent"
                             BorderThickness="0"
-                            FontSize="12"
-                            Foreground="{ThemeResource AccentBlue}"
+                            FontSize="11"
+                            Foreground="{ThemeResource AccentTeal}"
                             SelectedIndex="0">
                             <ComboBoxItem Content="Team Vault" />
                             <ComboBoxItem Content="Personal Vault" />
@@ -55,31 +104,38 @@
 
                 <!--  ADDRESS  -->
                 <StackPanel>
-                    <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('주소', 'ADDRESS')}" />
+                    <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('주소', 'ADDRESS')}" />
                     <TextBox
                         x:Name="HostBox"
                         PlaceholderText="hostname or IP"
-                        Style="{StaticResource DarkInput}" />
+                        FontFamily="Cascadia Mono, Consolas"
+                        Style="{StaticResource DeepFieldInput}" />
                 </StackPanel>
 
                 <!--  USERNAME | PORT  -->
-                <Grid ColumnSpacing="10">
+                <Grid ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="96" />
+                        <ColumnDefinition Width="88" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
-                        <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('사용자', 'USERNAME')}" />
+                        <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('사용자', 'USERNAME')}" />
                         <TextBox
                             x:Name="UsernameBox"
                             PlaceholderText="root"
-                            Style="{StaticResource DarkInput}" />
+                            FontFamily="Cascadia Mono, Consolas"
+                            Style="{StaticResource DeepFieldInput}" />
                     </StackPanel>
                     <StackPanel Grid.Column="1">
-                        <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('포트', 'PORT')}" />
+                        <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('포트', 'PORT')}" />
                         <NumberBox
                             x:Name="PortBox"
-                            CornerRadius="8"
+                            Height="34"
+                            MinHeight="34"
+                            Padding="10,5"
+                            CornerRadius="7"
+                            FontFamily="Cascadia Mono, Consolas"
+                            FontSize="12.5"
                             Maximum="65535"
                             Minimum="1"
                             SpinButtonPlacementMode="Hidden"
@@ -89,17 +145,17 @@
 
                 <!--  DISPLAY NAME  -->
                 <StackPanel>
-                    <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('표시 이름', 'DISPLAY NAME')}" />
+                    <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('표시 이름', 'DISPLAY NAME')}" />
                     <TextBox
                         x:Name="DisplayNameBox"
                         PlaceholderText="Admin Devops Team"
-                        Style="{StaticResource DarkInput}" />
+                        Style="{StaticResource DeepFieldInput}" />
                 </StackPanel>
 
                 <!--  AUTHENTICATION: 2×2 선택 버튼  -->
                 <StackPanel>
-                    <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('인증', 'AUTHENTICATION')}" />
-                    <Grid ColumnSpacing="8" RowSpacing="8">
+                    <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('인증', 'AUTHENTICATION')}" />
+                    <Grid ColumnSpacing="6" RowSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
@@ -110,96 +166,103 @@
                         </Grid.RowDefinitions>
                         <Button
                             x:Name="AuthPasswordBtn"
-                            Height="34"
-                            HorizontalAlignment="Stretch"
-                            BorderThickness="1"
                             Click="AuthButton_Click"
                             Content="{x:Bind h:Loc.T('비밀번호', 'Password')}"
-                            CornerRadius="7"
-                            FontSize="12"
+                            Style="{StaticResource DeepFieldAuthButton}"
                             Tag="0" />
                         <Button
                             x:Name="AuthKeyBtn"
                             Grid.Column="1"
-                            Height="34"
-                            HorizontalAlignment="Stretch"
-                            BorderThickness="1"
                             Click="AuthButton_Click"
                             Content="Public key"
-                            CornerRadius="7"
-                            FontSize="12"
+                            Style="{StaticResource DeepFieldAuthButton}"
                             Tag="1" />
                         <Button
                             x:Name="AuthAgentBtn"
                             Grid.Row="1"
-                            Height="34"
-                            HorizontalAlignment="Stretch"
-                            BorderThickness="1"
                             Click="AuthButton_Click"
                             Content="SSH agent"
-                            CornerRadius="7"
-                            FontSize="12"
-                            Tag="2" />
+                            IsEnabled="False"
+                            Style="{StaticResource DeepFieldAuthButton}"
+                            Tag="2"
+                            ToolTipService.ToolTip="{x:Bind h:Loc.T('현재 SSH.NET 연결 엔진에서는 지원하지 않습니다.', 'Not supported by the current SSH.NET connection engine.')}" />
                         <Button
                             x:Name="AuthKbiBtn"
                             Grid.Row="1"
                             Grid.Column="1"
-                            Height="34"
-                            HorizontalAlignment="Stretch"
-                            BorderThickness="1"
                             Click="AuthButton_Click"
                             Content="{x:Bind h:Loc.T('대화형', 'Interactive')}"
-                            CornerRadius="7"
-                            FontSize="12"
-                            Tag="3" />
+                            IsEnabled="False"
+                            Style="{StaticResource DeepFieldAuthButton}"
+                            Tag="3"
+                            ToolTipService.ToolTip="{x:Bind h:Loc.T('대화형 OTP 프롬프트 UI는 아직 지원하지 않습니다.', 'Interactive OTP prompts are not supported yet.')}" />
                     </Grid>
                 </StackPanel>
 
                 <!--  인증 방식별 입력  -->
-                <StackPanel x:Name="PasswordPanel">
+                <StackPanel x:Name="PasswordPanel" Margin="0,-10,0,0">
                     <PasswordBox
                         x:Name="PasswordBox"
                         PlaceholderText="Password"
-                        Style="{StaticResource DarkPassword}" />
+                        Style="{StaticResource DeepFieldPassword}" />
                 </StackPanel>
 
                 <StackPanel
                     x:Name="KeyPanel"
+                    Margin="0,-10,0,0"
                     Spacing="10"
                     Visibility="Collapsed">
                     <StackPanel>
-                        <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('개인 키', 'PRIVATE KEY')}" />
+                        <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('개인 키', 'PRIVATE KEY')}" />
                         <Grid ColumnSpacing="8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBox
+                            <AutoSuggestBox
                                 x:Name="KeyPathBox"
+                                Height="34"
+                                MinHeight="34"
+                                Padding="10,5"
+                                CornerRadius="7"
+                                FontFamily="Cascadia Mono, Consolas"
+                                FontSize="12.5"
+                                GotFocus="KeyPathBox_GotFocus"
                                 PlaceholderText="~/.ssh/id_ed25519"
-                                Style="{StaticResource DarkInput}" />
+                                SuggestionChosen="KeyPathBox_SuggestionChosen"
+                                TextChanged="KeyPathBox_TextChanged"
+                                UpdateTextOnSelect="True" />
                             <Button
                                 Grid.Column="1"
-                                MinHeight="40"
+                                Height="34"
+                                MinHeight="34"
                                 Background="{ThemeResource PillBg}"
                                 BorderBrush="{ThemeResource CardBorder}"
                                 Click="BrowseKey_Click"
                                 Content="{x:Bind h:Loc.T('찾기', 'Browse')}"
-                                CornerRadius="8"
+                                CornerRadius="7"
+                                FontSize="12"
                                 Foreground="{ThemeResource TextPrimary}" />
                         </Grid>
+                        <TextBlock
+                            Margin="1,4,0,0"
+                            FontSize="10.5"
+                            Foreground="{ThemeResource TextMuted}"
+                            Text="{x:Bind h:Loc.T('최근 키 경로를 자동 완성합니다. 비밀번호와 passphrase는 저장하지 않습니다.', 'Recent key paths are suggested automatically. Passwords and passphrases are never saved.')}"
+                            TextWrapping="Wrap" />
                     </StackPanel>
                     <StackPanel>
-                        <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('키 암호 (선택)', 'KEY PASSPHRASE (OPTIONAL)')}" />
+                        <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('키 암호 (선택)', 'KEY PASSPHRASE (OPTIONAL)')}" />
                         <PasswordBox
                             x:Name="PassphraseBox"
                             PlaceholderText="Passphrase"
-                            Style="{StaticResource DarkPassword}" />
+                            Style="{StaticResource DeepFieldPassword}" />
                     </StackPanel>
                 </StackPanel>
 
                 <TextBlock
                     x:Name="AgentPanel"
+                    Margin="0,-10,0,0"
                     FontSize="12"
                     Foreground="{ThemeResource TextMuted}"
                     Text="{x:Bind h:Loc.T('실행 중인 SSH agent(ssh-agent/Pageant)의 키를 사용합니다.', 'Uses keys loaded in your running SSH agent (ssh-agent / Pageant).')}"
@@ -208,47 +271,59 @@
 
                 <TextBlock
                     x:Name="KbiPanel"
+                    Margin="0,-10,0,0"
                     FontSize="12"
                     Foreground="{ThemeResource TextMuted}"
                     Text="{x:Bind h:Loc.T('연결 시 서버가 응답(OTP/2FA 등)을 요청합니다.', 'The server will prompt for responses (e.g. one-time codes / 2FA) at connect time.')}"
                     TextWrapping="Wrap"
                     Visibility="Collapsed" />
 
-                <!--  태그  -->
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Border Style="{StaticResource TagPill}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock
-                                FontSize="12"
-                                Foreground="{ThemeResource AccentBlue}"
-                                Text="admin" />
-                            <FontIcon
-                                FontSize="10"
-                                Foreground="{ThemeResource TextMuted}"
-                                Glyph="&#xE711;" />
-                        </StackPanel>
-                    </Border>
-                    <Border Style="{StaticResource TagPill}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock
-                                FontSize="12"
-                                Foreground="{ThemeResource AccentTeal}"
-                                Text="personal" />
-                            <FontIcon
-                                FontSize="10"
-                                Foreground="{ThemeResource TextMuted}"
-                                Glyph="&#xE711;" />
-                        </StackPanel>
-                    </Border>
-                    <Border
+                <!--  연결 태그: 추가/삭제 가능하며 최근 태그는 다음 입력 때 제안한다.  -->
+                <StackPanel Spacing="5">
+                    <ItemsControl x:Name="TagsItems" ItemsSource="{x:Bind Tags}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsWrapGrid Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button
+                                    Margin="0,0,7,5"
+                                    Padding="9,3"
+                                    Background="{ThemeResource PillBg}"
+                                    BorderBrush="{ThemeResource CardBorder}"
+                                    BorderThickness="1"
+                                    Click="RemoveTag_Click"
+                                    CornerRadius="10"
+                                    Tag="{Binding}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock
+                                            FontSize="11"
+                                            Foreground="{ThemeResource AccentTeal}"
+                                            Text="{Binding}" />
+                                        <FontIcon
+                                            FontSize="9"
+                                            Foreground="{ThemeResource TextMuted}"
+                                            Glyph="&#xE711;" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button
+                        x:Name="AddTagButton"
+                        Padding="9,3"
+                        HorizontalAlignment="Left"
+                        AutomationProperties.Name="Add connection tag"
                         Background="Transparent"
                         BorderBrush="{ThemeResource CardBorder}"
-                        Style="{StaticResource TagPill}">
-                        <TextBlock
-                            FontSize="12"
-                            Foreground="{ThemeResource TextFaint}"
-                            Text="+ tag" />
-                    </Border>
+                        BorderThickness="1"
+                        Click="AddTag_Click"
+                        Content="+ tag"
+                        CornerRadius="10"
+                        FontSize="11"
+                        Foreground="{ThemeResource TextMuted}" />
                 </StackPanel>
 
                 <!--  Advanced (플랫 확장)  -->
@@ -262,21 +337,29 @@
                         <TextBlock
                             FontSize="12"
                             Foreground="{ThemeResource TextMuted}"
-                            Text="{x:Bind h:Loc.T('고급 — 점프 호스트, keep-alive, X11', 'Advanced — jump host, keep-alive, X11')}" />
+                            Text="{x:Bind h:Loc.T('고급 — keep-alive 및 지원 예정 기능', 'Advanced — keep-alive and planned features')}" />
                     </Expander.Header>
                     <StackPanel Padding="0,8,0,4" Spacing="12">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('점프 호스트 (선택)', 'JUMP HOST (OPTIONAL)')}" />
+                            <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('점프 호스트 — 지원 예정', 'JUMP HOST — PLANNED')}" />
                             <TextBox
                                 x:Name="JumpHostBox"
+                                FontFamily="Cascadia Mono, Consolas"
+                                IsEnabled="False"
                                 PlaceholderText="user@bastion:22"
-                                Style="{StaticResource DarkInput}" />
+                                Style="{StaticResource DeepFieldInput}"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('점프 호스트 연결은 아직 사용할 수 없습니다.', 'Jump host connections are planned and not yet available.')}" />
                         </StackPanel>
                         <StackPanel>
-                            <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('KEEP-ALIVE (초)', 'KEEP-ALIVE (SECONDS)')}" />
+                            <TextBlock Style="{StaticResource DeepFieldFormLabel}" Text="{x:Bind h:Loc.T('KEEP-ALIVE (초)', 'KEEP-ALIVE (SECONDS)')}" />
                             <NumberBox
                                 x:Name="KeepAliveBox"
-                                CornerRadius="8"
+                                Height="34"
+                                MinHeight="34"
+                                Padding="10,5"
+                                CornerRadius="7"
+                                FontFamily="Cascadia Mono, Consolas"
+                                FontSize="12.5"
                                 Maximum="3600"
                                 Minimum="0"
                                 SpinButtonPlacementMode="Hidden"
@@ -284,38 +367,50 @@
                         </StackPanel>
                         <CheckBox
                             x:Name="CompressionCheck"
-                            Content="{x:Bind h:Loc.T('압축 사용', 'Enable compression')}"
-                            Foreground="{ThemeResource TextPrimary}" />
+                            Content="{x:Bind h:Loc.T('압축 — 지원 예정', 'Compression — planned')}"
+                            Foreground="{ThemeResource TextMuted}"
+                            IsEnabled="False"
+                            ToolTipService.ToolTip="{x:Bind h:Loc.T('SSH 압축은 아직 사용할 수 없습니다.', 'SSH compression is planned and not yet available.')}" />
                         <CheckBox
                             x:Name="X11Check"
-                            Content="X11 forwarding"
-                            Foreground="{ThemeResource TextPrimary}" />
+                            Content="{x:Bind h:Loc.T('X11 포워딩 — 지원 예정', 'X11 forwarding — planned')}"
+                            Foreground="{ThemeResource TextMuted}"
+                            IsEnabled="False"
+                            ToolTipService.ToolTip="{x:Bind h:Loc.T('X11 포워딩은 아직 사용할 수 없습니다.', 'X11 forwarding is planned and not yet available.')}" />
                     </StackPanel>
                 </Expander>
             </StackPanel>
         </ScrollViewer>
 
         <!--  하단 고정 Connect — 디자인 시그니처 그라디언트(파랑→틸, 테마별)  -->
-        <Button
-            x:Name="ConnectButton"
-            Grid.Row="1"
-            Height="44"
-            Margin="0,4,0,4"
-            HorizontalAlignment="Stretch"
-            Background="{ThemeResource AccentGradient}"
-            BorderThickness="0"
-            Click="Connect_Click"
-            Content="Connect"
-            CornerRadius="9"
-            FontSize="14"
-            FontWeight="SemiBold"
-            Foreground="#FFFFFF">
-            <Button.Resources>
-                <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
-                <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
-                <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#FFFFFF" />
-                <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#DFF6F2" />
-            </Button.Resources>
-        </Button>
+        <StackPanel Grid.Row="1" Spacing="5">
+            <TextBlock
+                x:Name="SettingsSaveStatusText"
+                AutomationProperties.LiveSetting="Assertive"
+                FontSize="10.5"
+                Foreground="{ThemeResource StatusRed}"
+                TextWrapping="Wrap"
+                Visibility="Collapsed" />
+            <Button
+                x:Name="ConnectButton"
+                Height="38"
+                HorizontalAlignment="Stretch"
+                Background="{ThemeResource AccentGradient}"
+                BorderThickness="0"
+                Click="Connect_Click"
+                Content="Connect"
+                CornerRadius="8"
+                FontSize="13"
+                FontWeight="SemiBold"
+                CharacterSpacing="10"
+                Foreground="#FFFFFF">
+                <Button.Resources>
+                    <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
+                    <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                    <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#DFF6F2" />
+                </Button.Resources>
+            </Button>
+        </StackPanel>
     </Grid>
 </UserControl>

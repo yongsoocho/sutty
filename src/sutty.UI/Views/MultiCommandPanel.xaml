@@ -17,8 +17,8 @@
 
     <Grid RowSpacing="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="1*" MinHeight="120" />
-            <RowDefinition Height="3*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <!--  ── 위 25%: 브로드캐스트 입력 ──  -->
@@ -28,42 +28,45 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Border Background="{ThemeResource AccentViolet}" Style="{StaticResource HeaderDot}" />
-                <TextBlock
-                    VerticalAlignment="Center"
-                    FontSize="16"
-                    FontWeight="SemiBold"
-                    Foreground="{ThemeResource TextPrimary}"
-                    Text="Broadcast" />
-            </StackPanel>
+            <TextBlock
+                FontSize="15"
+                FontWeight="SemiBold"
+                Foreground="{ThemeResource TextPrimary}"
+                Text="Broadcast" />
 
-            <Grid Grid.Row="1" ColumnSpacing="8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <Grid Grid.Row="1" RowSpacing="6">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <TextBox
                     x:Name="BroadcastBox"
-                    VerticalAlignment="Stretch"
+                    Height="76"
                     AcceptsReturn="True"
-                    CornerRadius="8"
-                    FontSize="13"
+                    CornerRadius="7"
+                    FontFamily="Cascadia Mono, Consolas"
+                    FontSize="12"
+                    Padding="10,9"
                     PlaceholderText="{x:Bind h:Loc.T('체크된 모든 세션에 실행 · Enter=실행', 'Run on all checked sessions · Enter=run')}"
                     PreviewKeyDown="BroadcastBox_PreviewKeyDown"
                     TextWrapping="Wrap" />
                 <Button
-                    Grid.Column="1"
-                    Width="44"
-                    VerticalAlignment="Stretch"
-                    Background="{ThemeResource AccentBlue}"
+                    Grid.Row="1"
+                    Height="32"
+                    HorizontalAlignment="Stretch"
+                    Background="{ThemeResource AccentGradient}"
+                    BorderThickness="0"
                     Click="RunBroadcast_Click"
-                    CornerRadius="8"
+                    Content="Run on checked sessions"
+                    CornerRadius="7"
+                    FontSize="12"
+                    FontWeight="SemiBold"
+                    Foreground="#FFFFFF"
                     ToolTipService.ToolTip="Run on all checked sessions">
-                    <FontIcon
-                        FontSize="14"
-                        Foreground="#FFFFFF"
-                        Glyph="&#xE768;" />
+                    <Button.Resources>
+                        <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
+                        <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                    </Button.Resources>
                 </Button>
             </Grid>
         </Grid>
@@ -76,24 +79,25 @@
             </Grid.RowDefinitions>
 
             <TextBlock
-                FontSize="11"
+                CharacterSpacing="80"
+                FontSize="10.5"
                 FontWeight="SemiBold"
-                Foreground="{ThemeResource TextFaint}"
+                Foreground="{ThemeResource TextMuted}"
                 Text="{x:Bind h:Loc.T('SAVED COMMANDS · 실행하면 체크된 모든 세션으로', 'SAVED COMMANDS · runs on all checked sessions')}" />
 
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                <StackPanel Padding="0,0,0,12">
+                <StackPanel Padding="0,0,0,10">
                     <ItemsControl x:Name="CommandsList" ItemsSource="{x:Bind Items}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:CommandItemVm">
                                 <Border
-                                    Margin="0,0,0,8"
-                                    Padding="12,10"
+                                    Margin="0,0,0,6"
+                                    Padding="11,9"
                                     Background="{ThemeResource CardBg}"
                                     BorderBrush="{ThemeResource CardBorder}"
                                     BorderThickness="1"
-                                    CornerRadius="10">
-                                    <StackPanel Spacing="8">
+                                    CornerRadius="8">
+                                    <StackPanel Spacing="6">
                                         <Grid ColumnSpacing="6">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -101,18 +105,20 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock
                                                 VerticalAlignment="Center"
-                                                FontSize="13"
+                                                FontSize="12"
                                                 FontWeight="SemiBold"
                                                 Foreground="{ThemeResource TextPrimary}"
                                                 Text="{x:Bind Name}"
                                                 TextTrimming="CharacterEllipsis" />
                                             <Button
                                                 Grid.Column="1"
-                                                Padding="6,4"
-                                                Background="{ThemeResource PillBg}"
-                                                BorderBrush="{ThemeResource CardBorder}"
+                                                Width="22"
+                                                Height="22"
+                                                Padding="0"
+                                                Background="{ThemeResource AccentTint}"
+                                                BorderThickness="0"
                                                 Click="Run_Click"
-                                                CornerRadius="6"
+                                                CornerRadius="5"
                                                 ToolTipService.ToolTip="Run on all checked sessions">
                                                 <FontIcon
                                                     FontSize="11"
@@ -123,7 +129,7 @@
 
                                         <TextBlock
                                             FontFamily="Cascadia Mono, Consolas"
-                                            FontSize="11"
+                                            FontSize="10.5"
                                             Foreground="{ThemeResource TextMuted}"
                                             Text="{x:Bind CommandText}"
                                             TextWrapping="Wrap" />
@@ -133,24 +139,33 @@
                                             <ItemsControl ItemsSource="{x:Bind Params}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="vm:CommandParamVm">
-                                                        <TextBox
+                                                    <TextBox
                                                             Margin="0,0,0,6"
+                                                            MinHeight="32"
+                                                            CornerRadius="6"
                                                             FontFamily="Cascadia Mono, Consolas"
-                                                            FontSize="12"
+                                                            FontSize="11.5"
                                                             PlaceholderText="{x:Bind Label}"
                                                             Text="{x:Bind Value, Mode=TwoWay}" />
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
                                             <Button
+                                                Height="30"
                                                 HorizontalAlignment="Stretch"
-                                                Background="{ThemeResource AccentBlue}"
+                                                Background="{ThemeResource AccentGradient}"
+                                                BorderThickness="0"
                                                 Click="Execute_Click"
                                                 Content="Run"
                                                 CornerRadius="6"
-                                                FontSize="12"
+                                                FontSize="11.5"
                                                 FontWeight="SemiBold"
-                                                Foreground="#FFFFFF" />
+                                                Foreground="#FFFFFF">
+                                                <Button.Resources>
+                                                    <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
+                                                    <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                                                </Button.Resources>
+                                            </Button>
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
@@ -163,7 +178,7 @@
                         Margin="0,24,0,0"
                         HorizontalAlignment="Center"
                         FontSize="12"
-                        Foreground="{ThemeResource TextFaint}"
+                        Foreground="{ThemeResource TextMuted}"
                         Text="{x:Bind h:Loc.T('저장된 명령이 없습니다 — Command 탭에서 추가하세요', 'No saved commands — add them in the Command tab')}"
                         Visibility="Collapsed" />
                 </StackPanel>

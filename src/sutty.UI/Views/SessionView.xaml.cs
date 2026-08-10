@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Sessions;
+using sutty.Core.Sftp;
 using sutty.Setting;
 using sutty.UI.Helpers;
 using sutty.UI.ViewModels;
@@ -18,7 +19,7 @@ namespace sutty.UI.Views
     /// <summary>
     /// 탭 하나에 대응하는 세션 화면 (Deep Field 리디자인).
     /// - REPL: ❯ N 명령 + 타임스탬프·소요시간, 들여쓴 출력 (플랫)
-    /// - RAW : PuTTY식 검정 화면
+    /// - RAW : 명령 실행 결과를 이어 붙이는 연속 로그 (PTY 터미널 아님)
     /// - 헤더의 CONNECTED 필은 업타임을 실시간 카운트
     /// </summary>
     public sealed partial class SessionView : UserControl
@@ -42,17 +43,13 @@ namespace sutty.UI.Views
             _prompt = $"{user}@{session.Info.Host}";
             InitializeComponent();
 
-            var settings = SettingsService.Current;
-            var mono = new FontFamily(settings.TerminalFontFamily + ", Consolas");
-            CellsList.FontFamily = mono;
-            CellsList.FontSize = settings.TerminalFontSize;
-            CommandBox.FontFamily = mono;
-            RawText.FontFamily = mono;
-            RawText.FontSize = settings.TerminalFontSize;
-            InputPrompt.FontFamily = mono;
-
-            _isRaw = settings.TerminalMode == "Raw";
-            ApplyViewMode();
+            ApplyTerminalSettings();
+            ActualThemeChanged += (_, _) =>
+            {
+                ApplyViewMode();
+                UpdateStatusPill(Session.State);
+                UpdateSftpPill(Session.SftpState);
+            };
 
             TitleText.Text = $"{user}@{Session.Info.Title} · {Session.Info.Host}:{Session.Info.Port}";
             UpdatePrompt();
@@ -65,7 +62,42 @@ namespace sutty.UI.Views
 
             // StateChanged는 백그라운드 스레드에서 올 수 있으므로 UI 스레드로 마샬링
             Session.StateChanged += OnStateChanged;
+            Session.SftpStateChanged += OnSftpStateChanged;
             ApplyState(Session.State, initial: true);
+        }
+
+        /// <summary>Apply terminal-related settings to this already-open session.</summary>
+        public void ApplyTerminalSettings()
+        {
+            var settings = SettingsService.Current;
+            var familyName = string.IsNullOrWhiteSpace(settings.TerminalFontFamily)
+                ? "Cascadia Mono"
+                : settings.TerminalFontFamily.Trim();
+            var family = new FontFamily($"{familyName}, Consolas");
+            var size = Math.Clamp(settings.TerminalFontSize, 8, 32);
+
+            CellsList.FontFamily = family;
+            CellsList.FontSize = size;
+            CommandBox.FontFamily = family;
+            CommandBox.FontSize = size;
+            RawText.FontFamily = family;
+            RawText.FontSize = size;
+            RawText.LineHeight = Math.Ceiling(size * 1.5);
+            InputPrompt.FontFamily = family;
+            InputPrompt.FontSize = size;
+
+            var modeChanged = _isRaw != (settings.TerminalMode == "Raw");
+            _isRaw = settings.TerminalMode == "Raw";
+            ApplyViewMode();
+            if (modeChanged)
+                ScrollToBottom();
+        }
+
+        /// <summary>Refresh one-time localized bindings without recreating the session.</summary>
+        public void RefreshLanguage()
+        {
+            Bindings.Update();
+            UpdateSftpPill(Session.SftpState);
         }
 
         // ── RAW ↔ REPL 세그먼트 토글 ──
@@ -88,12 +120,12 @@ namespace sutty.UI.Views
             ReplView.Visibility = _isRaw ? Visibility.Collapsed : Visibility.Visible;
             RawView.Visibility = _isRaw ? Visibility.Visible : Visibility.Collapsed;
 
-            var active = ThemeResources.Brush(this, "CardBgHover");
+            var active = ThemeResources.Brush(this, "AccentTint");
             var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             ReplBtn.Background = _isRaw ? transparent : active;
             RawBtn.Background = _isRaw ? active : transparent;
-            ReplBtn.Foreground = ThemeResources.Brush(this, _isRaw ? "TextMuted" : "TextPrimary");
-            RawBtn.Foreground = ThemeResources.Brush(this, _isRaw ? "TextPrimary" : "TextMuted");
+            ReplBtn.Foreground = ThemeResources.Brush(this, _isRaw ? "TextFaint" : "TextPrimary");
+            RawBtn.Foreground = ThemeResources.Brush(this, _isRaw ? "TextPrimary" : "TextFaint");
         }
 
         // ── 세션 상태 / 업타임 필 ──
@@ -101,13 +133,15 @@ namespace sutty.UI.Views
         private void OnStateChanged(object? sender, SessionState state)
             => DispatcherQueue.TryEnqueue(() => ApplyState(state));
 
-        // 디자인 원본 상태 색: 초록 #34C08D / 앰버 #E9B44C / 빨강 #D64848 / 회색 #6E7C8B
-        private static Color StatusColor(SessionState state) => state switch
+        private void OnSftpStateChanged(object? sender, SftpConnectionState state)
+            => DispatcherQueue.TryEnqueue(() => UpdateSftpPill(state));
+
+        private static string StatusResourceKey(SessionState state) => state switch
         {
-            SessionState.Connected => Color.FromArgb(255, 0x34, 0xC0, 0x8D),
-            SessionState.Connecting or SessionState.Disconnecting => Color.FromArgb(255, 0xE9, 0xB4, 0x4C),
-            SessionState.Failed => Color.FromArgb(255, 0xD6, 0x48, 0x48),
-            _ => Color.FromArgb(255, 0x6E, 0x7C, 0x8B),
+            SessionState.Connected => "StatusGreen",
+            SessionState.Connecting or SessionState.Disconnecting => "StatusAmber",
+            SessionState.Failed => "StatusRed",
+            _ => "StatusIdle",
         };
 
         private void UpdateStatusPill(SessionState state)
@@ -121,11 +155,33 @@ namespace sutty.UI.Views
                 SessionState.Failed => "FAILED",
                 _ => "READY",
             };
-            var color = StatusColor(state);
+            var foreground = ThemeResources.Brush(this, StatusResourceKey(state));
+            var color = foreground is SolidColorBrush solid
+                ? solid.Color
+                : Color.FromArgb(255, 0x6E, 0x7C, 0x8B);
 
             StatusPillText.Text = label;
-            StatusPillText.Foreground = new SolidColorBrush(color);
+            StatusPillText.Foreground = foreground;
             StatusPill.Background = new SolidColorBrush(Color.FromArgb(36, color.R, color.G, color.B));
+        }
+
+        private void UpdateSftpPill(SftpConnectionState state)
+        {
+            if (Session.State != SessionState.Connected || state == SftpConnectionState.NotConnected)
+            {
+                SftpPill.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            SftpPill.Visibility = Visibility.Visible;
+            var (label, resourceKey) = state switch
+            {
+                SftpConnectionState.Ready => (Loc.T("SFTP 준비됨", "SFTP ready"), "AccentTeal"),
+                SftpConnectionState.Unavailable => (Loc.T("SFTP 사용 불가", "SFTP unavailable"), "StatusRed"),
+                _ => (Loc.T("SFTP 연결 중", "SFTP connecting"), "StatusAmber"),
+            };
+            SftpPillText.Text = label;
+            SftpPillText.Foreground = ThemeResources.Brush(this, resourceKey);
         }
 
         private void ApplyState(SessionState state, bool initial = false)
@@ -146,7 +202,7 @@ namespace sutty.UI.Views
             }
 
             UpdateStatusPill(state);
-            SftpPill.Visibility = state == SessionState.Connected ? Visibility.Visible : Visibility.Collapsed;
+            UpdateSftpPill(Session.SftpState);
 
             var connected = state == SessionState.Connected;
             CommandBox.IsEnabled = connected;

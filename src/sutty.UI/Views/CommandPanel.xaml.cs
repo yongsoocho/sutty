@@ -14,6 +14,8 @@ namespace sutty.UI.Views
     /// </summary>
     public sealed partial class CommandPanel : UserControl
     {
+        public void RefreshLanguage() => Bindings.Update();
+
         private readonly System.Collections.Generic.List<CommandItemVm> _all = [];
         public ObservableCollection<CommandItemVm> Items { get; } = [];
 

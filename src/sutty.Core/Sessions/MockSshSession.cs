@@ -9,13 +9,18 @@ namespace sutty.Core.Sessions;
 /// </summary>
 public sealed class MockSshSession : ISshSession
 {
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+
     public Guid Id { get; } = Guid.NewGuid();
     public SshConnectionInfo Info { get; }
     public SessionState State { get; private set; } = SessionState.Idle;
     public string? LastError => null;
     public ISftpService Sftp { get; }
+    public SftpConnectionState SftpState { get; private set; } = SftpConnectionState.NotConnected;
+    public string? LastSftpError => null;
 
     public event EventHandler<SessionState>? StateChanged;
+    public event EventHandler<SftpConnectionState>? SftpStateChanged;
 
     public MockSshSession(SshConnectionInfo info)
     {
@@ -25,12 +30,31 @@ public sealed class MockSshSession : ISshSession
 
     public async Task ConnectAsync(CancellationToken ct = default)
     {
-        if (State is SessionState.Connecting or SessionState.Connected)
-            return;
+        await _lifecycleGate.WaitAsync(ct);
+        try
+        {
+            if (State is SessionState.Connecting or SessionState.Connected)
+                return;
 
-        SetState(SessionState.Connecting);
-        await Task.Delay(700, ct); // 핸드셰이크 + 인증 흉내
-        SetState(SessionState.Connected);
+            SetState(SessionState.Connecting);
+            SetSftpState(SftpConnectionState.Connecting);
+            try
+            {
+                await Task.Delay(700, ct); // 핸드셰이크 + 인증 흉내
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                SetSftpState(SftpConnectionState.NotConnected);
+                SetState(SessionState.Disconnected);
+                throw;
+            }
+            SetSftpState(SftpConnectionState.Ready);
+            SetState(SessionState.Connected);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
     }
 
     public async Task<string> RunCommandAsync(string command, CancellationToken ct = default)
@@ -63,17 +87,35 @@ public sealed class MockSshSession : ISshSession
 
     public async Task DisconnectAsync()
     {
-        if (State is SessionState.Idle or SessionState.Disconnected or SessionState.Disconnecting)
-            return;
+        await _lifecycleGate.WaitAsync();
+        try
+        {
+            if (State is SessionState.Idle or SessionState.Disconnected or SessionState.Disconnecting)
+                return;
 
-        SetState(SessionState.Disconnecting);
-        await Task.Delay(250); // 채널 정리 흉내
-        SetState(SessionState.Disconnected);
+            SetState(SessionState.Disconnecting);
+            await Task.Delay(250); // 채널 정리 흉내
+            SetSftpState(SftpConnectionState.NotConnected);
+            SetState(SessionState.Disconnected);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
     }
 
     private void SetState(SessionState state)
     {
         State = state;
         StateChanged?.Invoke(this, state);
+    }
+
+    private void SetSftpState(SftpConnectionState state)
+    {
+        if (SftpState == state)
+            return;
+
+        SftpState = state;
+        SftpStateChanged?.Invoke(this, state);
     }
 }

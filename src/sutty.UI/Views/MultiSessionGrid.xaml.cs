@@ -21,6 +21,8 @@ namespace sutty.UI.Views
             InitializeComponent();
         }
 
+        public void RefreshLanguage() => Bindings.Update();
+
         // 셀 크기를 가용 영역의 정확히 1/4로 → 4×4가 가로·세로 꽉 찬다
         private void Cells_SizeChanged(object sender, SizeChangedEventArgs e)
         {

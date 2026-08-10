@@ -5,7 +5,7 @@ namespace sutty.Core.Sessions;
 
 /// <summary>
 /// SSH 세션 하나(= 탭 하나)의 계약.
-/// 지금은 MockSshSession이 구현하고, 실제 SSH 클라이언트로 교체 예정.
+/// MockSshSession과 SSH.NET 기반 SshNetSession이 같은 계약을 구현한다.
 /// StateChanged는 백그라운드 스레드에서 발생할 수 있으므로
 /// UI에서는 DispatcherQueue로 마샬링해야 한다.
 /// </summary>
@@ -18,10 +18,20 @@ public interface ISshSession
     /// <summary>State가 Failed일 때 마지막 오류 메시지.</summary>
     string? LastError { get; }
 
-    /// <summary>이 세션과 같은 연결을 공유하는 SFTP 채널.</summary>
+    /// <summary>이 세션의 인증 정보를 사용하는 선택적 SFTP subsystem.</summary>
     ISftpService Sftp { get; }
 
+    /// <summary>
+    /// Optional SFTP subsystem state. This is independent from the SSH session state:
+    /// a connected SSH session may have SFTP marked as unavailable.
+    /// </summary>
+    SftpConnectionState SftpState { get; }
+
+    /// <summary>The most recent SFTP connection error, when SFTP is unavailable.</summary>
+    string? LastSftpError { get; }
+
     event EventHandler<SessionState>? StateChanged;
+    event EventHandler<SftpConnectionState>? SftpStateChanged;
 
     Task ConnectAsync(CancellationToken ct = default);
 

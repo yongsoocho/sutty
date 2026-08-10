@@ -8,30 +8,25 @@
     xmlns:local="using:sutty.UI.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:sizers="using:CommunityToolkit.WinUI.Controls"
-    Title="sutty"
+    Title="Sutty"
     mc:Ignorable="d">
-    <Window.SystemBackdrop>
-        <MicaBackdrop />
-    </Window.SystemBackdrop>
-
     <!--  테마(Dark/Light)는 코드에서 설정값으로 지정하고, 우상단 토글로 전환한다  -->
-    <Grid x:Name="Root">
+    <Grid x:Name="Root" Background="{ThemeResource AppBg}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
             <ColumnDefinition
                 x:Name="RightPanelColumn"
-                Width="336"
+                Width="316"
                 MaxWidth="800"
-                MinWidth="220" />
+                MinWidth="300" />
         </Grid.ColumnDefinitions>
 
         <!--  타이틀 스트립 배경 (시각용, 전체 폭)  -->
         <Border
             Grid.Column="0"
-            Grid.ColumnSpan="4"
-            Height="40"
+            Grid.ColumnSpan="3"
+            Height="38"
             VerticalAlignment="Top"
             Background="{ThemeResource AppBg}" />
 
@@ -42,83 +37,104 @@
         <Grid
             x:Name="TitleBarDragRegion"
             Grid.Column="1"
-            Grid.ColumnSpan="3"
-            Height="40"
+            Grid.ColumnSpan="2"
+            Height="38"
             VerticalAlignment="Top"
             Background="Transparent" />
 
         <!--  ── Column 0: Logo + Left Nav Rail ──  -->
-        <Grid Grid.Column="0" Background="{ThemeResource RailBg}">
+        <Grid
+            Grid.Column="0"
+            Background="{ThemeResource RailBg}">
             <Grid.RowDefinitions>
-                <RowDefinition Height="40" />
+                <RowDefinition Height="38" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <!--  디자인 원본 로고 (좀 더 크게)  -->
             <Image
                 Grid.Row="0"
-                Width="32"
-                Height="32"
-                Margin="0,6,0,0"
+                Width="22"
+                Height="22"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
-                Source="ms-appx:///Assets/sutty-48.png" />
+                Source="ms-appx:///Assets/sutty.targetsize-48.png" />
             <NavigationView
                 x:Name="LeftNav"
                 Grid.Row="1"
+                AlwaysShowHeader="False"
+                Background="Transparent"
+                CompactPaneLength="48"
                 IsBackButtonVisible="Collapsed"
+                IsPaneOpen="False"
                 IsPaneToggleButtonVisible="False"
                 IsSettingsVisible="False"
+                IsTitleBarAutoPaddingEnabled="False"
                 ItemInvoked="LeftNav_ItemInvoked"
+                OpenPaneLength="48"
                 PaneDisplayMode="LeftCompact"
                 SelectionChanged="LeftNav_SelectionChanged">
                 <NavigationView.MenuItems>
-                    <NavigationViewItem Content="Home" Tag="Home">
+                    <NavigationViewItem Content="Home" Style="{StaticResource CompactRailItem}" Tag="Home">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE80F;" />
+                            <FontIcon Glyph="&#xE80F;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
-                    <NavigationViewItem Content="Search" Tag="Search">
+                    <NavigationViewItem Content="Search" Style="{StaticResource CompactRailItem}" Tag="Search">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE721;" />
+                            <FontIcon Glyph="&#xE721;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
-                    <NavigationViewItem Content="Folder" Tag="Folder">
+                    <NavigationViewItem Content="Folder" Style="{StaticResource CompactRailItem}" Tag="Folder">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE8B7;" />
+                            <FontIcon Glyph="&#xE8B7;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
                     <!--  Command: 자주 쓰는 명령어 playbook (디자인: 번개 아이콘)  -->
-                    <NavigationViewItem Content="Command" Tag="Command">
+                    <NavigationViewItem Content="Command" Style="{StaticResource CompactRailItem}" Tag="Command">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE945;" />
+                            <FontIcon Glyph="&#xE945;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
                     <!--  Multi: 여러 세션에 동시에 명령 브로드캐스트  -->
-                    <NavigationViewItem Content="Multi" Tag="Multi">
+                    <NavigationViewItem Content="Multi" Style="{StaticResource CompactRailItem}" Tag="Multi">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE8A9;" />
+                            <FontIcon Glyph="&#xE8A9;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
                 </NavigationView.MenuItems>
                 <NavigationView.FooterMenuItems>
                     <NavigationViewItem
                         Content="Setting"
-                        Icon="Setting"
                         SelectsOnInvoked="False"
-                        Tag="Setting" />
+                        Style="{StaticResource CompactRailItem}"
+                        Tag="Setting">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE713;" Style="{StaticResource CompactRailIcon}" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
                 </NavigationView.FooterMenuItems>
             </NavigationView>
+
+            <!-- Draw the divider over the rail so it does not steal one pixel
+                 from NavigationView's 48px compact-pane layout. -->
+            <Border
+                Grid.RowSpan="2"
+                Width="1"
+                HorizontalAlignment="Right"
+                Background="{ThemeResource ShellBorder}"
+                IsHitTestVisible="False"
+                Canvas.ZIndex="1" />
         </Grid>
 
         <!--  ── Column 1: Tabs + Main Content ──  -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
-                <RowDefinition Height="40" />
+                <RowDefinition Height="38" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
@@ -129,6 +145,8 @@
             <TabView
                 x:Name="TitleTabs"
                 Grid.Row="0"
+                Height="38"
+                Margin="8,0,0,0"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Stretch"
                 IsAddTabButtonVisible="False"
@@ -151,7 +169,7 @@
                     <FontIcon
                         HorizontalAlignment="Center"
                         FontSize="34"
-                        Foreground="{ThemeResource TextFaint}"
+                        Foreground="{ThemeResource TextMuted}"
                         Glyph="&#xE756;" />
                     <TextBlock
                         HorizontalAlignment="Center"
@@ -161,7 +179,7 @@
                     <TextBlock
                         HorizontalAlignment="Center"
                         FontSize="12"
-                        Foreground="{ThemeResource TextFaint}"
+                        Foreground="{ThemeResource TextMuted}"
                         Text="{x:Bind h:Loc.T('Home 패널에서 연결하면 세션 탭이 열립니다 (최대 16개)', 'Connect from the Home panel to open a session tab (max 16)')}" />
                 </StackPanel>
             </Grid>
@@ -169,25 +187,28 @@
 
         <!--  ── Column 2: 오른쪽 패널 크기 조절 스플리터 ──  -->
         <sizers:GridSplitter
-            Grid.Column="2"
-            Width="6"
-            Margin="0,40,0,0"
+            Grid.Column="1"
+            Width="8"
+            Margin="0,38,-4,0"
+            HorizontalAlignment="Right"
             Background="Transparent"
-            ResizeBehavior="BasedOnAlignment"
-            ResizeDirection="Columns" />
+            ResizeBehavior="CurrentAndNext"
+            ResizeDirection="Columns"
+            AutomationProperties.Name="Resize side panel"
+            Canvas.ZIndex="10" />
 
         <!--  ── Column 3: Right Panel ──  -->
-        <Grid x:Name="RightPanelHost" Grid.Column="3">
+        <Grid x:Name="RightPanelHost" Grid.Column="2">
             <Grid.RowDefinitions>
-                <RowDefinition Height="40" />
+                <RowDefinition Height="38" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <Border
                 Grid.Row="1"
-                Padding="14,10,14,10"
+                Padding="16"
                 VerticalAlignment="Stretch"
                 Background="{ThemeResource SidePanelBg}"
-                BorderBrush="{ThemeResource CardBorder}"
+                BorderBrush="{ThemeResource ShellBorder}"
                 BorderThickness="1,0,0,0">
                 <ContentControl
                     x:Name="RightPanel"

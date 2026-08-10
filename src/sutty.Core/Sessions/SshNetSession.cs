@@ -6,21 +6,25 @@ namespace sutty.Core.Sessions;
 
 /// <summary>
 /// SSH.NET(Renci.SshNet) 기반 실제 SSH 세션.
-/// 연결 시 SSH 채널과 SFTP 채널을 함께 연다.
+/// SSH transport를 먼저 연결하고, 선택적 SFTP subsystem은 별도 상태로 연다.
 /// </summary>
 public sealed class SshNetSession : ISshSession
 {
     private SshClient? _ssh;
     private SftpClient? _sftpClient;
     private readonly SshNetSftpService _sftpService;
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
     public Guid Id { get; } = Guid.NewGuid();
     public SshConnectionInfo Info { get; }
     public SessionState State { get; private set; } = SessionState.Idle;
     public string? LastError { get; private set; }
     public ISftpService Sftp => _sftpService;
+    public SftpConnectionState SftpState { get; private set; } = SftpConnectionState.NotConnected;
+    public string? LastSftpError { get; private set; }
 
     public event EventHandler<SessionState>? StateChanged;
+    public event EventHandler<SftpConnectionState>? SftpStateChanged;
 
     public SshNetSession(SshConnectionInfo info)
     {
@@ -30,31 +34,67 @@ public sealed class SshNetSession : ISshSession
 
     public async Task ConnectAsync(CancellationToken ct = default)
     {
-        if (State is SessionState.Connecting or SessionState.Connected)
-            return;
-
-        SetState(SessionState.Connecting);
+        await _lifecycleGate.WaitAsync(ct);
         try
         {
-            await Task.Run(() =>
+            if (State is SessionState.Connecting or SessionState.Connected)
+                return;
+
+            LastError = null;
+            LastSftpError = null;
+            SetSftpState(SftpConnectionState.NotConnected);
+            SetState(SessionState.Connecting);
+            try
             {
                 _ssh = new SshClient(BuildConnectionInfo());
                 if (Info.KeepAliveSeconds > 0)
                     _ssh.KeepAliveInterval = TimeSpan.FromSeconds(Info.KeepAliveSeconds);
-                _ssh.Connect();
+                await _ssh.ConnectAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                CleanUp();
+                SetSftpState(SftpConnectionState.NotConnected);
+                SetState(SessionState.Disconnected);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LastError = ex.Message;
+                CleanUp();
+                SetSftpState(SftpConnectionState.NotConnected);
+                SetState(SessionState.Failed);
+                return;
+            }
 
-                // SFTP는 별도 채널로 연다 (같은 인증 정보 재사용)
-                _sftpClient = new SftpClient(BuildConnectionInfo());
-                _sftpClient.Connect();
-            }, ct);
-
+            // SSH is usable as soon as its transport is connected. SFTP is an optional
+            // subsystem and must not turn a working terminal into a failed session.
+            SetSftpState(SftpConnectionState.Connecting);
             SetState(SessionState.Connected);
+
+            try
+            {
+                _sftpClient = new SftpClient(BuildConnectionInfo());
+                await _sftpClient.ConnectAsync(ct);
+                SetSftpState(SftpConnectionState.Ready);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                CleanUp();
+                SetSftpState(SftpConnectionState.NotConnected);
+                SetState(SessionState.Disconnected);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LastSftpError = ex.Message;
+                CleanUpSftp();
+                SetSftpState(SftpConnectionState.Unavailable);
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            LastError = ex.Message;
-            CleanUp();
-            SetState(SessionState.Failed);
+            _lifecycleGate.Release();
         }
     }
 
@@ -73,22 +113,36 @@ public sealed class SshNetSession : ISshSession
 
     public async Task DisconnectAsync()
     {
-        if (State is SessionState.Idle or SessionState.Disconnected or SessionState.Disconnecting)
-            return;
+        await _lifecycleGate.WaitAsync();
+        try
+        {
+            if (State is SessionState.Idle or SessionState.Disconnected or SessionState.Disconnecting)
+                return;
 
-        SetState(SessionState.Disconnecting);
-        await Task.Run(CleanUp);
-        SetState(SessionState.Disconnected);
+            SetState(SessionState.Disconnecting);
+            await Task.Run(CleanUp);
+            SetSftpState(SftpConnectionState.NotConnected);
+            SetState(SessionState.Disconnected);
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
     }
 
     private void CleanUp()
     {
-        try { _sftpClient?.Disconnect(); } catch { /* 이미 끊겼으면 무시 */ }
+        CleanUpSftp();
         try { _ssh?.Disconnect(); } catch { /* 이미 끊겼으면 무시 */ }
-        _sftpClient?.Dispose();
         _ssh?.Dispose();
-        _sftpClient = null;
         _ssh = null;
+    }
+
+    private void CleanUpSftp()
+    {
+        try { _sftpClient?.Disconnect(); } catch { /* already disconnected */ }
+        _sftpClient?.Dispose();
+        _sftpClient = null;
     }
 
     private Renci.SshNet.ConnectionInfo BuildConnectionInfo()
@@ -180,5 +234,14 @@ public sealed class SshNetSession : ISshSession
     {
         State = state;
         StateChanged?.Invoke(this, state);
+    }
+
+    private void SetSftpState(SftpConnectionState state)
+    {
+        if (SftpState == state)
+            return;
+
+        SftpState = state;
+        SftpStateChanged?.Invoke(this, state);
     }
 }
