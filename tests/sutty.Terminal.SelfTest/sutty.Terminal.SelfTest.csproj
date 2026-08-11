@@ -9,5 +9,6 @@
   <ItemGroup>
     <!-- VtScreenBuffer has no WinUI dependency; link the production source directly. -->
     <Compile Include="..\..\src\sutty.UI\Helpers\VtScreenBuffer.cs" Link="VtScreenBuffer.cs" />
+    <ProjectReference Include="..\..\src\sutty.Core\sutty.Core.csproj" />
   </ItemGroup>
 </Project>

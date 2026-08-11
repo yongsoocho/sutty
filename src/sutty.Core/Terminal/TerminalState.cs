@@ -1,6 +1,6 @@
 namespace sutty.Core.Terminal;
 
-/// <summary>Lifecycle of the interactive PTY channel inside an SSH connection.</summary>
+/// <summary>Lifecycle shared by remote PTY channels and local terminal processes.</summary>
 public enum TerminalState
 {
     Closed,

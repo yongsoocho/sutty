@@ -83,9 +83,10 @@
 
             <!--  TabView (세션 탭)  -->
             <SolidColorBrush x:Key="TabViewBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewBorderBrush" Color="#1E242B" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackground" Color="Transparent" />
-            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#151B22" />
-            <SolidColorBrush x:Key="TabViewItemHeaderDragBackground" Color="#151B22" />
+            <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#0A0D10" />
+            <SolidColorBrush x:Key="TabViewItemHeaderDragBackground" Color="#0A0D10" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackgroundPointerOver" Color="#12171D" />
             <SolidColorBrush x:Key="TabViewItemHeaderForeground" Color="#8C99A8" />
             <SolidColorBrush x:Key="TabViewItemHeaderForegroundSelected" Color="#E8EDF2" />
@@ -93,6 +94,12 @@
             <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#8C99A8" />
             <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#2BC7B5" />
             <SolidColorBrush x:Key="TabViewItemSeparator" Color="#1E242B" />
+            <SolidColorBrush x:Key="TabViewButtonBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewButtonBackgroundPointerOver" Color="#161C22" />
+            <SolidColorBrush x:Key="TabViewButtonBackgroundPressed" Color="#12171D" />
+            <SolidColorBrush x:Key="TabViewButtonForeground" Color="#8C99A8" />
+            <SolidColorBrush x:Key="TabViewButtonForegroundPointerOver" Color="#E8EDF2" />
+            <SolidColorBrush x:Key="TabViewButtonForegroundPressed" Color="#5BDCCB" />
 
             <!--  NavigationView (왼쪽 레일): 선택 표시 = 세로 그라디언트 바 + 밝은 틸 아이콘  -->
             <LinearGradientBrush x:Key="NavigationViewSelectionIndicatorForeground" StartPoint="0,0" EndPoint="0,1">
@@ -194,6 +201,7 @@
 
             <!--  TabView  -->
             <SolidColorBrush x:Key="TabViewBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewBorderBrush" Color="#D8DEE5" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackground" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#FFFFFF" />
             <SolidColorBrush x:Key="TabViewItemHeaderDragBackground" Color="#FFFFFF" />
@@ -204,6 +212,12 @@
             <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#5A6875" />
             <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#0FA396" />
             <SolidColorBrush x:Key="TabViewItemSeparator" Color="#D8DEE5" />
+            <SolidColorBrush x:Key="TabViewButtonBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewButtonBackgroundPointerOver" Color="#D9E0E7" />
+            <SolidColorBrush x:Key="TabViewButtonBackgroundPressed" Color="#EDF0F3" />
+            <SolidColorBrush x:Key="TabViewButtonForeground" Color="#5A6875" />
+            <SolidColorBrush x:Key="TabViewButtonForegroundPointerOver" Color="#1C2530" />
+            <SolidColorBrush x:Key="TabViewButtonForegroundPressed" Color="#0B7C72" />
 
             <!--  NavigationView  -->
             <LinearGradientBrush x:Key="NavigationViewSelectionIndicatorForeground" StartPoint="0,0" EndPoint="0,1">
@@ -304,30 +318,25 @@
 
     <Style x:Key="CompactRailItem" TargetType="NavigationViewItem">
         <!--
-            Keep the native NavigationView icon box at its expected 40px size.
-            Shrinking the item below this size clips both the glyph and selection
-            indicator when the pane is constrained to the 48px compact rail.
+            Do not override the item geometry. NavigationView calculates a 40px
+            icon column inside the 48px compact pane and offsets it by 4px,
+            placing every icon exactly on the rail's x=24 center line.
         -->
-        <Setter Property="Width" Value="40" />
-        <Setter Property="Height" Value="40" />
-        <Setter Property="MinWidth" Value="40" />
-        <Setter Property="MinHeight" Value="40" />
-        <Setter Property="Margin" Value="4,2" />
-        <Setter Property="Padding" Value="0" />
         <Setter Property="CornerRadius" Value="8" />
         <Setter Property="FontSize" Value="20" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     </Style>
 
     <Style x:Key="CompactRailIcon" TargetType="FontIcon">
         <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
         <Setter Property="FontSize" Value="20" />
-        <Setter Property="Width" Value="24" />
-        <Setter Property="Height" Value="24" />
-        <Setter Property="HorizontalAlignment" Value="Center" />
-        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
+    <!--  32px tab + 6px top inset = the 38px custom title bar.  -->
+    <Thickness x:Key="TabViewHeaderPadding">0,6,0,0</Thickness>
     <x:Double x:Key="TabViewItemMinHeight">32</x:Double>
+    <x:Double x:Key="TabViewItemAddButtonWidth">32</x:Double>
+    <x:Double x:Key="TabViewItemAddButtonHeight">30</x:Double>
+    <x:Double x:Key="TabViewItemAddButtonFontSize">14</x:Double>
+    <Thickness x:Key="TabViewItemAddButtonContainerPadding">3,0,0,2</Thickness>
 </ResourceDictionary>

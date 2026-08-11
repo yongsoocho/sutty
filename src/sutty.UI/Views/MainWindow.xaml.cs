@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Media;
 using sutty.Core.Models;
 using sutty.Core.Security;
 using sutty.Core.Sessions;
+using sutty.Core.Terminal;
 using sutty.Setting;
 using System;
 using System.Diagnostics;
@@ -21,7 +22,7 @@ namespace sutty.UI.Views
     {
         public sutty.UI.ViewModels.MainViewModel ViewModel { get; }
 
-        /// <summary>동시에 열 수 있는 세션(탭) 최대 개수 — Multi 그리드(4×4)와 맞춤.</summary>
+        /// <summary>동시에 열 수 있는 로컬/SSH 작업 탭 최대 개수.</summary>
         private const int MaxSessions = 16;
 
         private readonly SessionManager _sessions = new();
@@ -54,6 +55,8 @@ namespace sutty.UI.Views
             {
                 FlushRightPanelWidth();
                 _settingWindow?.Close();
+                foreach (var localView in GetOpenLocalTerminalViews())
+                    _ = localView.CloseAsync();
                 LocalCredentialVault.Default.Dispose();
             };
 
@@ -591,6 +594,84 @@ namespace sutty.UI.Views
 
         private ISshSession? ActiveSession => ActiveSessionView?.Session;
 
+        private async void TitleTabs_AddTabButtonClick(TabView sender, object args)
+            => await OpenLocalTerminalTabAsync();
+
+        private async Task OpenLocalTerminalTabAsync()
+        {
+            if (TitleTabs.TabItems.Count >= MaxSessions)
+            {
+                var limitDialog = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("탭 개수 제한", "Tab limit"),
+                    Content = Helpers.Loc.T(
+                        $"탭은 최대 {MaxSessions}개까지 열 수 있습니다. 탭을 닫고 다시 시도하세요.",
+                        $"You can open up to {MaxSessions} tabs. Close a tab and try again."),
+                    CloseButtonText = "OK",
+                    XamlRoot = Content.XamlRoot,
+                };
+                await limitDialog.ShowAsync();
+                return;
+            }
+
+            // The + button is a direct request to show a terminal. Leave the Multi
+            // dashboard first so the newly selected local tab is immediately visible.
+            if (_isMultiView && LeftNav.MenuItems.Count > 0)
+                LeftNav.SelectedItem = LeftNav.MenuItems[0];
+
+            var view = new LocalTerminalView();
+            var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
+            {
+                Width = 7,
+                Height = 7,
+                VerticalAlignment = VerticalAlignment.Center,
+                Fill = Helpers.ThemeResources.Brush(Root, "StatusIdle"),
+            };
+            var metadata = new TextBlock
+            {
+                Text = Environment.MachineName,
+                FontSize = 11,
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextFaint"),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            header.Children.Add(dot);
+            header.Children.Add(new TextBlock
+            {
+                Text = "PowerShell",
+                FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            header.Children.Add(metadata);
+
+            void UpdateStatusDot(TerminalState state) =>
+                dot.Fill = Helpers.ThemeResources.Brush(Root, state switch
+                {
+                    TerminalState.Open => "StatusGreen",
+                    TerminalState.Opening => "StatusAmber",
+                    TerminalState.Failed => "StatusRed",
+                    _ => "StatusIdle",
+                });
+
+            dot.ActualThemeChanged += (_, _) => UpdateStatusDot(view.Terminal.TerminalState);
+            metadata.ActualThemeChanged += (_, _) =>
+                metadata.Foreground = Helpers.ThemeResources.Brush(Root, "TextFaint");
+            view.Terminal.TerminalStateChanged += (_, state) =>
+                DispatcherQueue.TryEnqueue(() => UpdateStatusDot(state));
+
+            var tab = new TabViewItem
+            {
+                Header = header,
+                IsClosable = true,
+                DataContext = view,
+            };
+
+            TitleTabs.TabItems.Add(tab);
+            TitleTabs.SelectedItem = tab;
+            UpdateSessionArea();
+        }
+
         private async Task OpenSessionTabAsync(SshConnectionInfo info)
         {
             // 세션 개수 제한 (Multi 그리드 4×4와 맞춤)
@@ -920,7 +1001,10 @@ namespace sutty.UI.Views
 
         private void UpdateSessionArea()
         {
-            SessionHost.Content = (TitleTabs.SelectedItem as TabViewItem)?.DataContext as SessionView;
+            EmptyTabHeader.Visibility = TitleTabs.TabItems.Count == 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            SessionHost.Content = (TitleTabs.SelectedItem as TabViewItem)?.DataContext as FrameworkElement;
             SessionHost.Visibility = _isMultiView ? Visibility.Collapsed : Visibility.Visible;
             NoSessionState.Visibility = !_isMultiView && TitleTabs.TabItems.Count == 0
                 ? Visibility.Visible
@@ -947,6 +1031,17 @@ namespace sutty.UI.Views
             return views;
         }
 
+        private System.Collections.Generic.List<LocalTerminalView> GetOpenLocalTerminalViews()
+        {
+            var views = new System.Collections.Generic.List<LocalTerminalView>();
+            foreach (var item in TitleTabs.TabItems)
+            {
+                if (item is TabViewItem tab && tab.DataContext is LocalTerminalView view)
+                    views.Add(view);
+            }
+            return views;
+        }
+
         // X 클릭 → SSH·SFTP 채널을 모두 끊고 탭을 닫는다 (확인 없이 즉시)
         private async void TitleTabs_TabCloseRequested(
             TabView sender,
@@ -960,6 +1055,10 @@ namespace sutty.UI.Views
             {
                 view.WorkingDirectoryChanged -= SessionView_WorkingDirectoryChanged;
                 await _sessions.CloseAsync(view.Session);
+            }
+            else if (args.Tab.DataContext is LocalTerminalView localView)
+            {
+                await localView.CloseAsync();
             }
         }
 
@@ -1002,6 +1101,12 @@ namespace sutty.UI.Views
             {
                 foreach (var view in GetOpenSessionViews())
                     view.ApplyTerminalSettings();
+
+                if (changes.HasFlag(SettingChangeKind.TerminalAppearance))
+                {
+                    foreach (var localView in GetOpenLocalTerminalViews())
+                        localView.ApplyTerminalSettings();
+                }
             }
 
             if (changes.HasFlag(SettingChangeKind.Language))
@@ -1011,6 +1116,8 @@ namespace sutty.UI.Views
                     _settingWindow.Title = Helpers.Loc.T("Sutty — 설정", "Sutty — Settings");
                 foreach (var view in GetOpenSessionViews())
                     view.RefreshLanguage();
+                foreach (var localView in GetOpenLocalTerminalViews())
+                    localView.RefreshLanguage();
                 MultiGrid.RefreshLanguage();
 
                 // 입력 중인 Home 폼이나 검색 상태를 잃지 않고 현재 패널의

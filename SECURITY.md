@@ -2,9 +2,9 @@
 
 [English](#english) · [한국어](#한국어)
 
-> Sutty is Alpha software, not a GA security product. It has meaningful host-key and transfer-safety controls, but it has not completed an independent security review, signed release pipeline, encrypted credential Vault, or the specification's full security test matrix.
+> Sutty is Alpha software, not a GA security product. It has meaningful host-key, encrypted local-vault, and transfer-safety controls, but it has not completed an independent security review, signed release pipeline, or the specification's full security test matrix.
 
-> Sutty는 Alpha 소프트웨어이며 GA 보안 제품이 아닙니다. 호스트키와 전송 안전 제어가 있지만 독립 보안 검토, 서명 릴리스 파이프라인, 암호화 자격 증명 Vault, 명세의 전체 보안 테스트 매트릭스를 완료하지 않았습니다.
+> Sutty는 Alpha 소프트웨어이며 GA 보안 제품이 아닙니다. 호스트키, 암호화 로컬 보관소, 전송 안전 제어가 있지만 독립 보안 검토, 서명 릴리스 파이프라인, 명세의 전체 보안 테스트 매트릭스를 완료하지 않았습니다.
 
 ## English
 
@@ -50,8 +50,9 @@ Sutty makes no FIPS, certification, hardened-enterprise, or complete terminal-is
 ### Credential rules
 
 - The enabled Alpha authentication methods are Password and supported OpenSSH/PEM private-key files. Password mode includes a non-interactive fallback that answers password-like keyboard-interactive prompts.
-- Passwords and private-key passphrases are not written to `settings.json`, `sutty.db`, or `known-hosts.json`.
-- Sutty has no encrypted credential Vault today. A password or passphrase must be entered again and exists as managed strings during authentication; complete memory zeroing cannot be guaranteed.
+- Passwords and private-key passphrases are not written to `settings.json`, `sutty.db`, `known-hosts.json`, or crash messages.
+- By default a password or passphrase must be entered again. If **Remember credentials** is explicitly enabled for a Saved Host, the secret is stored in `vault.json` with AES-256-GCM; the random master key in `vault.key` is protected by Windows DPAPI for the current user. SQLite and settings contain only an opaque credential reference.
+- A decrypted secret still exists as managed strings during authentication; complete memory zeroing cannot be guaranteed. Same-user malware, debuggers, process dumps, or a compromised Windows account remain outside the vault boundary.
 - `settings.json` may contain recent private-key **paths** and tags.
 - `sutty.db` may contain host, alias, username, port, authentication method, private-key path, tags, command templates, usage data, history, and pins. These are plaintext operational metadata.
 - Sutty reads the selected private-key file in place. It does not copy the key into its database, but protection of that file and its ACL remains the user's responsibility.
@@ -138,8 +139,9 @@ Sutty는 FIPS, 보안 인증, hardened enterprise, 완전한 터미널 격리를
 ### 자격 증명 규칙
 
 - Alpha에서 활성화된 인증 방식은 Password와 지원되는 OpenSSH/PEM 개인키 파일입니다. 비밀번호 방식에는 password 형태의 keyboard-interactive prompt에 답하는 비대화형 fallback이 있습니다.
-- 비밀번호와 개인키 passphrase는 `settings.json`, `sutty.db`, `known-hosts.json`에 쓰지 않습니다.
-- 현재 암호화 자격 증명 Vault가 없습니다. 비밀번호·passphrase는 다시 입력해야 하고 인증 중 managed string으로 존재하므로 완전한 memory zeroing을 보장할 수 없습니다.
+- 비밀번호와 개인키 passphrase는 `settings.json`, `sutty.db`, `known-hosts.json`, crash 메시지에 쓰지 않습니다.
+- 기본적으로 비밀번호·passphrase는 다시 입력해야 합니다. 저장 호스트에서 **자격 증명 기억**을 명시적으로 켠 경우에만 비밀을 AES-256-GCM으로 `vault.json`에 저장하고, `vault.key`의 임의 master key는 현재 Windows 사용자의 DPAPI로 보호합니다. SQLite와 설정에는 불투명 자격 증명 참조만 둡니다.
+- 복호화한 비밀은 인증 중 managed string으로 존재하므로 완전한 memory zeroing을 보장할 수 없습니다. 같은 사용자 권한 malware·debugger·process dump 또는 침해된 Windows 계정은 보관소의 보호 경계 밖입니다.
 - `settings.json`에는 최근 개인키 **경로**와 태그가 있을 수 있습니다.
 - `sutty.db`에는 host, alias, username, port, 인증 방식, 개인키 경로, 태그, 명령 템플릿, 사용 정보, 히스토리, pin이 있을 수 있습니다. 모두 평문 운영 메타데이터입니다.
 - Sutty는 선택한 개인키 파일을 그 위치에서 읽습니다. 키를 DB에 복사하지 않지만 파일과 ACL 보호는 사용자의 책임입니다.

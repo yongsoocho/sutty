@@ -76,6 +76,7 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
         {
             if (!SetProperty(ref _state, value)) return;
             OnPropertyChanged(nameof(StateText));
+            OnPropertyChanged(nameof(ProgressText));
             OnPropertyChanged(nameof(DetailText));
             OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(IsActive));
@@ -114,7 +115,7 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
             var eta = bytesPerSecond > 0 && TotalBytes > transferred
                 ? FormatEta(TimeSpan.FromSeconds((TotalBytes - transferred) / bytesPerSecond))
                 : "—";
-            return $"{DirectionText} · {ProgressText} · {speed} · ETA {eta}";
+            return $"{DirectionText} · {speed} · ETA {eta}";
         }
     }
 

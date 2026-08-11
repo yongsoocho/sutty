@@ -312,19 +312,36 @@
                                         Visibility="{x:Bind CanCancel, Mode=OneWay}">
                                         <FontIcon FontSize="9" Glyph="&#xE711;" />
                                     </Button>
-                                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                    <Grid Grid.Row="1" Grid.Column="1" ColumnSpacing="6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="56" />
+                                            <ColumnDefinition Width="38" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
                                         <ProgressBar
                                             Width="56"
                                             VerticalAlignment="Center"
                                             Maximum="1"
                                             Value="{x:Bind Progress, Mode=OneWay}" />
                                         <TextBlock
+                                            Grid.Column="1"
+                                            MinWidth="38"
+                                            VerticalAlignment="Center"
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="10"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource AccentTeal}"
+                                            Text="{x:Bind ProgressText, Mode=OneWay}"
+                                            TextAlignment="Right" />
+                                        <TextBlock
+                                            Grid.Column="2"
                                             VerticalAlignment="Center"
                                             FontFamily="Cascadia Mono, Consolas"
                                             FontSize="9.5"
                                             Foreground="{ThemeResource TextFaint}"
-                                            Text="{x:Bind DetailText, Mode=OneWay}" />
-                                    </StackPanel>
+                                            Text="{x:Bind DetailText, Mode=OneWay}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </Grid>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

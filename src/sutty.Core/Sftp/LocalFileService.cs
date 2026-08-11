@@ -110,6 +110,7 @@ public sealed class LocalFileService : ISftpService
         if (!overwrite && File.Exists(destinationPath))
             throw new IOException($"File already exists: {destinationPath}");
 
+        progress?.Report(0.0);
         var temporaryPath = destinationPath + $".sutty-{Guid.NewGuid():N}.part";
         try
         {
@@ -130,6 +131,7 @@ public sealed class LocalFileService : ISftpService
             }
             ct.ThrowIfCancellationRequested();
             File.Move(temporaryPath, destinationPath, overwrite);
+            progress?.Report(1.0);
         }
         catch
         {

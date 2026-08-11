@@ -21,9 +21,24 @@ try
     await File.WriteAllTextAsync(source, "first");
 
     var files = new LocalFileService();
-    await files.UploadFileAsync(source, remote);
+    var uploadProgress = new List<double>();
+    await files.UploadFileAsync(source, remote, progress: new InlineProgress<double>(uploadProgress.Add));
     var remoteFile = Path.Combine(remote, "source.txt");
     Assert(await File.ReadAllTextAsync(remoteFile) == "first", "upload writes complete file");
+    Assert(uploadProgress.Count >= 2 && uploadProgress[0] == 0.0,
+        "upload progress starts at zero");
+    Assert(uploadProgress[^1] == 1.0,
+        "completed upload progress is 100 percent");
+    Assert(uploadProgress.Zip(uploadProgress.Skip(1), (left, right) => right >= left).All(value => value),
+        "upload progress is monotonic");
+
+    var emptySource = Path.Combine(scratch, "empty.txt");
+    await File.WriteAllBytesAsync(emptySource, []);
+    var emptyProgress = new List<double>();
+    await files.UploadFileAsync(
+        emptySource, remote, progress: new InlineProgress<double>(emptyProgress.Add));
+    Assert(emptyProgress.SequenceEqual([0.0, 1.0]),
+        "zero-byte upload reports zero then 100 percent");
 
     await File.WriteAllTextAsync(source, "second");
     await AssertThrowsAsync<IOException>(
@@ -83,4 +98,9 @@ static async Task AssertThrowsAsync<TException>(Func<Task> action, string descri
 
     throw new InvalidOperationException(
         $"Self-test failed: {description} did not throw {typeof(TException).Name}.");
+}
+
+sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+{
+    public void Report(T value) => report(value);
 }

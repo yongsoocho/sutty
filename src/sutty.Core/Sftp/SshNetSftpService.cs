@@ -55,6 +55,7 @@ public sealed class SshNetSftpService : ISftpService
                 throw new IOException($"Remote file already exists: {remotePath}");
         }
 
+        progress?.Report(0.0);
         try
         {
             using (var local = File.OpenRead(localPath))
@@ -100,6 +101,7 @@ public sealed class SshNetSftpService : ISftpService
             {
                 try { if (client.Exists(backupPath)) client.DeleteFile(backupPath); } catch { }
             }
+            progress?.Report(1.0);
         }
         catch
         {
@@ -123,6 +125,7 @@ public sealed class SshNetSftpService : ISftpService
         if (!overwrite && File.Exists(localPath))
             throw new IOException($"Local file already exists: {localPath}");
 
+        progress?.Report(0.0);
         var temporaryPath = localPath + $".sutty-{Guid.NewGuid():N}.part";
         try
         {
@@ -144,6 +147,7 @@ public sealed class SshNetSftpService : ISftpService
             }
             ct.ThrowIfCancellationRequested();
             File.Move(temporaryPath, localPath, overwrite);
+            progress?.Report(1.0);
         }
         catch
         {

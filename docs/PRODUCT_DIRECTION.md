@@ -10,21 +10,24 @@
 
 ### Honest position
 
-Sutty combines everyday **SSH, SFTP, reusable commands, and multi-session operations** in one Windows-local workspace. The scope is deliberately limited:
+Sutty combines everyday **local terminals, SSH, SFTP, reusable commands, and multi-session operations** in one Windows-local workspace. The scope is deliberately limited:
 
 - It concerns SSH/SFTP server operations on Windows.
 - It is a target for a future GA release, not a claim that the current Alpha is complete.
 - It does not include FTP/FTPS, Telnet/Serial, RDP/VNC/X11, cloud/mobile, or team collaboration.
 
+Therefore the replacement target is **PuTTY's SSH workflow and FileZilla's SFTP workflow**, not every protocol or platform those products support. Sutty must not claim full-product parity until that scope changes and the corresponding compatibility gates pass.
+
 Sutty remains local-first: no account, no cloud backend, and no team control plane.
 
 ### Product surfaces
 
-1. **Terminal** — a persistent, interactive SSH PTY for shells and terminal applications.
-2. **REPL** — structured non-interactive commands with separate results, timing, history, and reuse.
-3. **Files** — session-aware SFTP navigation and safe transfers.
-4. **Commands** — reusable operational templates that can grow into typed snippets/runbooks.
-5. **Multi** — selected-session command execution with production safeguards and structured per-host results.
+1. **Local** — tabbed Windows PowerShell sessions backed by Windows ConPTY.
+2. **Terminal** — a persistent, interactive SSH PTY for shells and terminal applications.
+3. **REPL** — structured non-interactive commands with separate results, timing, history, and reuse.
+4. **Files** — session-aware SFTP navigation and safe transfers.
+5. **Commands** — reusable operational templates that can grow into typed snippets/runbooks.
+6. **Multi** — selected-session command execution with production safeguards and structured per-host results.
 
 Terminal and REPL are complementary. The REPL remains Sutty's differentiator; it is not a substitute for terminal compatibility.
 
@@ -41,7 +44,7 @@ Terminal and REPL are complementary. The REPL remains Sutty's differentiator; it
 
 ### Current Alpha baseline
 
-The current working tree contains a real SSH.NET `ShellStream` PTY with runtime server-side resize, a bounded native VT screen model, fail-closed known-host verification, separated SSH/Terminal/SFTP state, structured command results, practical single-file SFTP operations, a compact transfer queue, Files/Terminal path integration, Saved Hosts with a local encrypted credential vault, append-only connection outcomes, live settings, and a zero-default-target Multi view with a PROD confirmation.
+The current working tree contains tabbed local PowerShell through Windows ConPTY, a real SSH.NET `ShellStream` PTY with runtime server-side resize, a bounded native VT screen model, fail-closed known-host verification, separated SSH/Terminal/SFTP state, structured command results, practical single-file SFTP operations, a compact transfer queue with explicit percentage, Files/Terminal path integration, Saved Hosts with a local encrypted credential vault, append-only connection outcomes, live settings, and a zero-default-target Multi view with a PROD confirmation.
 
 This baseline is useful for development and controlled testing. It has not passed the compatibility, security, accessibility, packaging, large-transfer, or soak gates required for GA.
 
@@ -98,21 +101,24 @@ The security boundary is documented in [Security](../SECURITY.md), and the tempo
 
 ### 정직한 제품 위치
 
-Sutty는 일상적인 **SSH, SFTP, 재사용 명령, 다중 세션 운영**을 하나의 Windows 로컬 작업 공간에 통합합니다. 범위는 의도적으로 제한합니다.
+Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 세션 운영**을 하나의 Windows 로컬 작업 공간에 통합합니다. 범위는 의도적으로 제한합니다.
 
 - Windows의 SSH/SFTP 서버 운영 작업을 대상으로 합니다.
 - 미래 GA의 목표이며 현재 Alpha가 완성됐다는 뜻은 아닙니다.
 - FTP/FTPS, Telnet/Serial, RDP/VNC/X11, 클라우드·모바일·팀 협업은 포함하지 않습니다.
 
+따라서 대체 목표는 **PuTTY의 SSH 흐름과 FileZilla의 SFTP 흐름**이며 두 제품이 지원하는 모든 프로토콜·플랫폼이 아닙니다. 범위를 바꾸고 해당 호환성 게이트를 통과하기 전에는 전체 제품 동등성을 주장하지 않습니다.
+
 Sutty는 로컬 우선 원칙을 유지합니다. 계정, 클라우드 백엔드, 팀 제어면을 만들지 않습니다.
 
 ### 제품 작업 화면
 
-1. **Terminal** — 셸과 터미널 앱을 위한 지속 대화형 SSH PTY
-2. **REPL** — 결과·시간·히스토리·재사용을 구조화하는 비대화형 명령
-3. **Files** — 세션과 연동되는 SFTP 탐색과 안전한 전송
-4. **Commands** — 향후 typed snippet/runbook으로 확장할 재사용 운영 템플릿
-5. **Multi** — 운영 환경 보호와 구조화된 호스트별 결과를 갖춘 선택 세션 명령 실행
+1. **Local** — Windows ConPTY 기반의 탭형 Windows PowerShell 세션
+2. **Terminal** — 셸과 터미널 앱을 위한 지속 대화형 SSH PTY
+3. **REPL** — 결과·시간·히스토리·재사용을 구조화하는 비대화형 명령
+4. **Files** — 세션과 연동되는 SFTP 탐색과 안전한 전송
+5. **Commands** — 향후 typed snippet/runbook으로 확장할 재사용 운영 템플릿
+6. **Multi** — 운영 환경 보호와 구조화된 호스트별 결과를 갖춘 선택 세션 명령 실행
 
 Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터미널 호환성을 대신하지 않습니다.
 
@@ -129,7 +135,7 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 
 ### 현재 Alpha 기준선
 
-현재 작업 트리에는 실행 중 서버 측 크기 변경을 지원하는 실제 SSH.NET `ShellStream` PTY, 제한된 네이티브 VT 화면 모델, 기본 차단 known-host 검증, 분리된 SSH/Terminal/SFTP 상태, 구조화된 명령 결과, 실용적인 단일 파일 SFTP 작업, 간결한 전송 큐, Files/Terminal 경로 연동, 로컬 암호화 자격증명 보관소를 사용하는 저장 호스트, append-only 접속 결과, 즉시 반영 설정, 기본 선택 0개와 PROD 확인을 가진 Multi 화면이 있습니다.
+현재 작업 트리에는 Windows ConPTY 기반 탭형 로컬 PowerShell, 실행 중 서버 측 크기 변경을 지원하는 실제 SSH.NET `ShellStream` PTY, 제한된 네이티브 VT 화면 모델, 기본 차단 known-host 검증, 분리된 SSH/Terminal/SFTP 상태, 구조화된 명령 결과, 실용적인 단일 파일 SFTP 작업, 명시적 퍼센트를 표시하는 간결한 전송 큐, Files/Terminal 경로 연동, 로컬 암호화 자격증명 보관소를 사용하는 저장 호스트, append-only 접속 결과, 즉시 반영 설정, 기본 선택 0개와 PROD 확인을 가진 Multi 화면이 있습니다.
 
 이 기준선은 개발과 통제된 테스트에 사용할 수 있습니다. GA에 필요한 호환성·보안·접근성·패키징·대용량 전송·장시간 실행 게이트를 통과하지 않았습니다.
 

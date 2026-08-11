@@ -1,6 +1,6 @@
 namespace sutty.Core.Terminal;
 
-/// <summary>Raw bytes emitted by the remote PTY. Subscribers must decode incrementally.</summary>
+/// <summary>Raw bytes emitted by an interactive terminal. Subscribers must decode incrementally.</summary>
 public sealed class TerminalDataReceivedEventArgs : EventArgs
 {
     public TerminalDataReceivedEventArgs(byte[] data)

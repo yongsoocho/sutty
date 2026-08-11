@@ -18,8 +18,8 @@
             <ColumnDefinition
                 x:Name="RightPanelColumn"
                 Width="316"
-                MaxWidth="800"
-                MinWidth="300" />
+                MinWidth="300"
+                MaxWidth="800" />
         </Grid.ColumnDefinitions>
 
         <!--  타이틀 스트립 배경 (시각용, 전체 폭)  -->
@@ -43,9 +43,7 @@
             Background="Transparent" />
 
         <!--  ── Column 0: Logo + Left Nav Rail ──  -->
-        <Grid
-            Grid.Column="0"
-            Background="{ThemeResource RailBg}">
+        <Grid Grid.Column="0" Background="{ThemeResource RailBg}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="38" />
                 <RowDefinition Height="*" />
@@ -54,14 +52,16 @@
             <!--  디자인 원본 로고 (좀 더 크게)  -->
             <Image
                 Grid.Row="0"
-                Width="22"
-                Height="22"
+                Width="32"
+                Height="32"
+                Margin="0,12,0,0"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Source="ms-appx:///Assets/sutty.targetsize-48.png" />
             <NavigationView
                 x:Name="LeftNav"
                 Grid.Row="1"
+                Margin="0,12,0,0"
                 AlwaysShowHeader="False"
                 Background="Transparent"
                 CompactPaneLength="48"
@@ -75,33 +75,48 @@
                 PaneDisplayMode="LeftCompact"
                 SelectionChanged="LeftNav_SelectionChanged">
                 <NavigationView.MenuItems>
-                    <NavigationViewItem Content="Home" Style="{StaticResource CompactRailItem}" Tag="Home">
+                    <NavigationViewItem
+                        Content="Home"
+                        Style="{StaticResource CompactRailItem}"
+                        Tag="Home">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE80F;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
-                    <NavigationViewItem Content="Search" Style="{StaticResource CompactRailItem}" Tag="Search">
+                    <NavigationViewItem
+                        Content="Search"
+                        Style="{StaticResource CompactRailItem}"
+                        Tag="Search">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE721;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
-                    <NavigationViewItem Content="Folder" Style="{StaticResource CompactRailItem}" Tag="Folder">
+                    <NavigationViewItem
+                        Content="Folder"
+                        Style="{StaticResource CompactRailItem}"
+                        Tag="Folder">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE8B7;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
                     <!--  Command: 자주 쓰는 명령어 playbook (디자인: 번개 아이콘)  -->
-                    <NavigationViewItem Content="Command" Style="{StaticResource CompactRailItem}" Tag="Command">
+                    <NavigationViewItem
+                        Content="Command"
+                        Style="{StaticResource CompactRailItem}"
+                        Tag="Command">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE945;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
                     <!--  Multi: 여러 세션에 동시에 명령 브로드캐스트  -->
-                    <NavigationViewItem Content="Multi" Style="{StaticResource CompactRailItem}" Tag="Multi">
+                    <NavigationViewItem
+                        Content="Multi"
+                        Style="{StaticResource CompactRailItem}"
+                        Tag="Multi">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE8A9;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
@@ -120,15 +135,17 @@
                 </NavigationView.FooterMenuItems>
             </NavigationView>
 
-            <!-- Draw the divider over the rail so it does not steal one pixel
-                 from NavigationView's 48px compact-pane layout. -->
+            <!--
+                Draw the divider over the rail so it does not steal one pixel
+                from NavigationView's 48px compact-pane layout.
+            -->
             <Border
                 Grid.RowSpan="2"
                 Width="1"
                 HorizontalAlignment="Right"
                 Background="{ThemeResource ShellBorder}"
-                IsHitTestVisible="False"
-                Canvas.ZIndex="1" />
+                Canvas.ZIndex="1"
+                IsHitTestVisible="False" />
         </Grid>
 
         <!--  ── Column 1: Tabs + Main Content ──  -->
@@ -149,10 +166,54 @@
                 Margin="8,0,0,0"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Stretch"
-                IsAddTabButtonVisible="False"
+                IsAddTabButtonVisible="True"
+                AddTabButtonClick="TitleTabs_AddTabButtonClick"
                 SelectionChanged="TitleTabs_SelectionChanged"
                 TabCloseRequested="TitleTabs_TabCloseRequested"
-                TabWidthMode="SizeToContent" />
+                TabWidthMode="SizeToContent">
+                <TabView.TabStripHeader>
+                    <!--
+                        Chrome keeps a selected tab in the strip even on its start page.
+                        This visual-only tab gives the adjacent + button the same anchor
+                        while Sutty has no local or SSH tabs yet.
+                    -->
+                    <Border
+                        x:Name="EmptyTabHeader"
+                        Width="156"
+                        Height="32"
+                        Margin="2,6,0,0"
+                        VerticalAlignment="Bottom"
+                        AutomationProperties.Name="New tab"
+                        Background="{ThemeResource PanelBg}"
+                        BorderBrush="{ThemeResource ShellBorder}"
+                        BorderThickness="1,1,1,0"
+                        CornerRadius="8,8,0,0"
+                        IsHitTestVisible="False">
+                        <StackPanel
+                            Margin="12,0,10,0"
+                            VerticalAlignment="Center"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                            <Ellipse
+                                Width="7"
+                                Height="7"
+                                VerticalAlignment="Center"
+                                Fill="{ThemeResource StatusIdle}" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextPrimary}"
+                                Text="{x:Bind h:Loc.T('새 탭', 'New tab')}" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                FontSize="10.5"
+                                Foreground="{ThemeResource TextFaint}"
+                                Text="PowerShell" />
+                        </StackPanel>
+                    </Border>
+                </TabView.TabStripHeader>
+            </TabView>
 
             <!--  Main Content: 선택된 탭의 SessionView (Multi 모드에서는 4×4 그리드)  -->
             <Grid Grid.Row="1" Background="{ThemeResource PanelBg}">
@@ -175,12 +236,12 @@
                         HorizontalAlignment="Center"
                         Foreground="{ThemeResource TextMuted}"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
-                        Text="{x:Bind h:Loc.T('활성 세션 없음', 'No active sessions')}" />
+                        Text="{x:Bind h:Loc.T('활성 탭 없음', 'No active tabs')}" />
                     <TextBlock
                         HorizontalAlignment="Center"
                         FontSize="12"
                         Foreground="{ThemeResource TextMuted}"
-                        Text="{x:Bind h:Loc.T('Home 패널에서 연결하면 세션 탭이 열립니다 (최대 16개)', 'Connect from the Home panel to open a session tab (max 16)')}" />
+                        Text="{x:Bind h:Loc.T('Home에서 SSH에 연결하거나 +로 로컬 PowerShell을 여세요 (최대 16개)', 'Connect to SSH from Home or use + for local PowerShell (max 16)')}" />
                 </StackPanel>
             </Grid>
         </Grid>
@@ -191,11 +252,11 @@
             Width="8"
             Margin="0,38,-4,0"
             HorizontalAlignment="Right"
-            Background="Transparent"
-            ResizeBehavior="CurrentAndNext"
-            ResizeDirection="Columns"
             AutomationProperties.Name="Resize side panel"
-            Canvas.ZIndex="10" />
+            Background="Transparent"
+            Canvas.ZIndex="10"
+            ResizeBehavior="CurrentAndNext"
+            ResizeDirection="Columns" />
 
         <!--  ── Column 3: Right Panel ──  -->
         <Grid x:Name="RightPanelHost" Grid.Column="2">

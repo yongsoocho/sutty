@@ -16,10 +16,11 @@
 
 ## English
 
-Sutty brings everyday **SSH, SFTP, reusable commands, and multi-session operations** into one Windows-local workspace. That is a product goal, not a statement that every planned capability is complete.
+Sutty brings everyday **local terminals, SSH, SFTP, reusable commands, and multi-session operations** into one Windows-local workspace. That is a product goal, not a statement that every planned capability is complete.
 
-The product is local-first, Windows-only, and centered on four cooperating work surfaces:
+The product is local-first, Windows-only, and centered on five cooperating work surfaces:
 
+- **Local** — a tabbed Windows PowerShell session backed by Windows ConPTY.
 - **Terminal** — an interactive SSH.NET `ShellStream` PTY.
 - **REPL** — structured, non-interactive command cells.
 - **Files** — SFTP browsing, file operations, and a compact transfer queue.
@@ -28,21 +29,22 @@ The product is local-first, Windows-only, and centered on four cooperating work 
 ### Implemented Alpha baseline
 
 - Password and OpenSSH/PEM private-key authentication. Password mode also answers password-like keyboard-interactive prompts through a non-interactive fallback; recent key paths can be suggested without saving the key contents, password, or passphrase.
+- Local PowerShell tabs opened with the top `+` button, backed by a real ConPTY process with runtime resize and process-tree cleanup.
 - A real persistent PTY channel with runtime server-side resize, control keys, navigation keys, F1–F12, incremental UTF-8 decoding, bounded output buffering, cursor operations, scroll regions, and alternate-screen handling.
 - Fail-closed SSH host-key verification. Unknown keys offer **Connect once**, **Trust and save**, or **Cancel**; changed saved keys are blocked.
 - Independent SSH, Terminal, and SFTP states, so an unavailable SFTP subsystem does not close a working SSH session.
 - REPL and Multi command execution backed by structured standard output, standard error, exit status/signal, and duration; reusable positional command templates remain available.
 - Remote SFTP navigation and lazy loading; file upload/download; same-directory rename; file or empty-directory deletion; directory creation; Copy path; and Open in Terminal.
-- A compact per-panel transfer queue with queued/running state, progress, speed, ETA, cancellation, and an eight-job cap. SSH.NET SFTP calls are serialized per client.
+- A compact per-panel transfer queue with queued/running state, an explicit `0%`–`100%` value, progress bar, speed, ETA, cancellation, and an eight-job cap. SSH.NET SFTP calls are serialized per client.
 - Safe file-transfer staging. Uploads use a remote temporary name and preserve an existing destination during promotion; downloads use an adjacent local temporary file.
 - Append-only connection-attempt history plus explicit Saved Host profiles, groups, environments, favorites, and search in SQLite.
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
-- Up to 16 tabbed sessions, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged sessions.
+- Up to 16 mixed local/SSH tabs, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged SSH sessions.
 - Immediately applied Korean/English settings, atomic settings persistence, and dark/light themes.
 
 ### Why this is not GA
 
-- The PTY is real and supports runtime server-side resize, but the current WinUI text renderer is an **Alpha-only bridge**. It consumes SGR without rendering color/style and lacks mouse protocols and complete wide/combining-cell behavior. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
+- The SSH PTY and local ConPTY are real and support runtime resize, but the current WinUI text renderer is an **Alpha-only bridge**. It consumes SGR without rendering color/style and lacks mouse protocols and complete wide/combining-cell behavior. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
 - SSH agent, OTP/multi-prompt keyboard-interactive UI, legacy `.ppk` import, jump hosts, proxies, and automatic reconnect are unavailable. Password mode's non-interactive fallback handles password-like prompts only. Keepalive is available; disabled controls are not capabilities.
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP currently transfers files, not directory trees. It has no pause/retry/resume, final size/checksum verification, `chmod`, synchronized browsing, or a complete collision-policy matrix.
@@ -57,13 +59,14 @@ Sutty does not support FTP, FTPS, Telnet, Serial, RDP, VNC, X11 forwarding, clou
 
 ### Trust, credentials, and local data
 
-Sutty does **not** persist passwords or private-key passphrases. They still exist briefly in application memory during authentication; Sutty does not yet provide a DPAPI-backed Vault.
+By default, Sutty does **not** persist passwords or private-key passphrases. If the user explicitly enables **Remember credentials** for a Saved Host, Sutty stores only that secret in an AES-256-GCM vault whose random master key is protected by Windows DPAPI for the current user. Secrets are never written to SQLite or `settings.json`.
 
 Local files under `%LOCALAPPDATA%\sutty` include:
 
 - `settings.json` — preferences, recent tags, and recent private-key **paths**.
 - `sutty.db` — command templates and usage plus connection history, pins, host/user/port/auth metadata, private-key paths, and tags.
 - `known-hosts.json` — public trusted SSH host keys and fingerprints.
+- `vault.key` and `vault.json` — the DPAPI-protected master key and authenticated encrypted credential records, created only when the local vault is used.
 - `crash.log` — local unhandled-exception details; it is not yet guaranteed to be redacted, so inspect it before sharing.
 
 Private-key file contents stay in the user-selected external file. Unknown keys are rejected before a trust prompt and retried only after an explicit decision. A changed saved key is never silently replaced.
@@ -74,8 +77,8 @@ Read [Security](SECURITY.md) before reporting or sharing diagnostic data.
 
 | Project | Current responsibility |
 | --- | --- |
-| [`sutty.UI`](src/sutty.UI) | WinUI 3 shell, Terminal/REPL presentation, Files, Multi, and settings UI |
-| [`sutty.Core`](src/sutty.Core) | SSH sessions, command results, PTY contract, host-key trust, and SFTP services |
+| [`sutty.UI`](src/sutty.UI) | WinUI 3 shell, local/SSH terminal presentation, REPL, Files, Multi, and settings UI |
+| [`sutty.Core`](src/sutty.Core) | Local ConPTY, SSH sessions, command results, interactive-terminal contract, host-key trust, and SFTP services |
 | [`sutty.Command`](src/sutty.Command) | SQLite command templates, connection history, pins, and non-secret drafts |
 | [`sutty.Setting`](src/sutty.Setting) | Atomic JSON-backed application settings |
 | [`tests`](tests) | Focused terminal, host-key, and safe local-transfer self-tests; not yet the GA integration matrix |
@@ -117,10 +120,11 @@ Sutty is available under the [MIT License](LICENSE).
 
 ## 한국어
 
-Sutty는 일상적인 **SSH, SFTP, 재사용 명령, 다중 세션 운영**을 하나의 Windows 로컬 작업 공간에 통합하는 것을 목표로 합니다. 이는 제품 목표이며 계획한 모든 기능이 현재 완성됐다는 뜻은 아닙니다.
+Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 세션 운영**을 하나의 Windows 로컬 작업 공간에 통합하는 것을 목표로 합니다. 이는 제품 목표이며 계획한 모든 기능이 현재 완성됐다는 뜻은 아닙니다.
 
-제품은 로컬 우선·Windows 전용이며 다음 네 작업 화면을 함께 제공합니다.
+제품은 로컬 우선·Windows 전용이며 다음 다섯 작업 화면을 함께 제공합니다.
 
+- **Local** — Windows ConPTY 기반의 탭형 Windows PowerShell 세션
 - **Terminal** — SSH.NET `ShellStream` 기반 대화형 PTY
 - **REPL** — 구조화된 비대화형 명령 셀
 - **Files** — SFTP 탐색·파일 작업·간결한 전송 큐
@@ -129,21 +133,22 @@ Sutty는 일상적인 **SSH, SFTP, 재사용 명령, 다중 세션 운영**을 �
 ### 구현된 Alpha 기준선
 
 - 비밀번호와 OpenSSH/PEM 개인키 인증. 비밀번호 방식은 password 형태의 keyboard-interactive prompt에 비대화형 fallback으로 답하며, 키 내용·비밀번호·passphrase를 저장하지 않고 최근 키 경로만 제안할 수 있습니다.
+- 상단 `+` 버튼으로 여는 로컬 PowerShell 탭. 실제 ConPTY 프로세스, 실행 중 크기 변경, 프로세스 트리 정리를 사용합니다.
 - 실행 중 서버 측 크기 변경, 제어키·탐색키·F1–F12, 점진적 UTF-8 디코딩, 제한된 출력 버퍼, 커서 동작, 스크롤 영역, 대체 화면을 처리하는 실제 지속 PTY 채널
 - 기본 차단 방식의 SSH 호스트키 검증. 알 수 없는 키는 **이번만 연결**, **신뢰하고 저장**, **취소**를 제공하며 저장된 키가 바뀌면 연결을 차단합니다.
 - SFTP subsystem을 사용할 수 없어도 작동 중인 SSH 세션을 닫지 않는 SSH·Terminal·SFTP 독립 상태
 - 표준 출력·표준 오류·종료 상태/signal·소요 시간을 구조화하는 REPL·Multi 명령 실행과 재사용 가능한 위치형 명령 템플릿
 - 원격 SFTP 탐색과 지연 로딩, 파일 업로드·다운로드, 같은 디렉터리 내 이름 변경, 파일 또는 빈 디렉터리 삭제, 디렉터리 생성, 경로 복사, Terminal에서 열기
-- 대기·실행 상태, 진행률, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. SSH.NET SFTP 호출은 클라이언트별로 직렬화합니다.
+- 대기·실행 상태, 명시적인 `0%`–`100%` 숫자, 진행 막대, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. SSH.NET SFTP 호출은 클라이언트별로 직렬화합니다.
 - 안전한 파일 전송 준비 단계. 업로드는 원격 임시 이름을 사용하고 기존 대상을 보존한 채 승격하며, 다운로드는 같은 로컬 디렉터리의 임시 파일을 사용합니다.
 - SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·그룹·환경·즐겨찾기·검색
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
-- 최대 16개 탭 세션, 기본 선택 0개의 Multi 대상, PROD 태그 세션이 포함된 브로드캐스트의 추가 확인
+- 로컬/SSH 혼합 최대 16개 탭, 기본 선택 0개의 Multi 대상, PROD 태그 SSH 세션이 포함된 브로드캐스트의 추가 확인
 - 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마
 
 ### GA가 아닌 이유
 
-- PTY는 실제이고 실행 중 서버 측 크기 변경을 지원하지만 현재 WinUI 텍스트 렌더러는 **Alpha 전용 연결 단계**입니다. SGR을 소비하지만 색·스타일을 표시하지 않고, 마우스 프로토콜과 넓은 문자·결합 문자의 완전한 셀 처리가 없습니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
+- SSH PTY와 로컬 ConPTY는 실제이고 실행 중 크기 변경을 지원하지만 현재 WinUI 텍스트 렌더러는 **Alpha 전용 연결 단계**입니다. SGR을 소비하지만 색·스타일을 표시하지 않고, 마우스 프로토콜과 넓은 문자·결합 문자의 완전한 셀 처리가 없습니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
 - SSH agent, OTP·다중 prompt keyboard-interactive UI, 레거시 `.ppk` 가져오기, 점프 호스트, 프록시, 자동 재연결은 지원하지 않습니다. 비밀번호 방식의 비대화형 fallback은 password 형태 prompt만 처리합니다. Keepalive는 사용할 수 있지만 비활성화된 컨트롤은 기능이 아닙니다.
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - 현재 SFTP는 파일만 전송하며 디렉터리 트리는 전송하지 않습니다. 일시정지·재시도·재개, 최종 크기/checksum 검증, `chmod`, 동기 탐색, 완전한 충돌 정책 매트릭스가 없습니다.
@@ -158,13 +163,14 @@ Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정
 
 ### 신뢰, 자격 증명, 로컬 데이터
 
-Sutty는 비밀번호와 개인키 passphrase를 **영구 저장하지 않습니다**. 인증 중에는 앱 메모리에 잠시 존재하며 아직 DPAPI 기반 Vault는 없습니다.
+기본적으로 Sutty는 비밀번호와 개인키 passphrase를 **영구 저장하지 않습니다**. 사용자가 저장 호스트에서 **자격 증명 기억**을 명시적으로 켠 경우에만 해당 비밀을 AES-256-GCM 보관소에 저장하고, 임의 master key는 현재 Windows 사용자의 DPAPI로 보호합니다. 비밀은 SQLite나 `settings.json`에 기록하지 않습니다.
 
 `%LOCALAPPDATA%\sutty` 아래의 로컬 파일은 다음과 같습니다.
 
 - `settings.json` — 환경설정, 최근 태그, 최근 개인키 **경로**
 - `sutty.db` — 명령 템플릿·사용 정보와 접속 기록, pin, 호스트·사용자·포트·인증 메타데이터, 개인키 경로, 태그
 - `known-hosts.json` — 신뢰한 공개 SSH 호스트키와 지문
+- `vault.key`, `vault.json` — 로컬 보관소 사용 시에만 생성되는 DPAPI 보호 master key와 인증 암호화된 자격 증명 기록
 - `crash.log` — 로컬 미처리 예외 상세. 아직 redaction을 보장하지 않으므로 공유 전에 반드시 확인해야 합니다.
 
 개인키 파일 내용은 사용자가 선택한 외부 파일에 그대로 있습니다. 알 수 없는 키는 신뢰 창보다 먼저 거부하고 명시적 결정 뒤에만 새 연결로 재시도합니다. 변경된 저장 키를 조용히 교체하지 않습니다.
@@ -175,8 +181,8 @@ Sutty는 비밀번호와 개인키 passphrase를 **영구 저장하지 않습니
 
 | 프로젝트 | 현재 역할 |
 | --- | --- |
-| [`sutty.UI`](src/sutty.UI) | WinUI 3 셸, Terminal/REPL 표시, Files, Multi, 설정 UI |
-| [`sutty.Core`](src/sutty.Core) | SSH 세션, 명령 결과, PTY 계약, 호스트키 신뢰, SFTP 서비스 |
+| [`sutty.UI`](src/sutty.UI) | WinUI 3 셸, 로컬/SSH 터미널 표시, REPL, Files, Multi, 설정 UI |
+| [`sutty.Core`](src/sutty.Core) | 로컬 ConPTY, SSH 세션, 명령 결과, 대화형 터미널 계약, 호스트키 신뢰, SFTP 서비스 |
 | [`sutty.Command`](src/sutty.Command) | SQLite 명령 템플릿, 접속 기록, pin, 비밀정보 없는 초안 |
 | [`sutty.Setting`](src/sutty.Setting) | 원자적으로 저장하는 JSON 환경설정 |
 | [`tests`](tests) | Terminal·호스트키·안전한 로컬 전송 중심 self-test. 아직 GA 통합 매트릭스가 아닙니다. |
