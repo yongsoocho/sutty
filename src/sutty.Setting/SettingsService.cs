@@ -24,10 +24,11 @@ public readonly record struct SettingsSaveResult(bool Succeeded, Exception? Erro
 public static class SettingsService
 {
     private static AppSettings? _current;
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly object SaveGate = new();
 
-    public static string SettingsPath => Path.Combine(
+    internal static string? PathOverride { get; set; }
+
+    public static string SettingsPath => PathOverride ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "sutty", "settings.json");
 
@@ -39,9 +40,11 @@ public static class SettingsService
         {
             if (File.Exists(SettingsPath))
             {
-                var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath));
+                var loaded = JsonSerializer.Deserialize(
+                    File.ReadAllText(SettingsPath),
+                    SettingsJsonContext.Default.AppSettings);
                 if (loaded is not null)
-                    return _current = loaded;
+                    return _current = Normalize(loaded);
             }
         }
         catch (Exception)
@@ -63,6 +66,7 @@ public static class SettingsService
 
         lock (SaveGate)
         {
+            settings = Normalize(settings);
             var directory = Path.GetDirectoryName(SettingsPath)!;
             var tempPath = Path.Combine(
                 directory,
@@ -72,7 +76,7 @@ public static class SettingsService
             {
                 Directory.CreateDirectory(directory);
 
-                var json = JsonSerializer.Serialize(settings, JsonOptions);
+                var json = JsonSerializer.Serialize(settings, SettingsJsonContext.Default.AppSettings);
                 using (var stream = new FileStream(
                     tempPath,
                     FileMode.CreateNew,
@@ -105,6 +109,49 @@ public static class SettingsService
 
     /// <summary>Current를 직접 수정한 뒤 저장할 때 쓰는 축약형.</summary>
     public static SettingsSaveResult Save() => Save(Current);
+
+    internal static void ResetForTests() => _current = null;
+
+    private static AppSettings Normalize(AppSettings settings)
+    {
+        settings.Theme = string.IsNullOrWhiteSpace(settings.Theme) || settings.Theme.Length > 64
+            ? "Dark"
+            : settings.Theme.Trim();
+        settings.Language = string.Equals(settings.Language, "en", StringComparison.OrdinalIgnoreCase)
+            ? "en"
+            : "ko";
+        settings.TerminalFontFamily = string.IsNullOrWhiteSpace(settings.TerminalFontFamily)
+            ? "Cascadia Mono"
+            : settings.TerminalFontFamily.Trim();
+        settings.TerminalFontSize = Math.Clamp(settings.TerminalFontSize, 8, 48);
+        settings.DefaultSshPort = Math.Clamp(settings.DefaultSshPort, 1, 65_535);
+        settings.DefaultKeepAliveSeconds = Math.Clamp(settings.DefaultKeepAliveSeconds, 0, 3_600);
+        settings.LastAuthMethod = string.Equals(
+            settings.LastAuthMethod,
+            "PublicKey",
+            StringComparison.OrdinalIgnoreCase)
+                ? "PublicKey"
+                : "Password";
+        settings.HistoryRetentionDays = Math.Clamp(settings.HistoryRetentionDays, 1, 365);
+        settings.HistoryTopHostCount = Math.Clamp(settings.HistoryTopHostCount, 1, 16);
+        settings.MainWindowWidth = Math.Clamp(settings.MainWindowWidth, 720, 7_680);
+        settings.MainWindowHeight = Math.Clamp(settings.MainWindowHeight, 480, 4_320);
+        settings.SettingWindowWidth = Math.Clamp(settings.SettingWindowWidth, 420, 3_840);
+        settings.SettingWindowHeight = Math.Clamp(settings.SettingWindowHeight, 480, 2_160);
+        settings.RightPanelWidth = Math.Clamp(settings.RightPanelWidth, 300, 800);
+        settings.RecentPrivateKeyPaths = NormalizeList(settings.RecentPrivateKeyPaths, 12, 2_048);
+        settings.RecentConnectionTags = NormalizeList(settings.RecentConnectionTags, 20, 32);
+        return settings;
+    }
+
+    private static List<string> NormalizeList(IEnumerable<string>? values, int limit, int maxLength) =>
+        values?.Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Where(value => value.Length <= maxLength && !value.Any(char.IsControl))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(limit)
+            .ToList()
+        ?? [];
 
     private static bool IsExpectedSaveFailure(Exception exception) => exception is
         IOException or

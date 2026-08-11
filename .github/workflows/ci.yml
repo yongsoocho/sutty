@@ -60,9 +60,17 @@ jobs:
         if: matrix.configuration == 'Debug'
         run: dotnet run --project .\tests\sutty.Core.Security.SelfTest\sutty.Core.Security.SelfTest.csproj --configuration Debug --no-restore
 
+      - name: Run saved-host and history self-tests
+        if: matrix.configuration == 'Debug'
+        run: dotnet run --project .\tests\sutty.Command.SelfTest\sutty.Command.SelfTest.csproj --configuration Debug --no-restore
+
       - name: Run terminal self-tests
         if: matrix.configuration == 'Debug'
         run: dotnet run --project .\tests\sutty.Terminal.SelfTest\sutty.Terminal.SelfTest.csproj --configuration Debug --no-restore
+
+      - name: Run settings self-tests
+        if: matrix.configuration == 'Debug'
+        run: dotnet run --project .\tests\sutty.Setting.SelfTest\sutty.Setting.SelfTest.csproj --configuration Debug --no-restore
 
       - name: Run SFTP self-tests
         if: matrix.configuration == 'Debug'

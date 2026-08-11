@@ -208,6 +208,16 @@
                                         ValueChanged="NumberBox_ValueChanged"
                                         Style="{StaticResource SettingsNumber}" />
                                 </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="{x:Bind h:Loc.T('상단에 고정할 자주 접속한 호스트 수', 'Frequently used hosts shown at top')}" />
+                                    <NumberBox
+                                        x:Name="HistoryTopHostCountBox"
+                                        Maximum="16"
+                                        Minimum="1"
+                                        SpinButtonPlacementMode="Compact"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </StackPanel>

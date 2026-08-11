@@ -3,7 +3,7 @@ namespace sutty.Setting;
 /// <summary>settings.json에 저장되는 앱 설정. 새 설정은 여기에 프로퍼티만 추가하면 된다.</summary>
 public sealed class AppSettings
 {
-    /// <summary>"Dark" 또는 "Light".</summary>
+    /// <summary>Theme preset name selected by the user.</summary>
     public string Theme { get; set; } = "Dark";
 
     /// <summary>UI 언어: "ko"(한국어) 또는 "en"(English).</summary>
@@ -43,6 +43,9 @@ public sealed class AppSettings
 
     /// <summary>접속 히스토리 보관 일수 (append-only 로그, 지난 기록은 삭제).</summary>
     public int HistoryRetentionDays { get; set; } = 60;
+
+    /// <summary>접속 횟수 기준으로 History 상단에 표시할 호스트 수.</summary>
+    public int HistoryTopHostCount { get; set; } = 4;
 
     // ── 창 크기 (클라이언트 영역, px). Deep Field 기준 크기로 시작하고 이후 사용자 값을 기억 ──
     public int MainWindowWidth { get; set; } = 1360;

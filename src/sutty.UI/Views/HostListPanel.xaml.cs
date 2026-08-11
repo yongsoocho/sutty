@@ -1,126 +1,250 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using sutty.Command;
+using sutty.Core.Security;
 using sutty.Setting;
 using sutty.UI.ViewModels;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace sutty.UI.Views;
 
 /// <summary>
-/// 접속 히스토리 (SQLite connection_log, append-only).
-/// - PINNED: 사용자가 직접 고정한 호스트
-/// - RECENT: 최근 접속 기록 최신순 (같은 서버도 접속마다 한 줄씩)
-/// 카드 클릭 시 Home에 비밀 없는 실제 연결 초안을 불러온다.
+/// Displays explicit saved-host profiles separately from append-only connection history.
+/// Secret values are resolved only when a saved profile is opened.
 /// </summary>
 public sealed partial class HostListPanel : UserControl
 {
-    private readonly List<HostInfoModel> _allPinned = [];
+    private readonly List<HostInfoModel> _allSaved = [];
+    private readonly List<HostInfoModel> _allTop = [];
     private readonly List<HostInfoModel> _allRecent = [];
     private string _currentQuery = "";
+    private bool _storeUnavailable;
 
-    public ObservableCollection<HostInfoModel> PinnedHosts { get; } = [];
+    public ObservableCollection<HostInfoModel> SavedHosts { get; } = [];
+    public ObservableCollection<HostInfoModel> TopHosts { get; } = [];
     public ObservableCollection<HostInfoModel> FilteredHosts { get; } = [];
 
-    /// <summary>카드를 활성화하면 실제 연결 초안 열기를 요청한다.</summary>
     public event EventHandler<HostInfoModel>? ConnectRequested;
 
     public HostListPanel()
     {
-        this.InitializeComponent();
+        InitializeComponent();
         LoadFromStore();
         ApplyFilter("");
 
-        // ItemsRepeater가 만든 HostCard에 클릭 이벤트를 연결 (두 리스트 모두)
-        PinnedRepeater.ElementPrepared += OnElementPrepared;
+        SavedRepeater.ElementPrepared += OnElementPrepared;
+        TopRepeater.ElementPrepared += OnElementPrepared;
         HostRepeater.ElementPrepared += OnElementPrepared;
     }
 
     private void OnElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
     {
-        if (args.Element is Controls.HostCard card)
-        {
-            card.Clicked -= OnCardClicked;
-            card.Clicked += OnCardClicked;
-            card.PinToggled -= OnPinToggled;
-            card.PinToggled += OnPinToggled;
-        }
+        if (args.Element is not Controls.HostCard card) return;
+
+        card.Clicked -= OnCardClicked;
+        card.Clicked += OnCardClicked;
+        card.PrimaryActionRequested -= OnPrimaryActionRequested;
+        card.PrimaryActionRequested += OnPrimaryActionRequested;
+        card.DeleteRequested -= OnDeleteRequested;
+        card.DeleteRequested += OnDeleteRequested;
     }
 
     private void OnCardClicked(object? sender, HostInfoModel host)
         => ConnectRequested?.Invoke(this, host);
 
-    /// <summary>설정 변경 후 보관 기한과 pin 목록을 현재 화면에 다시 적용한다.</summary>
     public void RefreshFromStore()
     {
         LoadFromStore();
         ApplyFilter(_currentQuery);
     }
 
-    public void RefreshLanguage() => Bindings.Update();
-
-    private void OnPinToggled(object? sender, HostInfoModel host)
+    public void RefreshLanguage()
     {
-        HostHistoryStore.SetPinned(
-            host.Hostname,
-            host.Alias,
-            !host.IsPinned,
-            host.Username,
-            host.Port,
-            host.AuthMethod,
-            host.PrivateKeyPath,
-            host.Tags);
-
+        Bindings.Update();
         RefreshFromStore();
     }
 
-    // ── SQLite에서 로드 (보관 기한 정리 → 고정 호스트 + 최근 로그) ──
-
-    private void LoadFromStore()
+    private async void OnPrimaryActionRequested(object? sender, HostInfoModel host)
     {
-        HostHistoryStore.Purge(SettingsService.Current.HistoryRetentionDays);
-
-        _allPinned.Clear();
-        foreach (var entry in HostHistoryStore.GetPinned())
+        try
         {
-            _allPinned.Add(new HostInfoModel
+            if (!string.IsNullOrWhiteSpace(host.ProfileId))
             {
-                Alias = entry.Alias,
-                Hostname = entry.Hostname,
-                LastConnected = entry.ConnectedAt,
-                ConnectionCount = entry.ConnectionCount,
-                IsPinned = true,
-                Username = entry.Username,
-                Port = entry.Port,
-                AuthMethod = entry.AuthMethod,
-                PrivateKeyPath = entry.PrivateKeyPath,
-                Tags = [.. entry.Tags],
+                HostProfileStore.SetFavorite(host.ProfileId, !host.IsPinned);
+                RefreshFromStore();
+                return;
+            }
+
+            HostProfileStore.Save(new HostProfileDraft
+            {
+                DisplayName = host.Alias,
+                Host = host.Hostname,
+                Port = host.Port,
+                Username = host.Username,
+                AuthMethod = host.AuthMethod,
+                PrivateKeyPath = host.PrivateKeyPath,
+                Tags = host.Tags,
+                IsFavorite = true,
             });
+            RefreshFromStore();
         }
-
-        _allRecent.Clear();
-        foreach (var entry in HostHistoryStore.GetRecent(150))
+        catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or
+                                      IOException or UnauthorizedAccessException or
+                                      ArgumentException or InvalidOperationException)
         {
-            _allRecent.Add(new HostInfoModel
-            {
-                Id = entry.Id,
-                Alias = entry.Alias,
-                Hostname = entry.Hostname,
-                LastConnected = entry.ConnectedAt,
-                IsPinned = entry.IsPinned,
-                Username = entry.Username,
-                Port = entry.Port,
-                AuthMethod = entry.AuthMethod,
-                PrivateKeyPath = entry.PrivateKeyPath,
-                Tags = [.. entry.Tags],
-            });
+            System.Diagnostics.Debug.WriteLine($"Saved-host action failed: {error.GetType().Name}");
+            await ShowStorageActionErrorAsync();
         }
     }
 
-    // ── 검색 필터 (두 섹션 모두에 적용) ──
+    private async void OnDeleteRequested(object? sender, HostInfoModel host)
+    {
+        if (!host.IsSavedProfile || string.IsNullOrWhiteSpace(host.ProfileId)) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = Helpers.Loc.T("저장 호스트 삭제", "Delete saved host"),
+            Content = Helpers.Loc.T(
+                $"'{host.Alias}' 저장 호스트를 삭제할까요? 접속 기록은 유지됩니다.",
+                $"Delete the saved host '{host.Alias}'? Connection history will be kept."),
+            PrimaryButtonText = Helpers.Loc.T("삭제", "Delete"),
+            CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        try
+        {
+            if (!HostProfileStore.Delete(host.ProfileId)) return;
+
+            if (!string.IsNullOrWhiteSpace(host.CredentialId))
+            {
+                try
+                {
+                    LocalCredentialVault.Default.Delete(host.CredentialId);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                                              System.Security.Cryptography.CryptographicException or
+                                              System.ComponentModel.Win32Exception or ArgumentException)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Encrypted credential cleanup failed: {error.GetType().Name}");
+                }
+            }
+
+            RefreshFromStore();
+        }
+        catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or
+                                      IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Saved-host delete failed: {error.GetType().Name}");
+            await ShowStorageActionErrorAsync();
+        }
+    }
+
+    private async Task ShowStorageActionErrorAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            Title = Helpers.Loc.T("호스트 저장소 오류", "Host storage error"),
+            Content = Helpers.Loc.T(
+                "저장 호스트 변경을 완료하지 못했습니다. 저장소 접근 권한과 디스크 상태를 확인하세요.",
+                "The saved-host change could not be completed. Check storage permissions and disk health."),
+            CloseButtonText = "OK",
+            XamlRoot = XamlRoot,
+        };
+        await dialog.ShowAsync();
+    }
+
+    private void LoadFromStore()
+    {
+        _allSaved.Clear();
+        _allTop.Clear();
+        _allRecent.Clear();
+        _storeUnavailable = false;
+
+        try
+        {
+            HostProfileStore.EnsureInitialized();
+            HostHistoryStore.Purge(SettingsService.Current.HistoryRetentionDays);
+
+            var profiles = HostProfileStore.GetAll(limit: 1_000);
+            var profileByConnection = profiles
+                .GroupBy(profile => ConnectionKey(profile.Host, profile.Port, profile.Username))
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+            foreach (var profile in profiles)
+                _allSaved.Add(FromProfile(profile));
+
+            foreach (var entry in HostHistoryStore.GetMostFrequent(
+                         Math.Clamp(SettingsService.Current.HistoryTopHostCount, 1, 16)))
+            {
+                _allTop.Add(FromHistory(entry, FindProfile(entry, profileByConnection)));
+            }
+
+            foreach (var entry in HostHistoryStore.GetRecent(150))
+                _allRecent.Add(FromHistory(entry, FindProfile(entry, profileByConnection)));
+        }
+        catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or
+                                      IOException or UnauthorizedAccessException)
+        {
+            _storeUnavailable = true;
+            System.Diagnostics.Debug.WriteLine($"Host storage load failed: {error.GetType().Name}");
+        }
+    }
+
+    private static HostInfoModel FromProfile(HostProfile profile) => new()
+    {
+        ProfileId = profile.Id,
+        IsSavedProfile = true,
+        CredentialId = profile.CredentialId,
+        Alias = profile.DisplayName,
+        Hostname = profile.Host,
+        LastConnected = profile.LastConnectedAtUtc?.LocalDateTime,
+        IsPinned = profile.IsFavorite,
+        Username = profile.Username,
+        Port = profile.Port,
+        AuthMethod = profile.AuthMethod,
+        PrivateKeyPath = profile.PrivateKeyPath,
+        Tags = [.. profile.Tags],
+        GroupName = profile.GroupName,
+        Environment = profile.Environment,
+    };
+
+    private static HostInfoModel FromHistory(HostHistoryEntry entry, HostProfile? profile) => new()
+    {
+        Id = entry.Id,
+        ProfileId = profile?.Id,
+        CredentialId = profile?.CredentialId,
+        Alias = entry.Alias,
+        Hostname = entry.Hostname,
+        LastConnected = entry.ConnectedAt,
+        ConnectionCount = entry.ConnectionCount,
+        IsPinned = profile?.IsFavorite == true,
+        Username = entry.Username,
+        Port = entry.Port,
+        AuthMethod = entry.AuthMethod,
+        PrivateKeyPath = entry.PrivateKeyPath,
+        Tags = [.. entry.Tags],
+        GroupName = profile?.GroupName ?? "",
+        Environment = profile?.Environment ?? HostEnvironments.Unclassified,
+        Outcome = entry.Outcome,
+        ErrorCode = entry.ErrorCode,
+    };
+
+    private static HostProfile? FindProfile(
+        HostHistoryEntry entry,
+        IReadOnlyDictionary<string, HostProfile> profileByConnection) =>
+        profileByConnection.GetValueOrDefault(ConnectionKey(entry.Hostname, entry.Port, entry.Username));
+
+    private static string ConnectionKey(string host, int port, string username) =>
+        $"{host.Trim().ToLowerInvariant()}\u001f{port}\u001f{username.Trim().ToLowerInvariant()}";
 
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
@@ -131,26 +255,38 @@ public sealed partial class HostListPanel : UserControl
     private void ApplyFilter(string query)
     {
         _currentQuery = query;
-        var q = query.Trim();
+        var normalizedQuery = query.Trim();
 
-        static bool Match(HostInfoModel h, string q) =>
-            h.Alias.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-            h.Hostname.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-            h.Username.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-            h.Tags.Any(tag => tag.Contains(q, StringComparison.OrdinalIgnoreCase));
+        static bool Matches(HostInfoModel host, string value) =>
+            host.Alias.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+            host.Hostname.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+            host.Username.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+            host.GroupName.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+            host.Environment.Contains(value, StringComparison.OrdinalIgnoreCase) ||
+            host.Tags.Any(tag => tag.Contains(value, StringComparison.OrdinalIgnoreCase));
 
-        PinnedHosts.Clear();
-        foreach (var h in _allPinned.Where(h => q.Length == 0 || Match(h, q)))
-            PinnedHosts.Add(h);
+        ReplaceWithMatches(SavedHosts, _allSaved, normalizedQuery, Matches);
+        ReplaceWithMatches(TopHosts, _allTop, normalizedQuery, Matches);
+        ReplaceWithMatches(FilteredHosts, _allRecent, normalizedQuery, Matches);
 
-        FilteredHosts.Clear();
-        foreach (var h in _allRecent.Where(h => q.Length == 0 || Match(h, q)))
-            FilteredHosts.Add(h);
-
-        PinnedHeader.Visibility = PinnedHosts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SavedHeader.Visibility = SavedHosts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        TopHeader.Visibility = TopHosts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         RecentHeader.Visibility = FilteredHosts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        EmptyState.Visibility = PinnedHosts.Count == 0 && FilteredHosts.Count == 0
+        StoreErrorState.Visibility = _storeUnavailable ? Visibility.Visible : Visibility.Collapsed;
+        EmptyState.Visibility = !_storeUnavailable &&
+                                SavedHosts.Count == 0 && TopHosts.Count == 0 && FilteredHosts.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
+    }
+
+    private static void ReplaceWithMatches(
+        ObservableCollection<HostInfoModel> target,
+        IEnumerable<HostInfoModel> source,
+        string query,
+        Func<HostInfoModel, string, bool> matches)
+    {
+        target.Clear();
+        foreach (var host in source.Where(host => query.Length == 0 || matches(host, query)))
+            target.Add(host);
     }
 }

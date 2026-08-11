@@ -14,13 +14,6 @@ public sealed class KnownHostsStore : IKnownHostsStore
     private const int MaximumEntries = 4096;
     private const long MaximumFileBytes = 4L * 1024 * 1024;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-    };
-
     private readonly object _gate = new();
     private Dictionary<string, KnownHostRecord>? _records;
 
@@ -110,7 +103,9 @@ public sealed class KnownHostsStore : IKnownHostsStore
         KnownHostsDocument document;
         try
         {
-            document = JsonSerializer.Deserialize<KnownHostsDocument>(stream, JsonOptions)
+            document = JsonSerializer.Deserialize(
+                stream,
+                SecurityJsonContext.Default.KnownHostsDocument)
                 ?? throw new InvalidDataException("Known-host store is empty.");
         }
         catch (JsonException ex)
@@ -168,7 +163,9 @@ public sealed class KnownHostsStore : IKnownHostsStore
                 .ToList(),
         };
 
-        var json = JsonSerializer.SerializeToUtf8Bytes(document, JsonOptions);
+        var json = JsonSerializer.SerializeToUtf8Bytes(
+            document,
+            SecurityJsonContext.Default.KnownHostsDocument);
         if (json.LongLength > MaximumFileBytes)
             throw new InvalidOperationException("Known-host store exceeds the maximum supported size.");
 
@@ -214,18 +211,4 @@ public sealed class KnownHostsStore : IKnownHostsStore
         }
     }
 
-    private sealed class KnownHostsDocument
-    {
-        public int Version { get; set; }
-        public List<KnownHostDocumentEntry>? Hosts { get; set; }
-    }
-
-    private sealed class KnownHostDocumentEntry
-    {
-        public string Identity { get; set; } = "";
-        public string Algorithm { get; set; } = "";
-        public string Sha256Fingerprint { get; set; } = "";
-        public string RawKey { get; set; } = "";
-        public DateTimeOffset TrustedAtUtc { get; set; }
-    }
 }

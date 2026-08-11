@@ -16,7 +16,7 @@
 
 ## English
 
-Sutty aims to integrate everyday **SSH, SFTP, reusable-command, and multi-session operations** into one Windows-local workspace. That is a product goal, not a statement that every planned capability is complete.
+Sutty brings everyday **SSH, SFTP, reusable commands, and multi-session operations** into one Windows-local workspace. That is a product goal, not a statement that every planned capability is complete.
 
 The product is local-first, Windows-only, and centered on four cooperating work surfaces:
 
@@ -35,7 +35,8 @@ The product is local-first, Windows-only, and centered on four cooperating work 
 - Remote SFTP navigation and lazy loading; file upload/download; same-directory rename; file or empty-directory deletion; directory creation; Copy path; and Open in Terminal.
 - A compact per-panel transfer queue with queued/running state, progress, speed, ETA, cancellation, and an eight-job cap. SSH.NET SFTP calls are serialized per client.
 - Safe file-transfer staging. Uploads use a remote temporary name and preserve an existing destination during promotion; downloads use an adjacent local temporary file.
-- Connection history, user-managed pins, tags, and non-secret connection drafts in SQLite.
+- Append-only connection-attempt history plus explicit Saved Host profiles, groups, environments, favorites, and search in SQLite.
+- Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
 - Up to 16 tabbed sessions, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged sessions.
 - Immediately applied Korean/English settings, atomic settings persistence, and dark/light themes.
 
@@ -43,12 +44,12 @@ The product is local-first, Windows-only, and centered on four cooperating work 
 
 - The PTY is real and supports runtime server-side resize, but the current WinUI text renderer is an **Alpha-only bridge**. It consumes SGR without rendering color/style and lacks mouse protocols and complete wide/combining-cell behavior. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
 - SSH agent, OTP/multi-prompt keyboard-interactive UI, legacy `.ppk` import, jump hosts, proxies, and automatic reconnect are unavailable. Password mode's non-interactive fallback handles password-like prompts only. Keepalive is available; disabled controls are not capabilities.
-- History and pins are not a complete Saved Host Profile/Vault system. There is no encrypted credential vault, and secrets must be entered again.
+- Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP currently transfers files, not directory trees. It has no pause/retry/resume, final size/checksum verification, `chmod`, synchronized browsing, or a complete collision-policy matrix.
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent audit/export, timeout, or streaming workflow.
 - Port forwarding, import/export, enterprise policy, audit logs, support bundles, signed release automation, and the GA compatibility/accessibility matrices remain planned.
 
-The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md). Product gates and explicit non-goals are in [Product Direction](docs/PRODUCT_DIRECTION.md).
+The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Enterprise implementation status](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md). Product gates and explicit non-goals are in [Product Direction](docs/PRODUCT_DIRECTION.md).
 
 ### Explicitly unsupported scope
 
@@ -135,7 +136,8 @@ Sutty는 일상적인 **SSH, SFTP, 재사용 명령, 다중 세션 운영**을 �
 - 원격 SFTP 탐색과 지연 로딩, 파일 업로드·다운로드, 같은 디렉터리 내 이름 변경, 파일 또는 빈 디렉터리 삭제, 디렉터리 생성, 경로 복사, Terminal에서 열기
 - 대기·실행 상태, 진행률, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. SSH.NET SFTP 호출은 클라이언트별로 직렬화합니다.
 - 안전한 파일 전송 준비 단계. 업로드는 원격 임시 이름을 사용하고 기존 대상을 보존한 채 승격하며, 다운로드는 같은 로컬 디렉터리의 임시 파일을 사용합니다.
-- SQLite 기반 접속 기록·사용자 pin·태그·비밀정보 없는 연결 초안
+- SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·그룹·환경·즐겨찾기·검색
+- Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
 - 최대 16개 탭 세션, 기본 선택 0개의 Multi 대상, PROD 태그 세션이 포함된 브로드캐스트의 추가 확인
 - 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마
 
@@ -143,12 +145,12 @@ Sutty는 일상적인 **SSH, SFTP, 재사용 명령, 다중 세션 운영**을 �
 
 - PTY는 실제이고 실행 중 서버 측 크기 변경을 지원하지만 현재 WinUI 텍스트 렌더러는 **Alpha 전용 연결 단계**입니다. SGR을 소비하지만 색·스타일을 표시하지 않고, 마우스 프로토콜과 넓은 문자·결합 문자의 완전한 셀 처리가 없습니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
 - SSH agent, OTP·다중 prompt keyboard-interactive UI, 레거시 `.ppk` 가져오기, 점프 호스트, 프록시, 자동 재연결은 지원하지 않습니다. 비밀번호 방식의 비대화형 fallback은 password 형태 prompt만 처리합니다. Keepalive는 사용할 수 있지만 비활성화된 컨트롤은 기능이 아닙니다.
-- History와 pin은 완전한 Saved Host Profile/Vault가 아닙니다. 암호화된 자격 증명 Vault가 없으므로 비밀정보는 다시 입력해야 합니다.
+- 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - 현재 SFTP는 파일만 전송하며 디렉터리 트리는 전송하지 않습니다. 일시정지·재시도·재개, 최종 크기/checksum 검증, `chmod`, 동기 탐색, 완전한 충돌 정책 매트릭스가 없습니다.
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 audit/export, timeout, streaming 흐름이 없습니다.
 - 포트 포워딩, 가져오기·내보내기, 기업 정책, 감사 로그, 지원 번들, 서명 릴리스 자동화, GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
-현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 제품 게이트와 명시적 비목표는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 있습니다.
+현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Enterprise 구현 상태](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md), 제품 게이트와 명시적 비목표는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 있습니다.
 
 ### 명시적 미지원 범위
 
