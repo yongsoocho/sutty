@@ -26,8 +26,20 @@ public sealed class AppSettings
     /// <summary>Home 연결 태그 입력 시 제안할 최근 태그.</summary>
     public List<string> RecentConnectionTags { get; set; } = [];
 
-    /// <summary>터미널 표시 방식: "Repl"(구조화된 셀) 또는 "Raw"(연속 명령 로그).</summary>
-    public string TerminalMode { get; set; } = "Repl";
+    private string _terminalMode = "Repl";
+
+    /// <summary>
+    /// 터미널 표시 방식: "Repl"(구조화된 셀) 또는 "Terminal"(대화형 PTY).
+    /// 이전 버전의 "Raw" 값은 JSON 역직렬화 시 자동으로 "Terminal"로 마이그레이션한다.
+    /// </summary>
+    public string TerminalMode
+    {
+        get => _terminalMode;
+        set => _terminalMode = string.Equals(value, "Raw", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "Terminal", StringComparison.OrdinalIgnoreCase)
+                ? "Terminal"
+                : "Repl";
+    }
 
     /// <summary>접속 히스토리 보관 일수 (append-only 로그, 지난 기록은 삭제).</summary>
     public int HistoryRetentionDays { get; set; } = 60;

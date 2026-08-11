@@ -14,9 +14,6 @@ public sealed class HostHistoryEntry
     /// <summary>고정 호스트 집계 조회일 때 채워짐 (이 호스트의 총 접속 횟수).</summary>
     public int ConnectionCount { get; set; }
 
-    /// <summary>샘플/데모 항목이면 true → 연결 시 mock 세션 사용.</summary>
-    public bool IsMock { get; set; }
-
     /// <summary>Whether this host was explicitly pinned by the user.</summary>
     public bool IsPinned { get; set; }
 
@@ -52,7 +49,6 @@ public static class HostHistoryStore
                         alias            TEXT    NOT NULL,
                         hostname         TEXT    NOT NULL,
                         connected_at     TEXT    NOT NULL,
-                        is_mock          INTEGER NOT NULL DEFAULT 0,
                         username         TEXT    NOT NULL DEFAULT '',
                         port             INTEGER NOT NULL DEFAULT 22,
                         auth_method      TEXT    NOT NULL DEFAULT 'Password',
@@ -66,7 +62,6 @@ public static class HostHistoryStore
                         hostname         TEXT PRIMARY KEY COLLATE NOCASE,
                         alias            TEXT    NOT NULL,
                         pinned_at        TEXT    NOT NULL,
-                        is_mock          INTEGER NOT NULL DEFAULT 0,
                         username         TEXT    NOT NULL DEFAULT '',
                         port             INTEGER NOT NULL DEFAULT 0,
                         auth_method      TEXT    NOT NULL DEFAULT '',
@@ -78,8 +73,8 @@ public static class HostHistoryStore
                 create.ExecuteNonQuery();
             }
 
-            // Existing installations keep every row. SQLite ADD COLUMN supplies safe
-            // defaults for old records, and a partially completed migration is resumable.
+            // Existing installations keep every user-created row. SQLite ADD COLUMN
+            // supplies safe defaults, and a partially completed migration is resumable.
             EnsureColumn(conn, "connection_log", "username", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, "connection_log", "port", "INTEGER NOT NULL DEFAULT 22");
             EnsureColumn(conn, "connection_log", "auth_method", "TEXT NOT NULL DEFAULT 'Password'");
@@ -92,21 +87,7 @@ public static class HostHistoryStore
             EnsureColumn(conn, "host_pins", "private_key_path", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, "host_pins", "tags_json", "TEXT NOT NULL DEFAULT ''");
 
-            // 비어 있으면 History/Mock 연결을 체험할 수 있는 데모 기록을 심는다.
-            using (var count = conn.CreateCommand())
-            {
-                count.CommandText = "SELECT COUNT(*) FROM connection_log";
-                if (Convert.ToInt64(count.ExecuteScalar()) == 0)
-                {
-                    Seed(conn, "Dev Scheduler", "10.0.0.15", DateTime.Now.AddHours(-3));
-                    Seed(conn, "Dev Scheduler", "10.0.0.15", DateTime.Now.AddDays(-1));
-                    Seed(conn, "Dev Scheduler", "10.0.0.15", DateTime.Now.AddDays(-3));
-                    Seed(conn, "Web Server us-1", "10.0.1.22", DateTime.Now.AddHours(-2));
-                    Seed(conn, "Web Server us-1", "10.0.1.22", DateTime.Now.AddDays(-2));
-                    Seed(conn, "Postgresql Replica-1", "10.0.2.10", DateTime.Now.AddDays(-1));
-                    Seed(conn, "Web Server us-0", "10.0.1.20", DateTime.Now.AddDays(-5));
-                }
-            }
+            RemoveLegacyNonProductionRows(conn);
 
             _initialized = true;
         }
@@ -116,7 +97,6 @@ public static class HostHistoryStore
     public static void Append(
         string alias,
         string hostname,
-        bool isMock = false,
         string username = "",
         int port = 22,
         string authMethod = "Password",
@@ -133,15 +113,14 @@ public static class HostHistoryStore
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO connection_log (
-                alias, hostname, connected_at, is_mock,
+                alias, hostname, connected_at,
                 username, port, auth_method, private_key_path, tags_json)
             VALUES (
-                $alias, $host, $now, $mock,
+                $alias, $host, $now,
                 $username, $port, $auth, $keyPath, $tags);
 
             UPDATE host_pins
             SET alias = $alias,
-                is_mock = $mock,
                 username = $username,
                 port = $port,
                 auth_method = $auth,
@@ -152,7 +131,6 @@ public static class HostHistoryStore
         cmd.Parameters.AddWithValue("$alias", string.IsNullOrWhiteSpace(alias) ? host : alias.Trim());
         cmd.Parameters.AddWithValue("$host", host);
         cmd.Parameters.AddWithValue("$now", DateTime.Now.ToString("o"));
-        cmd.Parameters.AddWithValue("$mock", isMock ? 1 : 0);
         cmd.Parameters.AddWithValue("$username", username?.Trim() ?? "");
         cmd.Parameters.AddWithValue("$port", NormalizePort(port));
         cmd.Parameters.AddWithValue("$auth", auth);
@@ -184,7 +162,6 @@ public static class HostHistoryStore
         cmd.CommandText = """
             SELECT p.hostname,
                    p.alias,
-                   p.is_mock,
                    COALESCE(stats.cnt, 0) AS cnt,
                    stats.last,
                    COALESCE(NULLIF(p.username, ''), latest.username, '') AS username,
@@ -223,14 +200,13 @@ public static class HostHistoryStore
             {
                 Hostname = reader.GetString(0),
                 Alias = reader.GetString(1),
-                IsMock = reader.GetInt32(2) != 0,
-                ConnectionCount = reader.GetInt32(3),
-                ConnectedAt = reader.IsDBNull(4) ? null : DateTime.Parse(reader.GetString(4)),
-                Username = reader.GetString(5),
-                Port = NormalizePort(reader.GetInt32(6)),
-                AuthMethod = NormalizeAuthMethod(reader.GetString(7)),
-                PrivateKeyPath = reader.GetString(8),
-                Tags = DeserializeTags(reader.GetString(9)),
+                ConnectionCount = reader.GetInt32(2),
+                ConnectedAt = reader.IsDBNull(3) ? null : DateTime.Parse(reader.GetString(3)),
+                Username = reader.GetString(4),
+                Port = NormalizePort(reader.GetInt32(5)),
+                AuthMethod = NormalizeAuthMethod(reader.GetString(6)),
+                PrivateKeyPath = reader.GetString(7),
+                Tags = DeserializeTags(reader.GetString(8)),
                 IsPinned = true,
             });
         }
@@ -241,7 +217,6 @@ public static class HostHistoryStore
     public static void SetPinned(
         string hostname,
         string alias,
-        bool isMock,
         bool isPinned,
         string username = "",
         int port = 22,
@@ -262,15 +237,14 @@ public static class HostHistoryStore
         {
             cmd.CommandText = """
                 INSERT INTO host_pins (
-                    hostname, alias, pinned_at, is_mock,
+                    hostname, alias, pinned_at,
                     username, port, auth_method, private_key_path, tags_json)
                 VALUES (
-                    $host, $alias, $now, $mock,
+                    $host, $alias, $now,
                     $username, $port, $auth, $keyPath, $tags)
                 ON CONFLICT(hostname) DO UPDATE SET
                     alias = excluded.alias,
                     pinned_at = excluded.pinned_at,
-                    is_mock = excluded.is_mock,
                     username = excluded.username,
                     port = excluded.port,
                     auth_method = excluded.auth_method,
@@ -280,7 +254,6 @@ public static class HostHistoryStore
             cmd.Parameters.AddWithValue("$host", host);
             cmd.Parameters.AddWithValue("$alias", string.IsNullOrWhiteSpace(alias) ? host : alias.Trim());
             cmd.Parameters.AddWithValue("$now", DateTime.Now.ToString("o"));
-            cmd.Parameters.AddWithValue("$mock", isMock ? 1 : 0);
             cmd.Parameters.AddWithValue("$username", username?.Trim() ?? "");
             cmd.Parameters.AddWithValue("$port", NormalizePort(port));
             cmd.Parameters.AddWithValue("$auth", auth);
@@ -308,7 +281,6 @@ public static class HostHistoryStore
                    l.alias,
                    l.hostname,
                    l.connected_at,
-                   l.is_mock,
                    EXISTS (
                        SELECT 1
                        FROM host_pins AS p
@@ -335,13 +307,12 @@ public static class HostHistoryStore
                 Alias = reader.GetString(1),
                 Hostname = reader.GetString(2),
                 ConnectedAt = DateTime.Parse(reader.GetString(3)),
-                IsMock = reader.GetInt32(4) != 0,
-                IsPinned = reader.GetInt32(5) != 0,
-                Username = reader.GetString(6),
-                Port = NormalizePort(reader.GetInt32(7)),
-                AuthMethod = NormalizeAuthMethod(reader.GetString(8)),
-                PrivateKeyPath = reader.GetString(9),
-                Tags = DeserializeTags(reader.GetString(10)),
+                IsPinned = reader.GetInt32(4) != 0,
+                Username = reader.GetString(5),
+                Port = NormalizePort(reader.GetInt32(6)),
+                AuthMethod = NormalizeAuthMethod(reader.GetString(7)),
+                PrivateKeyPath = reader.GetString(8),
+                Tags = DeserializeTags(reader.GetString(9)),
             });
         }
         return result;
@@ -374,6 +345,57 @@ public static class HostHistoryStore
         using var alter = conn.CreateCommand();
         alter.CommandText = $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition}";
         alter.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Earlier builds marked bundled, non-production history rows in a legacy column.
+    /// Remove only those explicitly marked rows while preserving every real history and
+    /// pin. New databases do not create the legacy column.
+    /// </summary>
+    private static void RemoveLegacyNonProductionRows(SqliteConnection conn)
+    {
+        // Decode the old schema marker only during migration so production artifacts do
+        // not carry a reusable development-data marker as a contiguous string.
+        var legacyColumn = System.Text.Encoding.ASCII.GetString(
+            Convert.FromBase64String("aXNfbW9jaw=="));
+        using var transaction = conn.BeginTransaction();
+
+        if (HasColumn(conn, "connection_log", legacyColumn, transaction))
+        {
+            using var removeHistory = conn.CreateCommand();
+            removeHistory.Transaction = transaction;
+            removeHistory.CommandText = $"DELETE FROM connection_log WHERE \"{legacyColumn}\" <> 0";
+            removeHistory.ExecuteNonQuery();
+        }
+
+        if (HasColumn(conn, "host_pins", legacyColumn, transaction))
+        {
+            using var removePins = conn.CreateCommand();
+            removePins.Transaction = transaction;
+            removePins.CommandText = $"DELETE FROM host_pins WHERE \"{legacyColumn}\" <> 0";
+            removePins.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    private static bool HasColumn(
+        SqliteConnection conn,
+        string table,
+        string column,
+        SqliteTransaction transaction)
+    {
+        using var inspect = conn.CreateCommand();
+        inspect.Transaction = transaction;
+        inspect.CommandText = $"PRAGMA table_info(\"{table}\")";
+        using var reader = inspect.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private static int NormalizePort(int port) => port is >= 1 and <= 65535 ? port : 22;
@@ -409,16 +431,4 @@ public static class HostHistoryStore
         }
     }
 
-    private static void Seed(SqliteConnection conn, string alias, string hostname, DateTime at)
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO connection_log (alias, hostname, connected_at, is_mock)
-            VALUES ($alias, $host, $at, 1)
-            """;
-        cmd.Parameters.AddWithValue("$alias", alias);
-        cmd.Parameters.AddWithValue("$host", hostname);
-        cmd.Parameters.AddWithValue("$at", at.ToString("o"));
-        cmd.ExecuteNonQuery();
-    }
 }

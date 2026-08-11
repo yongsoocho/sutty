@@ -39,7 +39,7 @@ namespace sutty.UI.Views
             // 이전 상태 기억 (세션 기준)
             var previous = Slots
                 .Where(s => s.View is not null)
-                .ToDictionary(s => s.View!, s => (s.IsSelected, s.LastOutput));
+                .ToDictionary(s => s.View!, s => (s.IsSelected, s.LastOutput, s.ResultText));
 
             Slots.Clear();
             for (var i = 0; i < SlotCount; i++)
@@ -49,8 +49,11 @@ namespace sutty.UI.Views
                 Slots.Add(new MultiSlotVm
                 {
                     View = view,
-                    IsSelected = !known || previous[view!].IsSelected,
+                    // New sessions are never implicit broadcast targets. Preserve an
+                    // explicit prior choice only while the same session remains open.
+                    IsSelected = known && previous[view!].IsSelected,
                     LastOutput = known ? previous[view!].LastOutput : "",
+                    ResultText = known ? previous[view!].ResultText : "",
                 });
             }
 

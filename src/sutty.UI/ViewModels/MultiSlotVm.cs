@@ -17,7 +17,7 @@ public sealed class MultiSlotVm : ObservableObject
     public SessionView? View { get; set; }
 
     /// <summary>체크된 세션에만 명령이 전송된다 (기본 전체 체크).</summary>
-    public bool IsSelected { get; set; } = true;
+    public bool IsSelected { get; set; }
 
     private string _lastOutput = "";
     /// <summary>이 세션에서 실행한 마지막 브로드캐스트 명령의 출력(축약).</summary>
@@ -25,6 +25,14 @@ public sealed class MultiSlotVm : ObservableObject
     {
         get => _lastOutput;
         set => SetProperty(ref _lastOutput, value);
+    }
+
+    private string _resultText = "";
+    /// <summary>Last command outcome, for example "exit 0" or "failed".</summary>
+    public string ResultText
+    {
+        get => _resultText;
+        set => SetProperty(ref _resultText, value);
     }
 
     public bool HasSession => View is not null;

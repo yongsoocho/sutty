@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<!--  파일 트리만 심플하게. 탐색기에서 파일을 끌어다 놓으면 그 위치로 업로드.  -->
 <UserControl
     x:Class="sutty.UI.Views.FileTreePanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -12,10 +11,12 @@
     VerticalAlignment="Stretch"
     mc:Ignorable="d">
 
-    <Grid RowSpacing="10">
+    <Grid RowSpacing="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -45,9 +46,59 @@
             </Border>
         </Grid>
 
+        <Grid Grid.Row="1" ColumnSpacing="5">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="30" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="30" />
+                <ColumnDefinition Width="30" />
+            </Grid.ColumnDefinitions>
+            <Button
+                Padding="0"
+                AutomationProperties.Name="{x:Bind h:Loc.T('상위 폴더', 'Parent folder')}"
+                Background="{ThemeResource InputBg}"
+                BorderBrush="{ThemeResource InputBorder}"
+                Click="ParentPath_Click"
+                CornerRadius="6"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('상위 폴더', 'Parent folder')}">
+                <FontIcon FontSize="12" Glyph="&#xE74A;" />
+            </Button>
+            <TextBox
+                x:Name="PathBox"
+                Grid.Column="1"
+                MinHeight="30"
+                Padding="8,3"
+                FontFamily="Cascadia Mono, Consolas"
+                FontSize="11.5"
+                KeyDown="PathBox_KeyDown"
+                PlaceholderText="/var/www" />
+            <Button
+                Grid.Column="2"
+                Padding="0"
+                AutomationProperties.Name="{x:Bind h:Loc.T('경로 열기', 'Open path')}"
+                Background="{ThemeResource InputBg}"
+                BorderBrush="{ThemeResource InputBorder}"
+                Click="GoPath_Click"
+                CornerRadius="6"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('경로 열기', 'Open path')}">
+                <FontIcon FontSize="12" Glyph="&#xE72A;" />
+            </Button>
+            <Button
+                Grid.Column="3"
+                Padding="0"
+                AutomationProperties.Name="{x:Bind h:Loc.T('새로 고침', 'Refresh')}"
+                Background="{ThemeResource InputBg}"
+                BorderBrush="{ThemeResource InputBorder}"
+                Click="Refresh_Click"
+                CornerRadius="6"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('새로 고침', 'Refresh')}">
+                <FontIcon FontSize="12" Glyph="&#xE72C;" />
+            </Button>
+        </Grid>
+
         <TreeView
             x:Name="FileTree"
-            Grid.Row="1"
+            Grid.Row="2"
             AllowDrop="True"
             CanDragItems="False"
             CanReorderItems="False"
@@ -60,25 +111,55 @@
                 <DataTemplate x:DataType="vm:FileNode">
                     <TreeViewItem
                         AllowDrop="True"
+                        DoubleTapped="Node_DoubleTapped"
                         DragOver="Node_DragOver"
                         Drop="Node_Drop"
                         HasUnrealizedChildren="{x:Bind HasUnrealizedChildren, Mode=OneWay}"
                         HorizontalContentAlignment="Stretch"
                         IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
                         ItemsSource="{x:Bind Children}"
-                        MinHeight="26"
+                        MinHeight="27"
                         Padding="0">
-                        <Grid MinHeight="24">
-                            <Border
-                                Background="{ThemeResource AccentTint}"
-                                CornerRadius="5"
-                                Opacity="0.45"
-                                Visibility="{x:Bind IsUploading, Mode=OneWay}" />
-                            <StackPanel
-                                Margin="6,3"
-                                Orientation="Horizontal"
-                                Spacing="7">
-                            <!--  폴더 아이콘: 닫힘=E8B7, 펼침=열린 폴더 E838 + 청록색으로 구별  -->
+                        <TreeViewItem.ContextFlyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem
+                                    Click="Download_Click"
+                                    Icon="Download"
+                                    Tag="{x:Bind}"
+                                    Text="{x:Bind h:Loc.T('다른 이름으로 다운로드…', 'Download / Save as…')}"
+                                    Visibility="{x:Bind IsFile}" />
+                                <MenuFlyoutItem
+                                    Click="NewFolder_Click"
+                                    Icon="NewFolder"
+                                    Tag="{x:Bind}"
+                                    Text="{x:Bind h:Loc.T('새 폴더…', 'New folder…')}"
+                                    Visibility="{x:Bind IsDirectory}" />
+                                <MenuFlyoutItem
+                                    Click="Rename_Click"
+                                    Icon="Rename"
+                                    Tag="{x:Bind}"
+                                    Text="{x:Bind h:Loc.T('이름 바꾸기…', 'Rename…')}"
+                                    Visibility="{x:Bind CanModify}" />
+                                <MenuFlyoutItem
+                                    Click="Delete_Click"
+                                    Icon="Delete"
+                                    Tag="{x:Bind}"
+                                    Text="{x:Bind h:Loc.T('삭제…', 'Delete…')}"
+                                    Visibility="{x:Bind CanModify}" />
+                                <MenuFlyoutSeparator />
+                                <MenuFlyoutItem
+                                    Click="OpenTerminalHere_Click"
+                                    Icon="OpenFile"
+                                    Tag="{x:Bind}"
+                                    Text="{x:Bind h:Loc.T('여기서 터미널 열기', 'Open in terminal')}" />
+                                <MenuFlyoutItem
+                                    Click="CopyPath_Click"
+                                    Icon="Copy"
+                                    Tag="{x:Bind}"
+                                    Text="{x:Bind h:Loc.T('경로 복사', 'Copy path')}" />
+                            </MenuFlyout>
+                        </TreeViewItem.ContextFlyout>
+                        <StackPanel Margin="6,3" Orientation="Horizontal" Spacing="7">
                             <FontIcon
                                 FontSize="13"
                                 Foreground="{ThemeResource AccentBlue}"
@@ -105,36 +186,7 @@
                                 FontSize="10"
                                 Foreground="{ThemeResource TextFaint}"
                                 Text="{x:Bind SizeText}" />
-
-                            <!--  업로드 중일 때만: 진행 바 + % + 취소(X)  -->
-                            <ProgressBar
-                                Width="56"
-                                VerticalAlignment="Center"
-                                Maximum="1"
-                                Visibility="{x:Bind IsUploading, Mode=OneWay}"
-                                Value="{x:Bind Progress, Mode=OneWay}" />
-                            <TextBlock
-                                VerticalAlignment="Center"
-                                FontFamily="Cascadia Mono, Consolas"
-                                FontSize="10"
-                                Foreground="{ThemeResource AccentTeal}"
-                                Text="{x:Bind ProgressText, Mode=OneWay}"
-                                Visibility="{x:Bind IsUploading, Mode=OneWay}" />
-                            <Button
-                                Padding="3"
-                                VerticalAlignment="Center"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                Click="CancelUpload_Click"
-                                ToolTipService.ToolTip="Cancel upload"
-                                Visibility="{x:Bind IsUploading, Mode=OneWay}">
-                                <FontIcon
-                                    FontSize="10"
-                                    Foreground="{ThemeResource TextMuted}"
-                                    Glyph="&#xE711;" />
-                            </Button>
-                            </StackPanel>
-                        </Grid>
+                        </StackPanel>
                     </TreeViewItem>
                 </DataTemplate>
             </TreeView.ItemTemplate>
@@ -142,17 +194,16 @@
 
         <ProgressRing
             x:Name="LoadingRing"
-            Grid.Row="1"
+            Grid.Row="2"
             Width="28"
             Height="28"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             IsActive="False" />
 
-        <!--  세션이 없을 때  -->
         <StackPanel
             x:Name="EmptyState"
-            Grid.Row="1"
+            Grid.Row="2"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             Spacing="8"
@@ -173,13 +224,13 @@
                 FontSize="11"
                 Foreground="{ThemeResource TextMuted}"
                 Text="{x:Bind h:Loc.T('서버에 연결하면 파일 트리가 표시됩니다', 'Connect to a server to browse its files')}"
+                TextAlignment="Center"
                 TextWrapping="Wrap" />
         </StackPanel>
 
-        <!--  오류가 있을 때만 아래에 잠깐 표시  -->
         <StackPanel
             x:Name="SftpUnavailableState"
-            Grid.Row="1"
+            Grid.Row="2"
             HorizontalAlignment="Center"
             MaxWidth="240"
             VerticalAlignment="Center"
@@ -205,12 +256,89 @@
                 TextWrapping="Wrap" />
         </StackPanel>
 
+        <Border
+            x:Name="TransfersPanel"
+            Grid.Row="3"
+            MaxHeight="150"
+            Padding="8"
+            Background="{ThemeResource CardBg}"
+            BorderBrush="{ThemeResource CardBorder}"
+            BorderThickness="1"
+            CornerRadius="7"
+            Visibility="Collapsed">
+            <StackPanel Spacing="5">
+                <TextBlock
+                    FontSize="10.5"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextMuted}"
+                    Text="{x:Bind h:Loc.T('전송', 'TRANSFERS')}" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{x:Bind Transfers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SftpTransferItemVm">
+                                <Grid Margin="0,3" ColumnSpacing="7" RowSpacing="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="18" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <FontIcon
+                                        Grid.RowSpan="2"
+                                        VerticalAlignment="Center"
+                                        FontSize="12"
+                                        Foreground="{ThemeResource AccentTeal}"
+                                        Glyph="{x:Bind DirectionGlyph}" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="10.5"
+                                        Foreground="{ThemeResource TextPrimary}"
+                                        Text="{x:Bind Name}"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <Button
+                                        Grid.Column="2"
+                                        Grid.RowSpan="2"
+                                        Padding="3"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="CancelTransfer_Click"
+                                        Tag="{x:Bind}"
+                                        ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 취소', 'Cancel transfer')}"
+                                        Visibility="{x:Bind CanCancel, Mode=OneWay}">
+                                        <FontIcon FontSize="9" Glyph="&#xE711;" />
+                                    </Button>
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                        <ProgressBar
+                                            Width="56"
+                                            VerticalAlignment="Center"
+                                            Maximum="1"
+                                            Value="{x:Bind Progress, Mode=OneWay}" />
+                                        <TextBlock
+                                            VerticalAlignment="Center"
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="9.5"
+                                            Foreground="{ThemeResource TextFaint}"
+                                            Text="{x:Bind DetailText, Mode=OneWay}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+
         <TextBlock
             x:Name="StatusText"
-            Grid.Row="2"
+            Grid.Row="4"
             Margin="4,0"
             FontSize="10.5"
-            Foreground="{StaticResource StatusRed}"
+            Foreground="{ThemeResource StatusRed}"
             TextWrapping="Wrap"
             Visibility="Collapsed" />
     </Grid>

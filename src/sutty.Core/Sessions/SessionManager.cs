@@ -12,9 +12,7 @@ public sealed class SessionManager
     /// <summary>세션을 만들어 목록에 추가한다. 연결은 호출자가 ConnectAsync로 시작.</summary>
     public ISshSession Create(SshConnectionInfo info)
     {
-        ISshSession session = info.UseMockSession
-            ? new MockSshSession(info)   // 샘플/데모 호스트
-            : new SshNetSession(info);   // 실제 SSH 연결
+        ISshSession session = new SshNetSession(info);
         _sessions.Add(session);
         return session;
     }

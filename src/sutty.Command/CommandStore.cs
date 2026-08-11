@@ -35,18 +35,6 @@ public static class CommandStore
                 create.ExecuteNonQuery();
             }
 
-            // 비어 있으면 예시 몇 개를 심어 준다
-            using (var count = conn.CreateCommand())
-            {
-                count.CommandText = "SELECT COUNT(*) FROM commands";
-                if (Convert.ToInt64(count.ExecuteScalar()) == 0)
-                {
-                    InsertInternal(conn, "Create LV", "lvcreate -n $1 -L $2");
-                    InsertInternal(conn, "Find big files", "du -ah $1 | sort -rh | head -n 20");
-                    InsertInternal(conn, "Service status", "systemctl status $1");
-                }
-            }
-
             _initialized = true;
         }
     }

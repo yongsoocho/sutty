@@ -77,7 +77,7 @@ namespace sutty.UI.Views
 
             FontFamilyBox.Text = settings.TerminalFontFamily;
             FontSizeBox.Value = settings.TerminalFontSize;
-            TerminalModeRadios.SelectedIndex = settings.TerminalMode == "Raw" ? 1 : 0;
+            TerminalModeRadios.SelectedIndex = settings.TerminalMode == "Terminal" ? 1 : 0;
             DefaultPortBox.Value = settings.DefaultSshPort;
             KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
             HistoryDaysBox.Value = settings.HistoryRetentionDays;
@@ -155,7 +155,7 @@ namespace sutty.UI.Views
                 return;
 
             SettingsService.Current.TerminalMode =
-                TerminalModeRadios.SelectedIndex == 1 ? "Raw" : "Repl";
+                TerminalModeRadios.SelectedIndex == 1 ? "Terminal" : "Repl";
             CommitChangesNow(SettingChangeKind.TerminalMode);
         }
 

@@ -131,6 +131,11 @@
                                         FontSize="10.5"
                                         Foreground="{ThemeResource TextMuted}"
                                         Text="{x:Bind StateText}" />
+                                    <TextBlock
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="10"
+                                        Foreground="{ThemeResource TextMuted}"
+                                        Text="{x:Bind ResultText, Mode=OneWay}" />
                                 </StackPanel>
                             </Grid>
                         </Border>

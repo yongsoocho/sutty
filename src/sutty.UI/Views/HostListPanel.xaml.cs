@@ -14,7 +14,7 @@ namespace sutty.UI.Views;
 /// 접속 히스토리 (SQLite connection_log, append-only).
 /// - PINNED: 사용자가 직접 고정한 호스트
 /// - RECENT: 최근 접속 기록 최신순 (같은 서버도 접속마다 한 줄씩)
-/// 카드 클릭 → mock은 바로 연결, 실제 호스트는 Home에 비밀 없는 초안을 불러온다.
+/// 카드 클릭 시 Home에 비밀 없는 실제 연결 초안을 불러온다.
 /// </summary>
 public sealed partial class HostListPanel : UserControl
 {
@@ -25,7 +25,7 @@ public sealed partial class HostListPanel : UserControl
     public ObservableCollection<HostInfoModel> PinnedHosts { get; } = [];
     public ObservableCollection<HostInfoModel> FilteredHosts { get; } = [];
 
-    /// <summary>카드를 활성화하면 mock 연결 또는 실제 연결 초안 열기를 요청한다.</summary>
+    /// <summary>카드를 활성화하면 실제 연결 초안 열기를 요청한다.</summary>
     public event EventHandler<HostInfoModel>? ConnectRequested;
 
     public HostListPanel()
@@ -67,7 +67,6 @@ public sealed partial class HostListPanel : UserControl
         HostHistoryStore.SetPinned(
             host.Hostname,
             host.Alias,
-            host.IsMock,
             !host.IsPinned,
             host.Username,
             host.Port,
@@ -93,7 +92,6 @@ public sealed partial class HostListPanel : UserControl
                 Hostname = entry.Hostname,
                 LastConnected = entry.ConnectedAt,
                 ConnectionCount = entry.ConnectionCount,
-                IsMock = entry.IsMock,
                 IsPinned = true,
                 Username = entry.Username,
                 Port = entry.Port,
@@ -112,7 +110,6 @@ public sealed partial class HostListPanel : UserControl
                 Alias = entry.Alias,
                 Hostname = entry.Hostname,
                 LastConnected = entry.ConnectedAt,
-                IsMock = entry.IsMock,
                 IsPinned = entry.IsPinned,
                 Username = entry.Username,
                 Port = entry.Port,

@@ -14,9 +14,6 @@ public class HostInfoModel
     public string Hostname { get; set; } = "";
     public DateTime? LastConnected { get; set; }
 
-    /// <summary>데모(샘플) 항목이면 true → 연결 시 mock 세션 사용.</summary>
-    public bool IsMock { get; set; }
-
     /// <summary>True when the user explicitly pinned this host.</summary>
     public bool IsPinned { get; set; }
 

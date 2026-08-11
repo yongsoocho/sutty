@@ -153,11 +153,11 @@
                                 </StackPanel>
                                 <RadioButtons
                                     x:Name="TerminalModeRadios"
-                                    Header="Default view mode"
+                                    Header="{x:Bind h:Loc.T('기본 보기 모드', 'Default view mode')}"
                                     MaxColumns="2"
                                     SelectionChanged="TerminalModeRadios_SelectionChanged">
                                     <x:String>REPL</x:String>
-                                    <x:String>RAW</x:String>
+                                    <x:String>TERMINAL</x:String>
                                 </RadioButtons>
                             </StackPanel>
                         </Border>

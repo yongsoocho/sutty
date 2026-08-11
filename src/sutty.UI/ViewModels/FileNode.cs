@@ -16,6 +16,7 @@ public sealed partial class FileNode : ObservableObject
 {
     public RemoteFileEntry Entry { get; }
     public FileNode? Parent { get; set; }
+    public int SessionVersion { get; set; }
     public ObservableCollection<FileNode> Children { get; } = [];
 
     // [ObservableProperty]는 WinUI3에서 AOT 경고(MVVMTK0045)가 있어 수동 SetProperty 사용
@@ -74,6 +75,7 @@ public sealed partial class FileNode : ObservableObject
     public string FullPath => Entry.FullPath;
     public bool IsDirectory => Entry.IsDirectory;
     public bool IsFile => !Entry.IsDirectory; // 아이콘 Visibility 바인딩용
+    public bool CanModify => Parent is not null; // 현재 탐색 루트는 rename/delete 금지
 
     /// <summary>업로드 대상 디렉터리: 디렉터리면 자기 자신, 파일이면 부모 경로.</summary>
     public string DirectoryPath => IsDirectory ? FullPath : RemotePath.GetDirectory(FullPath);

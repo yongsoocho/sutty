@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
     세션 화면 (Deep Field 리디자인).
-    헤더: user@alias · host:port + CONNECTED 업타임 필 + sftp ready 필 + REPL|RAW 세그먼트
+    헤더: user@alias · host:port + CONNECTED 업타임 필 + sftp ready 필 + REPL|TERMINAL 세그먼트
     REPL: ❯ N 명령  (우측 타임스탬프 · 소요시간) / 아래 들여쓴 출력 — 박스 없는 플랫 구조
-    RAW : 실행 결과를 이어 붙이는 연속 명령 로그 (PTY 터미널 아님)
+    TERMINAL: SSH.NET ShellStream PTY 출력을 VT 화면 버퍼로 렌더링하고 키 입력을 직접 전달
     하단: cwd ❯ 멀티라인 입력 (Enter=실행, Shift+Enter=줄바꿈, 줄 끝 \ · `=연속)
 -->
 <UserControl
@@ -76,7 +76,7 @@
                         Text="sftp ready" />
                 </Border>
 
-                <!--  REPL | RAW 세그먼트 토글 (설정에 저장)  -->
+                <!--  REPL | TERMINAL 세그먼트 토글 (설정에 저장)  -->
                 <Border
                     Grid.Column="4"
                     Padding="0"
@@ -98,13 +98,13 @@
                             FontSize="11"
                             FontWeight="SemiBold" />
                         <Button
-                            x:Name="RawBtn"
+                            x:Name="TerminalBtn"
                             MinHeight="0"
                             Padding="12,4"
                             Background="Transparent"
                             BorderThickness="0"
-                            Click="RawBtn_Click"
-                            Content="RAW"
+                            Click="TerminalBtn_Click"
+                            Content="TERMINAL"
                             CornerRadius="6"
                             FontSize="11"
                             FontWeight="SemiBold" />
@@ -113,24 +113,51 @@
             </Grid>
         </Border>
 
-        <!--  ── RAW 보기: 명령 실행 결과를 이어 붙이는 연속 로그 ──  -->
-        <Border
-            x:Name="RawView"
+        <!--  ── 실제 PTY 터미널: 키 입력 + bounded VT 화면 버퍼 ──  -->
+        <Grid
+            x:Name="TerminalView"
             Grid.Row="1"
             Background="{ThemeResource TerminalBg}"
             Visibility="Collapsed">
-            <ScrollViewer x:Name="RawScroll" Padding="12,10">
+            <ScrollViewer
+                x:Name="TerminalSurface"
+                Padding="12,10"
+                Background="Transparent"
+                CharacterReceived="TerminalSurface_CharacterReceived"
+                HorizontalScrollBarVisibility="Auto"
+                IsTabStop="True"
+                Loaded="TerminalSurface_Loaded"
+                PointerPressed="TerminalSurface_PointerPressed"
+                PreviewKeyDown="TerminalSurface_PreviewKeyDown"
+                SizeChanged="TerminalSurface_SizeChanged"
+                VerticalScrollBarVisibility="Auto"
+                ZoomMode="Disabled">
                 <TextBlock
-                    x:Name="RawText"
+                    x:Name="TerminalText"
                     FontFamily="Cascadia Mono, Consolas"
                     FontSize="13"
                     Foreground="{ThemeResource TerminalFg}"
                     IsTextSelectionEnabled="True"
                     LineHeight="20"
                     LineStackingStrategy="BlockLineHeight"
-                    TextWrapping="Wrap" />
+                    TextWrapping="NoWrap" />
             </ScrollViewer>
-        </Border>
+            <Border
+                x:Name="TerminalStatus"
+                Margin="12"
+                Padding="8,4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Background="{ThemeResource PillBg}"
+                CornerRadius="6"
+                IsHitTestVisible="False">
+                <TextBlock
+                    x:Name="TerminalStatusText"
+                    FontSize="10.5"
+                    Foreground="{ThemeResource TextMuted}"
+                    Text="Terminal closed" />
+            </Border>
+        </Grid>
 
         <!--  ── REPL 보기: 플랫 넘버링 로그 ──  -->
         <Border x:Name="ReplView" Grid.Row="1">
@@ -152,6 +179,7 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
@@ -187,8 +215,21 @@
                                         VerticalAlignment="Center"
                                         Foreground="{ThemeResource TextFaint}"
                                         Text="{x:Bind TimeText, Mode=OneWay}" />
-                                    <Button
+                                    <Border
                                         Grid.Column="5"
+                                        Padding="5,1"
+                                        VerticalAlignment="Center"
+                                        Background="{ThemeResource PillBg}"
+                                        CornerRadius="5"
+                                        Visibility="{x:Bind HasExitCode, Mode=OneWay}">
+                                        <TextBlock
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="9.5"
+                                            Foreground="{ThemeResource TextMuted}"
+                                            Text="{x:Bind ExitCodeText, Mode=OneWay}" />
+                                    </Border>
+                                    <Button
+                                        Grid.Column="6"
                                         Padding="3"
                                         VerticalAlignment="Center"
                                         Background="Transparent"
@@ -249,6 +290,7 @@
 
         <!--  ── 하단 입력줄: cwd ❯ + 플랫 멀티라인 입력 ──  -->
         <Border
+            x:Name="InputBar"
             Grid.Row="2"
             Padding="18,10,18,12"
             BorderBrush="{ThemeResource Divider}"

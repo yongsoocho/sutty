@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- VtScreenBuffer has no WinUI dependency; link the production source directly. -->
+    <Compile Include="..\..\src\sutty.UI\Helpers\VtScreenBuffer.cs" Link="VtScreenBuffer.cs" />
+  </ItemGroup>
+</Project>

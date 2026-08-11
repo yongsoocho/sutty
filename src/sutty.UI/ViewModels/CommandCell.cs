@@ -14,7 +14,7 @@ public sealed class CommandCell : ObservableObject
     /// <summary>실행한 명령. null이면 연결 상태 같은 시스템 메시지 셀.</summary>
     public string? Command { get; set; }
 
-    /// <summary>입력 블록 앞에 붙는 프롬프트 (예: admin@10.0.0.15).</summary>
+    /// <summary>입력 블록 앞에 붙는 프롬프트 (예: admin@host).</summary>
     public string Prompt { get; set; } = "$";
 
     /// <summary>몇 번째 명령인지. 시스템 셀은 0.</summary>
@@ -48,6 +48,29 @@ public sealed class CommandCell : ObservableObject
     }
 
     public bool HasOutput => !string.IsNullOrEmpty(_output);
+
+    /// <summary>Structured stdout retained separately from the combined display.</summary>
+    public string StandardOutput { get; set; } = "";
+
+    /// <summary>Structured stderr retained separately from the combined display.</summary>
+    public string StandardError { get; set; } = "";
+
+    private int? _exitCode;
+    public int? ExitCode
+    {
+        get => _exitCode;
+        set
+        {
+            if (SetProperty(ref _exitCode, value))
+            {
+                OnPropertyChanged(nameof(HasExitCode));
+                OnPropertyChanged(nameof(ExitCodeText));
+            }
+        }
+    }
+
+    public bool HasExitCode => ExitCode.HasValue;
+    public string ExitCodeText => ExitCode is int code ? $"exit {code}" : "";
 
     private bool _isRunning;
     public bool IsRunning

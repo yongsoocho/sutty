@@ -4,9 +4,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Models;
+using sutty.Core.Security;
 using sutty.Core.Sessions;
 using sutty.Setting;
 using System;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Windows.Graphics;
 
@@ -20,7 +23,9 @@ namespace sutty.UI.Views
         private const int MaxSessions = 16;
 
         private readonly SessionManager _sessions = new();
+        private readonly SemaphoreSlim _hostKeyPromptGate = new(1, 1);
         private Window? _settingWindow;
+        private FileTreePanel? _fileTreePanel;
         private string _appIconPath = "";
         private bool _isMultiView;
 
@@ -195,23 +200,9 @@ namespace sutty.UI.Views
         private HostListPanel CreateHostListPanel()
         {
             var panel = new HostListPanel();
-            // Demo records stay one-click. Real records open a secret-free draft so
-            // the user must enter the password/passphrase again before connecting.
-            panel.ConnectRequested += async (_, host) =>
-            {
-                if (host.IsMock)
-                {
-                    await OpenSessionTabAsync(new SshConnectionInfo
-                    {
-                        Host = host.Hostname,
-                        DisplayName = host.Alias,
-                        UseMockSession = true,
-                    });
-                    return;
-                }
-
-                OpenHistoryDraft(host);
-            };
+            // History opens a secret-free draft. Passwords and passphrases are never
+            // persisted, so the user must provide them before connecting again.
+            panel.ConnectRequested += (_, host) => OpenHistoryDraft(host);
             return panel;
         }
 
@@ -252,9 +243,128 @@ namespace sutty.UI.Views
 
         private FileTreePanel CreateFileTreePanel()
         {
-            var panel = new FileTreePanel();
-            _ = panel.LoadAsync(ActiveSession);
+            if (_fileTreePanel is null)
+            {
+                _fileTreePanel = new FileTreePanel
+                {
+                    OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this),
+                };
+                _fileTreePanel.OpenTerminalHereRequested += FileTree_OpenTerminalHereRequested;
+            }
+
+            var panel = _fileTreePanel;
+            panel.OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            panel.RefreshLanguage();
+            // Reconcile the cached panel immediately so stale nodes and transfers from a
+            // previously active server are invalidated before the control is reattached.
+            _ = LoadFileTreeForActiveSessionAsync(panel);
+            // The first call can happen while the cached control is still unloaded. Run a
+            // second pass after the selection change attaches it so cwd navigation is applied.
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (ReferenceEquals(panel, RightPanel.Content))
+                    _ = LoadFileTreeForActiveSessionAsync(panel);
+            });
             return panel;
+        }
+
+        private async void FileTree_OpenTerminalHereRequested(object? sender, string remotePath)
+        {
+            var view = ActiveSessionView;
+            if (view is null)
+            {
+                await ShowOpenTerminalFailedAsync();
+                return;
+            }
+
+            var allowExistingInput = false;
+            if (view.HasOpenInteractiveTerminal)
+            {
+                allowExistingInput = await ConfirmTerminalInputAsync(remotePath);
+                if (!allowExistingInput)
+                    return;
+            }
+
+            if (await view.OpenDirectoryInTerminalAsync(remotePath, allowExistingInput))
+                return;
+
+            // The PTY may have opened while the remote path was being validated. Never
+            // inject into that newly-existing foreground program without a fresh prompt.
+            if (!allowExistingInput && view.HasOpenInteractiveTerminal)
+            {
+                if (!await ConfirmTerminalInputAsync(remotePath))
+                    return;
+                if (await view.OpenDirectoryInTerminalAsync(remotePath, true))
+                    return;
+            }
+
+            await ShowOpenTerminalFailedAsync();
+        }
+
+        private async Task<bool> ConfirmTerminalInputAsync(string remotePath)
+        {
+            var content = new StackPanel { Spacing = 8 };
+            content.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    "터미널에서 이미 프로그램이 실행 중일 수 있습니다. 아래 명령을 현재 PTY 입력으로 보내시겠습니까?",
+                    "A program may already be running in the terminal. Send this command to the current PTY input?"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = $"cd {remotePath}",
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                Foreground = Helpers.ThemeResources.Brush(Root, "AccentTeal"),
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = Helpers.Loc.T("기존 터미널 입력 확인", "Confirm terminal input"),
+                Content = content,
+                PrimaryButtonText = Helpers.Loc.T("cd 명령 보내기", "Send cd command"),
+                CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+
+        private async Task ShowOpenTerminalFailedAsync()
+        {
+            var dialog = new ContentDialog
+            {
+                Title = Helpers.Loc.T("터미널에서 열 수 없음", "Could not open in terminal"),
+                Content = Helpers.Loc.T(
+                    "활성 SSH 세션과 원격 경로를 확인하세요.",
+                    "Check the active SSH session and remote path."),
+                CloseButtonText = "OK",
+                XamlRoot = Content.XamlRoot,
+            };
+            await dialog.ShowAsync();
+        }
+
+        private async Task LoadFileTreeForActiveSessionAsync(FileTreePanel panel)
+        {
+            var view = ActiveSessionView;
+            await panel.LoadAsync(view?.Session);
+            if (view is null || !ReferenceEquals(view, ActiveSessionView) ||
+                !ReferenceEquals(panel, RightPanel.Content))
+                return;
+
+            if (view.WorkingDirectory.StartsWith("/", StringComparison.Ordinal))
+                await panel.NavigateToPathAsync(view.WorkingDirectory);
+        }
+
+        private void SessionView_WorkingDirectoryChanged(object? sender, string remotePath)
+        {
+            if (sender is not SessionView view || !ReferenceEquals(view, ActiveSessionView) ||
+                RightPanel.Content is not FileTreePanel panel)
+                return;
+
+            _ = panel.NavigateToPathAsync(remotePath);
         }
 
         private MultiCommandPanel CreateMultiPanel()
@@ -283,17 +393,87 @@ namespace sutty.UI.Views
                 return;
             }
 
+            var productionTargets = targets
+                .Where(slot => slot.View!.Session.Info.Tags.Any(IsProductionTag))
+                .ToList();
+            if (productionTargets.Count > 0)
+            {
+                var targetNames = string.Join(", ", productionTargets.Select(slot => slot.Title));
+                var warning = new StackPanel { Spacing = 10 };
+                warning.Children.Add(new TextBlock
+                {
+                    Text = Helpers.Loc.T(
+                        $"PROD 태그가 있는 {productionTargets.Count}개 세션이 포함되어 있습니다.",
+                        $"This broadcast includes {productionTargets.Count} session(s) tagged PROD."),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                warning.Children.Add(new TextBlock
+                {
+                    Text = targetNames,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                warning.Children.Add(new TextBlock
+                {
+                    Text = command,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas"),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true,
+                });
+
+                var confirm = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("PROD 브로드캐스트 확인", "Confirm PROD broadcast"),
+                    Content = warning,
+                    PrimaryButtonText = Helpers.Loc.T(
+                        $"{targets.Count}개 세션에서 실행",
+                        $"Run on {targets.Count} sessions"),
+                    CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = Content.XamlRoot,
+                };
+                if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+                    return;
+            }
+
             foreach (var slot in targets)
                 _ = RunBroadcastOnSlotAsync(slot, command);
+        }
+
+        private static bool IsProductionTag(string tag)
+        {
+            var normalized = tag.Trim();
+            return normalized.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("production", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith("prod-", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith("prod_", StringComparison.OrdinalIgnoreCase);
         }
 
         private static async Task RunBroadcastOnSlotAsync(ViewModels.MultiSlotVm slot, string command)
         {
             slot.LastOutput = "…";
-            var output = await slot.View!.RunExternalCommandAsync(command);
-            slot.LastOutput = string.IsNullOrWhiteSpace(output)
-                ? "(no output)"
-                : output.Length > 400 ? output[..400] + "…" : output;
+            slot.ResultText = Helpers.Loc.T("실행 중", "running");
+            try
+            {
+                var result = await slot.View!.RunExternalCommandDetailedAsync(command);
+                var output = result.CombinedOutput;
+                slot.ResultText = result.ExitCode is int exitCode
+                    ? $"exit {exitCode}"
+                    : result.ExitSignal is { Length: > 0 } signal
+                        ? signal.ToLowerInvariant()
+                        : Helpers.Loc.T("실패", "failed");
+                slot.LastOutput = string.IsNullOrWhiteSpace(output)
+                    ? result.Succeeded ? "(no output)" : Helpers.Loc.T("(출력 없이 실패)", "(failed with no output)")
+                    : output.Length > 400 ? output[..400] + "…" : output;
+            }
+            catch (Exception ex)
+            {
+                slot.ResultText = Helpers.Loc.T("실패", "failed");
+                slot.LastOutput = $"error: {ex.Message}";
+            }
         }
 
         private CommandPanel CreateCommandPanel()
@@ -324,10 +504,10 @@ namespace sutty.UI.Views
         // ── 세션 탭 ──
 
         /// <summary>현재 선택된 탭의 세션. 없으면 null.</summary>
-        private ISshSession? ActiveSession =>
-            (TitleTabs.SelectedItem as TabViewItem)?.DataContext is SessionView view
-                ? view.Session
-                : null;
+        private SessionView? ActiveSessionView =>
+            (TitleTabs.SelectedItem as TabViewItem)?.DataContext as SessionView;
+
+        private ISshSession? ActiveSession => ActiveSessionView?.Session;
 
         private async Task OpenSessionTabAsync(SshConnectionInfo info)
         {
@@ -347,19 +527,40 @@ namespace sutty.UI.Views
                 return;
             }
 
+            try
+            {
+                _ = HostEndpointIdentity.Create(info.Host, info.Port);
+            }
+            catch (ArgumentException ex)
+            {
+                var invalidHostDialog = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("연결 주소 확인", "Check connection address"),
+                    Content = Helpers.Loc.T(
+                        $"호스트 또는 포트가 올바르지 않습니다.\n\n{ex.Message}",
+                        $"The host or port is invalid.\n\n{ex.Message}"),
+                    CloseButtonText = "OK",
+                    XamlRoot = Content.XamlRoot,
+                };
+                await invalidHostDialog.ShowAsync();
+                return;
+            }
+
             // 접속 히스토리에 기록 (append-only: 접속마다 새 행 추가)
             sutty.Command.HostHistoryStore.Append(
                 info.Title,
                 info.Host,
-                info.UseMockSession,
                 info.Username,
                 info.Port,
                 info.AuthMethod.ToString(),
                 info.AuthMethod == SshAuthMethod.PublicKey ? info.PrivateKeyPath : "",
                 info.Tags);
 
+            info.HostKeyPromptAsync ??= PromptUnknownHostKeyAsync;
+
             var session = _sessions.Create(info);
             var view = new SessionView(session);
+            view.WorkingDirectoryChanged += SessionView_WorkingDirectoryChanged;
 
             // 리디자인 탭 헤더: [상태점] 세션이름 username
             var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
@@ -420,6 +621,72 @@ namespace sutty.UI.Views
             await session.ConnectAsync();
         }
 
+        private async Task<HostKeyDecision> PromptUnknownHostKeyAsync(
+            HostKeyVerification verification,
+            CancellationToken ct)
+        {
+            await _hostKeyPromptGate.WaitAsync(ct);
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var details = new StackPanel { Spacing = 8 };
+                details.Children.Add(new TextBlock
+                {
+                    Text = Helpers.Loc.T(
+                        "이 서버의 공개 호스트키가 아직 저장되어 있지 않습니다. 아래 지문을 서버 관리자와 확인하세요.",
+                        "This server's public host key is not saved yet. Verify the fingerprint with the server administrator."),
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                });
+                details.Children.Add(new TextBlock
+                {
+                    Text = verification.Endpoint.Value,
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                    IsTextSelectionEnabled = true,
+                });
+                details.Children.Add(new TextBlock
+                {
+                    Text = verification.PresentedKey.Algorithm,
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                    IsTextSelectionEnabled = true,
+                });
+                details.Children.Add(new TextBlock
+                {
+                    Text = verification.PresentedKey.Sha256Fingerprint,
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "AccentTeal"),
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true,
+                });
+
+                var dialog = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("알 수 없는 SSH 호스트", "Unknown SSH host"),
+                    Content = details,
+                    PrimaryButtonText = Helpers.Loc.T("신뢰하고 저장", "Trust and save"),
+                    SecondaryButtonText = Helpers.Loc.T("이번만 연결", "Connect once"),
+                    CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = Content.XamlRoot,
+                };
+
+                return (await dialog.ShowAsync()) switch
+                {
+                    ContentDialogResult.Primary => HostKeyDecision.TrustAndSave,
+                    ContentDialogResult.Secondary => HostKeyDecision.TrustOnce,
+                    _ => HostKeyDecision.Cancel,
+                };
+            }
+            finally
+            {
+                _hostKeyPromptGate.Release();
+            }
+        }
+
         private void TitleTabs_SelectionChanged(
             object sender,
             SelectionChangedEventArgs e)
@@ -437,9 +704,10 @@ namespace sutty.UI.Views
             if (_isMultiView)
                 MultiGrid.SetSessions(GetOpenSessionViews());
 
-            // Folder 패널이 열려 있으면 활성 탭의 서버 파일 트리로 갱신
-            if (RightPanel.Content is FileTreePanel fileTree)
-                _ = fileTree.LoadAsync(ActiveSession);
+            // Keep the cached Files panel bound to the active tab even while it is hidden.
+            // This invalidates old-server nodes/transfers before the panel can be shown again.
+            if (_fileTreePanel is { } fileTree)
+                _ = LoadFileTreeForActiveSessionAsync(fileTree);
         }
 
         private System.Collections.Generic.List<SessionView> GetOpenSessionViews()
@@ -463,7 +731,10 @@ namespace sutty.UI.Views
 
             // 탭은 먼저 닫고, 연결 정리는 백그라운드로 (UI가 안 막히게)
             if (args.Tab.DataContext is SessionView view)
+            {
+                view.WorkingDirectoryChanged -= SessionView_WorkingDirectoryChanged;
                 await _sessions.CloseAsync(view.Session);
+            }
         }
 
         // ── 설정 창 ──
