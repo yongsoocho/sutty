@@ -688,7 +688,7 @@ public sealed class SshNetSession : ISshSession
 
     /// <summary>
     /// PEM / OpenSSH 형식의 RSA·ECDSA·Ed25519 키를 로드한다 (SSH.NET 지원 범위).
-    /// PuTTY .ppk는 지원하지 않으므로 미리 안내한다.
+    /// 레거시 .ppk 컨테이너는 지원하지 않으므로 미리 안내한다.
     /// </summary>
     private PrivateKeyFile LoadPrivateKey()
     {
@@ -700,7 +700,7 @@ public sealed class SshNetSession : ISshSession
             throw new FileNotFoundException($"키 파일을 찾을 수 없습니다: {path}");
         if (path.EndsWith(".ppk", StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException(
-                "PuTTY .ppk 형식은 지원되지 않습니다. puttygen에서 'Export OpenSSH key'로 변환한 뒤 사용하세요.");
+                "레거시 .ppk 형식은 지원되지 않습니다. 키를 OpenSSH 형식으로 내보낸 뒤 사용하세요.");
 
         try
         {

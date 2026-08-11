@@ -10,11 +10,14 @@ namespace sutty.UI.ViewModels;
 public class HostInfoModel
 {
     public long Id { get; set; }
+    public string? ProfileId { get; set; }
+    public bool IsSavedProfile { get; set; }
+    public string? CredentialId { get; set; }
     public string Alias { get; set; } = "";
     public string Hostname { get; set; } = "";
     public DateTime? LastConnected { get; set; }
 
-    /// <summary>True when the user explicitly pinned this host.</summary>
+    /// <summary>For saved profiles, indicates that the profile is a favorite.</summary>
     public bool IsPinned { get; set; }
 
     public string Username { get; set; } = "";
@@ -22,22 +25,33 @@ public class HostInfoModel
     public string AuthMethod { get; set; } = "Password";
     public string PrivateKeyPath { get; set; } = "";
     public List<string> Tags { get; set; } = [];
+    public string GroupName { get; set; } = "";
+    public string Environment { get; set; } = "Unclassified";
+    public string Outcome { get; set; } = "Unknown";
+    public string? ErrorCode { get; set; }
 
     /// <summary>상단 고정(TOP) 카드일 때만 채워지는 총 접속 횟수.</summary>
     public int ConnectionCount { get; set; }
 
     public bool HasCount => ConnectionCount > 0;
-    public bool HasTags => Tags.Count > 0;
+    public bool HasTags => IsSavedProfile && Tags.Count > 0;
+    public bool HasOutcome => !string.Equals(Outcome, "Unknown", StringComparison.OrdinalIgnoreCase);
     public string CountText => $"{ConnectionCount}×";
 
     /// <summary>"3 min ago", "2 days ago" 등 사람이 읽기 편한 시간</summary>
     public string LastConnectedText => LastConnected switch
     {
-        null => "never",
-        DateTime d when (DateTime.Now - d).TotalMinutes < 1 => "just now",
-        DateTime d when (DateTime.Now - d).TotalMinutes < 60 => $"{(int)(DateTime.Now - d).TotalMinutes} min ago",
-        DateTime d when (DateTime.Now - d).TotalHours < 24 => $"{(int)(DateTime.Now - d).TotalHours}h ago",
-        DateTime d when (DateTime.Now - d).TotalDays < 30 => $"{(int)(DateTime.Now - d).TotalDays}d ago",
+        null => Helpers.Loc.T("접속 기록 없음", "Never connected"),
+        DateTime d when (DateTime.Now - d).TotalMinutes < 1 => Helpers.Loc.T("방금", "Just now"),
+        DateTime d when (DateTime.Now - d).TotalMinutes < 60 => Helpers.Loc.T(
+            $"{(int)(DateTime.Now - d).TotalMinutes}분 전",
+            $"{(int)(DateTime.Now - d).TotalMinutes} min ago"),
+        DateTime d when (DateTime.Now - d).TotalHours < 24 => Helpers.Loc.T(
+            $"{(int)(DateTime.Now - d).TotalHours}시간 전",
+            $"{(int)(DateTime.Now - d).TotalHours}h ago"),
+        DateTime d when (DateTime.Now - d).TotalDays < 30 => Helpers.Loc.T(
+            $"{(int)(DateTime.Now - d).TotalDays}일 전",
+            $"{(int)(DateTime.Now - d).TotalDays}d ago"),
         DateTime d => d.ToString("yyyy-MM-dd"),
     };
 }

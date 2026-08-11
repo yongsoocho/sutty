@@ -8,6 +8,8 @@ using sutty.Core.Security;
 using sutty.Core.Sessions;
 using sutty.Setting;
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -52,6 +54,7 @@ namespace sutty.UI.Views
             {
                 FlushRightPanelWidth();
                 _settingWindow?.Close();
+                LocalCredentialVault.Default.Dispose();
             };
 
             ApplyTheme(SettingsService.Current.Theme);
@@ -200,31 +203,110 @@ namespace sutty.UI.Views
         private HostListPanel CreateHostListPanel()
         {
             var panel = new HostListPanel();
-            // History opens a secret-free draft. Passwords and passphrases are never
-            // persisted, so the user must provide them before connecting again.
-            panel.ConnectRequested += (_, host) => OpenHistoryDraft(host);
+            panel.ConnectRequested += async (_, host) => await OpenHistoryDraftAsync(host);
             return panel;
         }
 
-        private void OpenHistoryDraft(ViewModels.HostInfoModel host)
+        private async Task OpenHistoryDraftAsync(ViewModels.HostInfoModel host)
         {
-            var authMethod = Enum.TryParse<SshAuthMethod>(host.AuthMethod, true, out var parsed) &&
+            var alias = host.Alias;
+            var hostname = host.Hostname;
+            var username = host.Username;
+            var port = host.Port;
+            var authMethodName = host.AuthMethod;
+            var privateKeyPath = host.PrivateKeyPath;
+            var tags = host.Tags;
+            var profileId = host.ProfileId;
+            var credentialId = host.CredentialId;
+            var groupName = host.GroupName;
+            var environment = host.Environment;
+            var favorite = host.IsPinned;
+            CredentialSecret? credential = null;
+            var credentialLoadFailed = false;
+
+            if (!string.IsNullOrWhiteSpace(profileId))
+            {
+                try
+                {
+                    if (sutty.Command.HostProfileStore.GetById(profileId) is { } profile)
+                    {
+                        alias = profile.DisplayName;
+                        hostname = profile.Host;
+                        username = profile.Username;
+                        port = profile.Port;
+                        authMethodName = profile.AuthMethod;
+                        privateKeyPath = profile.PrivateKeyPath;
+                        tags = profile.Tags;
+                        credentialId = profile.CredentialId;
+                        groupName = profile.GroupName;
+                        environment = profile.Environment;
+                        favorite = profile.IsFavorite;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(credentialId))
+                        LocalCredentialVault.Default.TryRead(credentialId, out credential);
+                }
+                catch (Exception error) when (error is System.IO.IOException or
+                                              UnauthorizedAccessException or
+                                              System.Security.Cryptography.CryptographicException or
+                                              System.ComponentModel.Win32Exception or
+                                              Microsoft.Data.Sqlite.SqliteException or
+                                              ArgumentException)
+                {
+                    credentialLoadFailed = true;
+                    Debug.WriteLine($"Saved credential load failed: {error.GetType().Name}");
+                    var warning = new ContentDialog
+                    {
+                        Title = Helpers.Loc.T("저장 자격증명 확인 필요", "Saved credential needs attention"),
+                        Content = Helpers.Loc.T(
+                            "저장된 자격증명을 읽지 못했습니다. 호스트 정보는 불러왔으며 비밀값을 다시 입력할 수 있습니다.",
+                            "The saved credential could not be read. The host details were loaded; enter the secret again."),
+                        CloseButtonText = "OK",
+                        XamlRoot = Content.XamlRoot,
+                    };
+                    await warning.ShowAsync();
+                }
+            }
+
+            var authMethod = Enum.TryParse<SshAuthMethod>(authMethodName, true, out var parsed) &&
                              parsed is SshAuthMethod.Password or SshAuthMethod.PublicKey
                 ? parsed
                 : SshAuthMethod.Password;
 
             var draft = new SshConnectionInfo
             {
-                Host = host.Hostname,
-                Port = host.Port is >= 1 and <= 65535 ? host.Port : 22,
-                DisplayName = host.Alias,
-                Username = host.Username,
+                Host = hostname,
+                Port = port is >= 1 and <= 65535 ? port : 22,
+                DisplayName = alias,
+                Username = username,
                 AuthMethod = authMethod,
-                PrivateKeyPath = authMethod == SshAuthMethod.PublicKey ? host.PrivateKeyPath : "",
-                Password = "",
-                Passphrase = "",
-                Tags = [.. host.Tags],
+                PrivateKeyPath = authMethod == SshAuthMethod.PublicKey ? privateKeyPath : "",
+                Password = authMethod == SshAuthMethod.Password ? credential?.Password ?? "" : "",
+                Passphrase = authMethod == SshAuthMethod.PublicKey
+                    ? credential?.PrivateKeyPassphrase ?? ""
+                    : "",
+                Tags = [.. tags],
+                SavedHostId = profileId,
+                SaveProfile = !string.IsNullOrWhiteSpace(profileId),
+                RememberCredential = credential is not null,
+                CredentialId = credentialId,
+                GroupName = groupName,
+                Environment = environment,
+                IsFavorite = favorite,
             };
+
+            var canConnectImmediately = !credentialLoadFailed &&
+                                        !string.IsNullOrWhiteSpace(profileId) &&
+                                        (authMethod == SshAuthMethod.PublicKey ||
+                                         !string.IsNullOrEmpty(draft.Password));
+            if (canConnectImmediately)
+            {
+                // Opening an unchanged saved profile should not rewrite or rotate its
+                // encrypted credential on every connection.
+                draft.SaveProfile = false;
+                await OpenSessionTabAsync(draft);
+                return;
+            }
 
             var homeItem = LeftNav.MenuItems[0];
             LeftNav.SelectedItem = homeItem;
@@ -546,15 +628,7 @@ namespace sutty.UI.Views
                 return;
             }
 
-            // 접속 히스토리에 기록 (append-only: 접속마다 새 행 추가)
-            sutty.Command.HostHistoryStore.Append(
-                info.Title,
-                info.Host,
-                info.Username,
-                info.Port,
-                info.AuthMethod.ToString(),
-                info.AuthMethod == SshAuthMethod.PublicKey ? info.PrivateKeyPath : "",
-                info.Tags);
+            var savedProfile = await PersistSavedProfileAsync(info);
 
             info.HostKeyPromptAsync ??= PromptUnknownHostKeyAsync;
 
@@ -618,7 +692,159 @@ namespace sutty.UI.Views
             TitleTabs.SelectedItem = tab;
             UpdateSessionArea();
 
-            await session.ConnectAsync();
+            var timer = Stopwatch.StartNew();
+            var outcome = "Failed";
+            string? errorCode = "SSH.CONNECT.FAILED";
+            try
+            {
+                await session.ConnectAsync();
+                if (session.State == SessionState.Connected)
+                {
+                    outcome = "Success";
+                    errorCode = null;
+                    var connectedProfileId = savedProfile?.Id ?? info.SavedHostId;
+                    if (!string.IsNullOrWhiteSpace(connectedProfileId))
+                        sutty.Command.HostProfileStore.MarkConnected(connectedProfileId);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                outcome = "Cancelled";
+                errorCode = "SSH.CONNECT.CANCELLED";
+            }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Unexpected connection failure: {error.GetType().Name}");
+            }
+            finally
+            {
+                timer.Stop();
+                info.Password = "";
+                info.Passphrase = "";
+                try
+                {
+                    sutty.Command.HostHistoryStore.Append(
+                        info.Title,
+                        info.Host,
+                        info.Username,
+                        info.Port,
+                        info.AuthMethod.ToString(),
+                        info.AuthMethod == SshAuthMethod.PublicKey ? info.PrivateKeyPath : "",
+                        info.Tags,
+                        outcome,
+                        errorCode,
+                        timer.ElapsedMilliseconds);
+                }
+                catch (Exception historyError) when (historyError is System.IO.IOException or
+                                                     Microsoft.Data.Sqlite.SqliteException or
+                                                     UnauthorizedAccessException)
+                {
+                    Debug.WriteLine($"Connection history append failed: {historyError.GetType().Name}");
+                }
+
+                if (RightPanel.Content is HostListPanel historyPanel)
+                    historyPanel.RefreshFromStore();
+            }
+        }
+
+        private async Task<sutty.Command.HostProfile?> PersistSavedProfileAsync(SshConnectionInfo info)
+        {
+            if (!info.SaveProfile) return null;
+
+            var originalCredentialId = info.CredentialId;
+            string? credentialId = null;
+            string? createdCredentialId = null;
+
+            try
+            {
+                if (info.RememberCredential)
+                {
+                    var secret = info.AuthMethod == SshAuthMethod.Password
+                        ? new CredentialSecret(Password: info.Password)
+                        : new CredentialSecret(PrivateKeyPassphrase: info.Passphrase);
+
+                    if (secret.IsEmpty)
+                    {
+                        credentialId = null;
+                    }
+                    else
+                    {
+                        // Write a new encrypted record first. The profile reference is then
+                        // swapped atomically in SQLite, so a failed save never corrupts the
+                        // credential used by the existing profile.
+                        credentialId = LocalCredentialVault.Default.Store(secret);
+                        createdCredentialId = credentialId;
+                    }
+                }
+
+                var profile = sutty.Command.HostProfileStore.Save(new sutty.Command.HostProfileDraft
+                {
+                    DisplayName = info.Title,
+                    Host = info.Host,
+                    Port = info.Port,
+                    Username = info.Username,
+                    AuthMethod = info.AuthMethod.ToString(),
+                    PrivateKeyPath = info.AuthMethod == SshAuthMethod.PublicKey ? info.PrivateKeyPath : "",
+                    Tags = info.Tags,
+                    GroupName = info.GroupName,
+                    Environment = info.Environment,
+                    IsFavorite = info.IsFavorite,
+                    CredentialId = credentialId,
+                }, info.SavedHostId);
+
+                info.SavedHostId = profile.Id;
+                info.CredentialId = profile.CredentialId;
+
+                if (!string.IsNullOrWhiteSpace(originalCredentialId) &&
+                    !string.Equals(originalCredentialId, credentialId, StringComparison.Ordinal))
+                {
+                    try { LocalCredentialVault.Default.Delete(originalCredentialId); }
+                    catch (Exception cleanupError) when (cleanupError is System.IO.IOException or
+                                                         UnauthorizedAccessException or
+                                                         System.Security.Cryptography.CryptographicException or
+                                                         System.ComponentModel.Win32Exception or
+                                                         ArgumentException)
+                    {
+                        Debug.WriteLine(
+                            $"Superseded encrypted credential cleanup failed: {cleanupError.GetType().Name}");
+                    }
+                }
+                return profile;
+            }
+            catch (Exception error) when (error is System.IO.IOException or
+                                          UnauthorizedAccessException or
+                                          System.Security.Cryptography.CryptographicException or
+                                          System.ComponentModel.Win32Exception or
+                                          Microsoft.Data.Sqlite.SqliteException or
+                                          ArgumentException or InvalidOperationException)
+            {
+                if (!string.IsNullOrWhiteSpace(createdCredentialId))
+                {
+                    try { LocalCredentialVault.Default.Delete(createdCredentialId); }
+                    catch (Exception cleanupError) when (cleanupError is System.IO.IOException or
+                                                         UnauthorizedAccessException or
+                                                         System.Security.Cryptography.CryptographicException or
+                                                         System.ComponentModel.Win32Exception or
+                                                         ArgumentException)
+                    {
+                        Debug.WriteLine(
+                            $"Failed credential rollback cleanup: {cleanupError.GetType().Name}");
+                    }
+                }
+
+                Debug.WriteLine($"Saved-host persistence failed: {error.GetType().Name}");
+                var warning = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("호스트 저장 실패", "Could not save host"),
+                    Content = Helpers.Loc.T(
+                        "저장 호스트 또는 자격증명을 기록하지 못했습니다. 이번 연결은 계속 진행합니다.",
+                        "The saved host or credential could not be written. This connection attempt will continue."),
+                    CloseButtonText = "OK",
+                    XamlRoot = Content.XamlRoot,
+                };
+                await warning.ShowAsync();
+                return null;
+            }
         }
 
         private async Task<HostKeyDecision> PromptUnknownHostKeyAsync(
@@ -749,7 +975,7 @@ namespace sutty.UI.Views
 
                 _settingWindow = new Window
                 {
-                    Title = "Sutty — Settings",
+                    Title = Helpers.Loc.T("Sutty — 설정", "Sutty — Settings"),
                     ExtendsContentIntoTitleBar = true,
                     Content = panel,
                 };
@@ -781,6 +1007,8 @@ namespace sutty.UI.Views
             if (changes.HasFlag(SettingChangeKind.Language))
             {
                 Bindings.Update();
+                if (_settingWindow is not null)
+                    _settingWindow.Title = Helpers.Loc.T("Sutty — 설정", "Sutty — Settings");
                 foreach (var view in GetOpenSessionViews())
                     view.RefreshLanguage();
                 MultiGrid.RefreshLanguage();

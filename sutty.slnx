@@ -19,11 +19,19 @@
     <Platform Solution="*|ARM64" Project="Any CPU" />
     <Platform Solution="*|x64" Project="Any CPU" />
   </Project>
+  <Project Path="tests/sutty.Command.SelfTest/sutty.Command.SelfTest.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
   <Project Path="tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj">
     <Platform Solution="*|ARM64" Project="Any CPU" />
     <Platform Solution="*|x64" Project="Any CPU" />
   </Project>
   <Project Path="tests/sutty.Sftp.SelfTest/sutty.Sftp.SelfTest.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
+  <Project Path="tests/sutty.Setting.SelfTest/sutty.Setting.SelfTest.csproj">
     <Platform Solution="*|ARM64" Project="Any CPU" />
     <Platform Solution="*|x64" Project="Any CPU" />
   </Project>

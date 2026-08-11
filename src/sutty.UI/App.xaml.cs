@@ -59,7 +59,8 @@ namespace sutty.UI
             // to every window. Must run before any UI is created.
             InitializeComponent();
 
-            // 처리 안 된 예외를 파일로 남긴다 (%LOCALAPPDATA%\sutty\crash.log)
+            // 처리되지 않은 예외는 비밀값이나 원문 메시지를 기록하지 않고
+            // 진단 식별자만 남긴다 (%LOCALAPPDATA%\sutty\crash.log).
             UnhandledException += (_, e) =>
             {
                 try
@@ -68,8 +69,13 @@ namespace sutty.UI
                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "sutty", "crash.log");
                     System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+                    if (System.IO.File.Exists(path) && new System.IO.FileInfo(path).Length > 1_048_576)
+                        System.IO.File.WriteAllText(path, "");
+
+                    var exceptionType = e.Exception?.GetType().FullName ?? "UnknownException";
+                    var hresult = e.Exception?.HResult ?? 0;
                     System.IO.File.AppendAllText(path,
-                        $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {e.Message}\n{e.Exception}\n----\n");
+                        $"[{DateTimeOffset.Now:O}] type={exceptionType} hresult=0x{hresult:X8}\n");
                 }
                 catch { /* 로그 실패는 무시 */ }
             };

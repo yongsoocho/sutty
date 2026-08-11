@@ -24,7 +24,7 @@ This is not an xterm-compatible renderer:
 
 Keep the bounded native renderer only as an **Alpha engineering bridge** while SSH lifecycle, host-key, SFTP, and workspace flows are developed.
 
-Sutty must not claim GA terminal compatibility, complete PuTTY/MobaXterm terminal replacement, or conformance for `vim`, `tmux`, ncurses, mouse applications, or arbitrary escape sequences while this decision remains active.
+Sutty must not claim GA terminal compatibility, complete legacy-client replacement, or conformance for `vim`, `tmux`, ncurses, mouse applications, or arbitrary escape sequences while this decision remains active.
 
 Before GA, implement the specification's local xterm.js/WebView2 renderer unless a superseding ADR demonstrates an alternative with equal or stronger compatibility, security, accessibility, and maintenance evidence.
 
@@ -72,7 +72,7 @@ Traceability: [TERM-001 through TERM-006](../REQUIREMENTS.md#terminal--터미널
 
 SSH 수명주기, 호스트키, SFTP, workspace 흐름을 개발하는 동안 제한된 네이티브 렌더러를 **Alpha 엔지니어링 연결 단계**로만 유지합니다.
 
-이 결정이 유효한 동안 Sutty는 GA 터미널 호환성, PuTTY/MobaXterm 터미널의 완전한 대체, `vim`·`tmux`·ncurses·마우스 앱·임의 escape sequence 호환성을 주장하면 안 됩니다.
+이 결정이 유효한 동안 Sutty는 GA 터미널 호환성, 기존 터미널 클라이언트의 완전한 대체, `vim`·`tmux`·ncurses·마우스 앱·임의 escape sequence 호환성을 주장하면 안 됩니다.
 
 GA 전에 명세의 로컬 xterm.js/WebView2 렌더러를 구현해야 합니다. 다른 대안을 선택하려면 동등하거나 더 강한 호환성·보안·접근성·유지보수 증거를 가진 후속 ADR이 필요합니다.
 

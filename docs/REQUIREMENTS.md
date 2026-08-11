@@ -43,9 +43,9 @@ The evidence baseline is the source tree, not disabled UI or future-looking comm
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
-| HOST-001 | P0 | Partial | History, pins, tags, and non-secret drafts persist; full Saved Host CRUD, duplicate, group, environment, and auth references do not exist.<br>히스토리·pin·태그·비밀 없는 초안은 저장하지만 완전한 Saved Host CRUD·복제·그룹·환경·auth reference는 없습니다. |
-| HOST-002 | P1 | Partial | History search, tags, and pins exist; groups, true favorites, profile-scale performance, and 1,000-host evidence are missing.<br>히스토리 검색·태그·pin은 있지만 그룹·독립 favorite·프로필 규모 성능·1,000 Host 검증은 없습니다. |
-| HOST-003 | P0 | Planned | Connection attempts do not have separate success/failure result records.<br>연결 시도에 성공·실패 결과를 분리한 기록 모델이 없습니다. |
+| HOST-001 | P0 | Partial | Explicit Saved Hosts support create/update, delete, group, environment, tags, favorites, and opaque credential references; duplicate and bulk-management UX remain planned.<br>명시적 저장 호스트는 생성·수정·삭제·그룹·환경·태그·즐겨찾기·불투명 자격증명 참조를 지원하며 복제·일괄 관리 UX는 계획 상태입니다. |
+| HOST-002 | P1 | Partial | Saved Hosts and append-only history are searched together; responsive cards, groups, environments, and favorites exist, while 1,000-host performance evidence is incomplete.<br>저장 호스트와 append-only 히스토리를 함께 검색하며 반응형 카드·그룹·환경·즐겨찾기가 있지만 1,000 Host 성능 증거는 미완성입니다. |
+| HOST-003 | P0 | Implemented | Every completed connection attempt appends success, failure, or cancellation, a bounded diagnostic code, and duration without storing secrets.<br>완료된 모든 연결 시도는 비밀정보 없이 성공·실패·취소, 제한된 진단 코드, 소요 시간을 새 행으로 추가합니다. |
 | HOST-004 | P0 | Partial | SSH, Terminal, and SFTP state are independent and SFTP failure preserves SSH; tunnel state is not implemented.<br>SSH·Terminal·SFTP 상태는 분리되고 SFTP 실패 시 SSH를 유지하지만 tunnel 상태는 없습니다. |
 | HOST-005 | P1 | Planned | Workspace/tab restore is not implemented.<br>Workspace·탭 복원을 구현하지 않았습니다. |
 | HOST-006 | P1 | Partial | Host canonicalization covers DNS, IPv4, IPv6, and nonstandard ports; the required connection matrix is unverified.<br>DNS·IPv4·IPv6·비표준 port를 정규화하지만 필수 연결 매트릭스를 검증하지 않았습니다. |
@@ -65,6 +65,13 @@ The evidence baseline is the source tree, not disabled UI or future-looking comm
 | SSH-008 | P1 | Partial | Keepalive is applied per connection; automatic reconnect and replay safety UX are missing.<br>연결별 keepalive는 적용하지만 자동 재연결과 replay 안전 UX가 없습니다. |
 | SSH-009 | P1 | Planned | Negotiated KEX/cipher/MAC/host-key information is not surfaced.<br>협상된 KEX/cipher/MAC/host-key 정보를 표시하지 않습니다. |
 | SSH-010 | P0 | Planned | There is no explicit product policy or tested override model for legacy algorithms.<br>Legacy 알고리즘을 위한 명시적 제품 정책과 검증된 override 모델이 없습니다. |
+
+## Credential security / 자격증명 보안
+
+| ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
+| --- | --- | --- | --- |
+| CRED-001 | P0 | Implemented | Credential storage is opt-in. A random AES-256 key is protected for the current Windows user, each record uses authenticated AES-GCM encryption, and SQLite stores only an opaque reference.<br>자격증명 저장은 선택형입니다. 무작위 AES-256 키를 현재 Windows 사용자에게 보호하고 각 레코드는 인증된 AES-GCM 암호화를 사용하며 SQLite에는 불투명 참조만 저장합니다. |
+| CRED-002 | P0 | Partial | Passwords and key passphrases are excluded from settings, history, profile rows, and crash messages; the connection object is cleared after each attempt and tamper/plaintext self-tests exist. Broader memory-lifetime and UI-automation review remains.<br>비밀번호와 키 암호는 설정·히스토리·프로필 행·충돌 메시지에서 제외하며 연결 시도 뒤 객체 값을 지우고 변조·평문 self-test를 수행합니다. 더 넓은 메모리 수명·UI 자동화 검토는 남아 있습니다. |
 
 ## Terminal / 터미널
 
@@ -132,8 +139,8 @@ The native renderer is intentionally transitional. See [ADR 0001](adr/0001-termi
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
 | IMP-001 | P1 | Planned | OpenSSH config import is unavailable.<br>OpenSSH config 가져오기를 지원하지 않습니다. |
-| IMP-002 | P1 | Planned | PuTTY Saved Session import is unavailable.<br>PuTTY Saved Session 가져오기를 지원하지 않습니다. |
-| IMP-003 | P1 | Planned | FileZilla SFTP Site Manager import is unavailable.<br>FileZilla SFTP Site Manager 가져오기를 지원하지 않습니다. |
+| IMP-002 | P1 | Planned | Legacy SSH saved-session import is unavailable.<br>레거시 SSH 저장 세션 가져오기를 지원하지 않습니다. |
+| IMP-003 | P1 | Planned | Legacy SFTP site-profile import is unavailable.<br>레거시 SFTP 사이트 프로필 가져오기를 지원하지 않습니다. |
 | IMP-004 | P1 | Planned | Encrypted Sutty bundle export/import is unavailable.<br>암호화 Sutty bundle 내보내기·가져오기를 지원하지 않습니다. |
 | POL-001 | P1 | Planned | HKLM policy precedence and locked-settings UI are unavailable.<br>HKLM 정책 우선순위와 잠긴 설정 UI가 없습니다. |
 | POL-002 | P1 | Planned | Managed credential-free Host catalog is unavailable.<br>자격 증명 없는 관리형 Host catalog를 지원하지 않습니다. |

@@ -5,7 +5,9 @@ namespace sutty.Command;
 /// <summary>sutty 로컬 SQLite 파일 하나를 공유한다 (commands + host_history).</summary>
 internal static class Db
 {
-    public static string DbPath => Path.Combine(
+    internal static string? PathOverride { get; set; }
+
+    public static string DbPath => PathOverride ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "sutty", "sutty.db");
 

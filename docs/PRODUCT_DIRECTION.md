@@ -10,11 +10,11 @@
 
 ### Honest position
 
-Sutty aims to replace the everyday combination of **PuTTY SSH + FileZilla SFTP + Windows-local productivity workflows from Termius and MobaXterm**. The claim is deliberately limited:
+Sutty combines everyday **SSH, SFTP, reusable commands, and multi-session operations** in one Windows-local workspace. The scope is deliberately limited:
 
 - It concerns SSH/SFTP server operations on Windows.
-- It is a target for a future GA release, not current Alpha parity.
-- It does not include FileZilla FTP/FTPS, PuTTY Telnet/Serial, MobaXterm RDP/X11 breadth, or Termius cloud/mobile/team collaboration.
+- It is a target for a future GA release, not a claim that the current Alpha is complete.
+- It does not include FTP/FTPS, Telnet/Serial, RDP/VNC/X11, cloud/mobile, or team collaboration.
 
 Sutty remains local-first: no account, no cloud backend, and no team control plane.
 
@@ -41,7 +41,7 @@ Terminal and REPL are complementary. The REPL remains Sutty's differentiator; it
 
 ### Current Alpha baseline
 
-The current working tree contains a real SSH.NET `ShellStream` PTY with runtime server-side resize, a bounded native VT screen model, fail-closed known-host verification, separated SSH/Terminal/SFTP state, structured command results, practical single-file SFTP operations, a compact transfer queue, Files/Terminal path integration, history pins/tags, live settings, and a zero-default-target Multi view with a PROD confirmation.
+The current working tree contains a real SSH.NET `ShellStream` PTY with runtime server-side resize, a bounded native VT screen model, fail-closed known-host verification, separated SSH/Terminal/SFTP state, structured command results, practical single-file SFTP operations, a compact transfer queue, Files/Terminal path integration, Saved Hosts with a local encrypted credential vault, append-only connection outcomes, live settings, and a zero-default-target Multi view with a PROD confirmation.
 
 This baseline is useful for development and controlled testing. It has not passed the compatibility, security, accessibility, packaging, large-transfer, or soak gates required for GA.
 
@@ -50,7 +50,7 @@ This baseline is useful for development and controlled testing. It has not passe
 | Gate | Current gap |
 | --- | --- |
 | Terminal compatibility | Replace the transitional native renderer with the approved local xterm.js/WebView2 design, harden the bridge, preserve the current server PTY resize contract, and pass the shell/TUI/input/Unicode matrix. |
-| Secure host and credentials | Complete Saved Host Profile separation, an encrypted local Vault or an explicitly approved alternative, OTP/multi-prompt keyboard-interactive UI, and secret-lifetime/redaction tests. |
+| Secure host and credentials | Saved Host separation and a local encrypted Vault now exist; complete duplicate/bulk UX, OTP/multi-prompt keyboard-interactive UI, and broader secret-lifetime/redaction tests. |
 | Host identity | Keep current unknown/trusted/changed enforcement, then add changed-key UX, rotation/management, audit, and integration coverage. |
 | SFTP correctness | Add directory transfer, recursive safety, complete collision policy, symlink handling, permission/error coverage, and large-file/deep-path tests. |
 | Transfer integrity | Add pause/retry behavior, final size verification, failure recovery, and evidence that cancel/disconnect cannot corrupt an existing destination. |
@@ -65,7 +65,7 @@ This baseline is useful for development and controlled testing. It has not passe
 - Persistent transfer management with configurable limits, retry/resume, verification, and restart recovery.
 - Local, remote, and dynamic port forwarding with safe bind warnings.
 - Streaming REPL output, typed snippet parameters, durable/exportable per-host Multi results, timeouts, and audit events.
-- OpenSSH/PuTTY/FileZilla SFTP import, encrypted Sutty export, and conflict preview.
+- OpenSSH configuration and legacy SSH/SFTP profile import, encrypted Sutty export, and conflict preview.
 - Local enterprise policy, managed host catalogs, diagnostics/support bundle, and redacted audit logging.
 - Keyboard, High Contrast, text scaling, Narrator, Korean/English, Windows 11 x64/ARM64, signed MSIX, update, and enterprise deployment validation.
 
@@ -98,11 +98,11 @@ The security boundary is documented in [Security](../SECURITY.md), and the tempo
 
 ### 정직한 제품 위치
 
-Sutty는 일상 서버 작업에서 **PuTTY SSH + FileZilla SFTP + Termius와 MobaXterm의 Windows 로컬 생산성 작업 흐름**을 대체하는 것을 목표로 합니다. 이 표현의 범위는 의도적으로 제한합니다.
+Sutty는 일상적인 **SSH, SFTP, 재사용 명령, 다중 세션 운영**을 하나의 Windows 로컬 작업 공간에 통합합니다. 범위는 의도적으로 제한합니다.
 
 - Windows의 SSH/SFTP 서버 운영 작업을 대상으로 합니다.
-- 미래 GA의 목표이며 현재 Alpha의 기능 동등성을 뜻하지 않습니다.
-- FileZilla의 FTP/FTPS, PuTTY의 Telnet/Serial, MobaXterm의 RDP/X11 범위, Termius의 클라우드·모바일·팀 협업은 포함하지 않습니다.
+- 미래 GA의 목표이며 현재 Alpha가 완성됐다는 뜻은 아닙니다.
+- FTP/FTPS, Telnet/Serial, RDP/VNC/X11, 클라우드·모바일·팀 협업은 포함하지 않습니다.
 
 Sutty는 로컬 우선 원칙을 유지합니다. 계정, 클라우드 백엔드, 팀 제어면을 만들지 않습니다.
 
@@ -129,7 +129,7 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 
 ### 현재 Alpha 기준선
 
-현재 작업 트리에는 실행 중 서버 측 크기 변경을 지원하는 실제 SSH.NET `ShellStream` PTY, 제한된 네이티브 VT 화면 모델, 기본 차단 known-host 검증, 분리된 SSH/Terminal/SFTP 상태, 구조화된 명령 결과, 실용적인 단일 파일 SFTP 작업, 간결한 전송 큐, Files/Terminal 경로 연동, History pin·태그, 즉시 반영 설정, 기본 선택 0개와 PROD 확인을 가진 Multi 화면이 있습니다.
+현재 작업 트리에는 실행 중 서버 측 크기 변경을 지원하는 실제 SSH.NET `ShellStream` PTY, 제한된 네이티브 VT 화면 모델, 기본 차단 known-host 검증, 분리된 SSH/Terminal/SFTP 상태, 구조화된 명령 결과, 실용적인 단일 파일 SFTP 작업, 간결한 전송 큐, Files/Terminal 경로 연동, 로컬 암호화 자격증명 보관소를 사용하는 저장 호스트, append-only 접속 결과, 즉시 반영 설정, 기본 선택 0개와 PROD 확인을 가진 Multi 화면이 있습니다.
 
 이 기준선은 개발과 통제된 테스트에 사용할 수 있습니다. GA에 필요한 호환성·보안·접근성·패키징·대용량 전송·장시간 실행 게이트를 통과하지 않았습니다.
 
@@ -138,7 +138,7 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 | 게이트 | 현재 남은 작업 |
 | --- | --- |
 | 터미널 호환성 | 임시 네이티브 렌더러를 승인된 로컬 xterm.js/WebView2 설계로 교체하고, bridge를 hardening하며, 현재 서버 PTY resize 계약을 유지하고 셸/TUI/입력/Unicode 매트릭스를 통과해야 합니다. |
-| 안전한 Host와 자격 증명 | Saved Host Profile 분리, 암호화 로컬 Vault 또는 명시적으로 승인된 대안, OTP·다중 prompt keyboard-interactive UI, 비밀정보 수명·redaction 테스트가 필요합니다. |
+| 안전한 Host와 자격 증명 | Saved Host 분리와 로컬 암호화 Vault는 구현됐으며 프로필 복제·일괄 UX, OTP·다중 prompt keyboard-interactive UI, 더 넓은 비밀정보 수명·redaction 테스트가 필요합니다. |
 | 호스트 신원 | 현재 unknown/trusted/changed 강제를 유지하고, 변경 키 UX, rotation/관리, audit, 통합 검증을 추가해야 합니다. |
 | SFTP 정확성 | 디렉터리 전송, 재귀 작업 안전성, 전체 충돌 정책, symlink 처리, 권한·오류 범위, 대용량 파일·깊은 경로 테스트가 필요합니다. |
 | 전송 무결성 | 일시정지·재시도, 최종 크기 검증, 실패 복구, 취소·연결 종료가 기존 대상을 손상시키지 않는다는 증거가 필요합니다. |
@@ -153,7 +153,7 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 - 설정 가능한 제한, 재시도·재개·검증·재시작 복구를 갖춘 영속 전송 관리자
 - 안전한 bind 경고를 포함한 Local·Remote·Dynamic 포트 포워딩
 - 스트리밍 REPL 출력, typed snippet parameter, 영속·export 가능한 호스트별 Multi 결과, timeout, audit event
-- OpenSSH/PuTTY/FileZilla SFTP 가져오기, 암호화 Sutty 내보내기, 충돌 미리보기
+- OpenSSH 설정과 레거시 SSH/SFTP 프로필 가져오기, 암호화 Sutty 내보내기, 충돌 미리보기
 - 로컬 기업 정책, 관리형 Host catalog, 진단/support bundle, redaction된 audit logging
 - 키보드, High Contrast, 텍스트 확대, Narrator, 한국어/영어, Windows 11 x64/ARM64, 서명 MSIX, 업데이트, 기업 배포 검증
 

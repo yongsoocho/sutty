@@ -23,6 +23,9 @@ public sealed class HostHistoryEntry
     public string AuthMethod { get; set; } = "Password";
     public string PrivateKeyPath { get; set; } = "";
     public List<string> Tags { get; set; } = [];
+    public string Outcome { get; set; } = "Unknown";
+    public string? ErrorCode { get; set; }
+    public long? DurationMilliseconds { get; set; }
 }
 
 /// <summary>
@@ -53,7 +56,10 @@ public static class HostHistoryStore
                         port             INTEGER NOT NULL DEFAULT 22,
                         auth_method      TEXT    NOT NULL DEFAULT 'Password',
                         private_key_path TEXT    NOT NULL DEFAULT '',
-                        tags_json        TEXT    NOT NULL DEFAULT '[]'
+                        tags_json        TEXT    NOT NULL DEFAULT '[]',
+                        outcome          TEXT    NOT NULL DEFAULT 'Unknown',
+                        error_code       TEXT,
+                        duration_ms      INTEGER
                     );
                     CREATE INDEX IF NOT EXISTS idx_log_hostname ON connection_log(hostname);
                     CREATE INDEX IF NOT EXISTS idx_log_connected ON connection_log(connected_at);
@@ -80,6 +86,9 @@ public static class HostHistoryStore
             EnsureColumn(conn, "connection_log", "auth_method", "TEXT NOT NULL DEFAULT 'Password'");
             EnsureColumn(conn, "connection_log", "private_key_path", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, "connection_log", "tags_json", "TEXT NOT NULL DEFAULT '[]'");
+            EnsureColumn(conn, "connection_log", "outcome", "TEXT NOT NULL DEFAULT 'Unknown'");
+            EnsureColumn(conn, "connection_log", "error_code", "TEXT");
+            EnsureColumn(conn, "connection_log", "duration_ms", "INTEGER");
 
             EnsureColumn(conn, "host_pins", "username", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, "host_pins", "port", "INTEGER NOT NULL DEFAULT 0");
@@ -101,7 +110,10 @@ public static class HostHistoryStore
         int port = 22,
         string authMethod = "Password",
         string privateKeyPath = "",
-        IEnumerable<string>? tags = null)
+        IEnumerable<string>? tags = null,
+        string outcome = "Unknown",
+        string? errorCode = null,
+        long? durationMilliseconds = null)
     {
         if (string.IsNullOrWhiteSpace(hostname)) return;
 
@@ -114,10 +126,12 @@ public static class HostHistoryStore
         cmd.CommandText = """
             INSERT INTO connection_log (
                 alias, hostname, connected_at,
-                username, port, auth_method, private_key_path, tags_json)
+                username, port, auth_method, private_key_path, tags_json,
+                outcome, error_code, duration_ms)
             VALUES (
                 $alias, $host, $now,
-                $username, $port, $auth, $keyPath, $tags);
+                $username, $port, $auth, $keyPath, $tags,
+                $outcome, $errorCode, $durationMs);
 
             UPDATE host_pins
             SET alias = $alias,
@@ -137,6 +151,13 @@ public static class HostHistoryStore
         cmd.Parameters.AddWithValue("$keyPath",
             auth == "PublicKey" ? privateKeyPath?.Trim() ?? "" : "");
         cmd.Parameters.AddWithValue("$tags", SerializeTags(tags));
+        cmd.Parameters.AddWithValue("$outcome", NormalizeOutcome(outcome));
+        cmd.Parameters.AddWithValue("$errorCode", NormalizeErrorCode(errorCode) is { } code
+            ? code
+            : DBNull.Value);
+        cmd.Parameters.AddWithValue("$durationMs", durationMilliseconds is >= 0
+            ? durationMilliseconds.Value
+            : DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
@@ -208,6 +229,70 @@ public static class HostHistoryStore
                 PrivateKeyPath = reader.GetString(7),
                 Tags = DeserializeTags(reader.GetString(8)),
                 IsPinned = true,
+            });
+        }
+        return result;
+    }
+
+    /// <summary>Most frequently connected hosts, with the latest non-secret draft.</summary>
+    public static List<HostHistoryEntry> GetMostFrequent(int limit)
+    {
+        EnsureInitialized();
+        limit = Math.Clamp(limit, 1, 16);
+
+        using var conn = Db.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            WITH stats AS (
+                SELECT hostname COLLATE NOCASE AS hostname_key,
+                       COUNT(*) AS connection_count,
+                       MAX(connected_at) AS last_connected
+                FROM connection_log
+                WHERE outcome IN ('Success', 'Unknown')
+                GROUP BY hostname COLLATE NOCASE
+                ORDER BY connection_count DESC, last_connected DESC
+                LIMIT $limit
+            )
+            SELECT latest.id,
+                   latest.alias,
+                   latest.hostname,
+                   stats.last_connected,
+                   stats.connection_count,
+                   latest.username,
+                   latest.port,
+                   latest.auth_method,
+                   latest.private_key_path,
+                   latest.tags_json
+            FROM stats
+            JOIN connection_log AS latest
+              ON latest.id = (
+                  SELECT item.id
+                  FROM connection_log AS item
+                  WHERE item.hostname = stats.hostname_key COLLATE NOCASE
+                    AND item.outcome IN ('Success', 'Unknown')
+                  ORDER BY item.connected_at DESC, item.id DESC
+                  LIMIT 1
+              )
+            ORDER BY stats.connection_count DESC, stats.last_connected DESC
+            """;
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        var result = new List<HostHistoryEntry>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            result.Add(new HostHistoryEntry
+            {
+                Id = reader.GetInt64(0),
+                Alias = reader.GetString(1),
+                Hostname = reader.GetString(2),
+                ConnectedAt = DateTime.Parse(reader.GetString(3)),
+                ConnectionCount = reader.GetInt32(4),
+                Username = reader.GetString(5),
+                Port = NormalizePort(reader.GetInt32(6)),
+                AuthMethod = NormalizeAuthMethod(reader.GetString(7)),
+                PrivateKeyPath = reader.GetString(8),
+                Tags = DeserializeTags(reader.GetString(9)),
             });
         }
         return result;
@@ -290,7 +375,10 @@ public static class HostHistoryStore
                    l.port,
                    l.auth_method,
                    l.private_key_path,
-                   l.tags_json
+                   l.tags_json,
+                   l.outcome,
+                   l.error_code,
+                   l.duration_ms
             FROM connection_log AS l
             ORDER BY l.connected_at DESC, l.id DESC
             LIMIT $limit
@@ -313,6 +401,9 @@ public static class HostHistoryStore
                 AuthMethod = NormalizeAuthMethod(reader.GetString(7)),
                 PrivateKeyPath = reader.GetString(8),
                 Tags = DeserializeTags(reader.GetString(9)),
+                Outcome = NormalizeOutcome(reader.GetString(10)),
+                ErrorCode = reader.IsDBNull(11) ? null : reader.GetString(11),
+                DurationMilliseconds = reader.IsDBNull(12) ? null : reader.GetInt64(12),
             });
         }
         return result;
@@ -405,6 +496,26 @@ public static class HostHistoryStore
             ? "PublicKey"
             : "Password";
 
+    private static string NormalizeOutcome(string? outcome) => outcome?.Trim().ToLowerInvariant() switch
+    {
+        "success" => "Success",
+        "failed" => "Failed",
+        "cancelled" or "canceled" => "Cancelled",
+        _ => "Unknown",
+    };
+
+    private static string? NormalizeErrorCode(string? errorCode)
+    {
+        if (string.IsNullOrWhiteSpace(errorCode)) return null;
+        var value = errorCode.Trim();
+        if (value.Length > 64 || value.Any(character =>
+                !char.IsAsciiLetterOrDigit(character) && character is not '.' and not '_' and not '-'))
+        {
+            return "SSH.CONNECT.FAILED";
+        }
+        return value;
+    }
+
     private static List<string> NormalizeTags(IEnumerable<string>? tags) =>
         tags?.Where(tag => !string.IsNullOrWhiteSpace(tag))
             .Select(tag => tag.Trim())
@@ -415,7 +526,7 @@ public static class HostHistoryStore
         ?? [];
 
     private static string SerializeTags(IEnumerable<string>? tags) =>
-        JsonSerializer.Serialize(NormalizeTags(tags));
+        JsonSerializer.Serialize(NormalizeTags(tags), CommandJsonContext.Default.ListString);
 
     private static List<string> DeserializeTags(string? json)
     {
@@ -423,7 +534,7 @@ public static class HostHistoryStore
 
         try
         {
-            return NormalizeTags(JsonSerializer.Deserialize<List<string>>(json));
+            return NormalizeTags(JsonSerializer.Deserialize(json, CommandJsonContext.Default.ListString));
         }
         catch (JsonException)
         {

@@ -81,6 +81,7 @@ namespace sutty.UI.Views
             DefaultPortBox.Value = settings.DefaultSshPort;
             KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
             HistoryDaysBox.Value = settings.HistoryRetentionDays;
+            HistoryTopHostCountBox.Value = settings.HistoryTopHostCount;
 
             MainWidthBox.Value = PositiveOrNaN(settings.MainWindowWidth);
             MainHeightBox.Value = PositiveOrNaN(settings.MainWindowHeight);
@@ -198,6 +199,7 @@ namespace sutty.UI.Views
             else if (ReferenceEquals(sender, DefaultPortBox)) settings.DefaultSshPort = value;
             else if (ReferenceEquals(sender, KeepAliveBox)) settings.DefaultKeepAliveSeconds = value;
             else if (ReferenceEquals(sender, HistoryDaysBox)) settings.HistoryRetentionDays = value;
+            else if (ReferenceEquals(sender, HistoryTopHostCountBox)) settings.HistoryTopHostCount = value;
             else if (ReferenceEquals(sender, MainWidthBox)) settings.MainWindowWidth = value;
             else if (ReferenceEquals(sender, MainHeightBox)) settings.MainWindowHeight = value;
             else if (ReferenceEquals(sender, SettingWidthBox)) settings.SettingWindowWidth = value;
@@ -210,7 +212,8 @@ namespace sutty.UI.Views
                     ? SettingChangeKind.ConnectionPort
                     : ReferenceEquals(sender, KeepAliveBox)
                         ? SettingChangeKind.ConnectionKeepAlive
-                        : ReferenceEquals(sender, HistoryDaysBox)
+                        : ReferenceEquals(sender, HistoryDaysBox) ||
+                          ReferenceEquals(sender, HistoryTopHostCountBox)
                             ? SettingChangeKind.History
                             : SettingChangeKind.Window;
 

@@ -21,6 +21,15 @@
         PointerExited="Card_PointerExited"
         Tapped="Card_Tapped">
 
+        <Border.ContextFlyout>
+            <MenuFlyout>
+                <MenuFlyoutItem
+                    x:Name="DeleteMenuItem"
+                    Click="DeleteMenuItem_Click"
+                    Icon="Delete" />
+            </MenuFlyout>
+        </Border.ContextFlyout>
+
         <StackPanel Spacing="3">
             <Grid ColumnSpacing="6">
                 <Grid.ColumnDefinitions>
@@ -53,7 +62,7 @@
                             Text="{x:Bind Host.CountText}" />
                     </Border>
                     <Button
-                        x:Name="PinButton"
+                        x:Name="PrimaryActionButton"
                         Width="26"
                         Height="26"
                         Padding="0"
@@ -61,10 +70,10 @@
                         VerticalContentAlignment="Center"
                         Background="Transparent"
                         BorderThickness="0"
-                        Click="PinButton_Click"
-                        Tapped="PinButton_Tapped">
+                        Click="PrimaryActionButton_Click"
+                        Tapped="PrimaryActionButton_Tapped">
                         <FontIcon
-                            x:Name="PinIcon"
+                            x:Name="PrimaryActionIcon"
                             FontSize="14"
                             Glyph="&#xE718;" />
                     </Button>
@@ -99,10 +108,18 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <TextBlock
-                FontSize="10"
-                Foreground="{ThemeResource TextFaint}"
-                Text="{x:Bind Host.LastConnectedText}" />
+            <StackPanel Orientation="Horizontal" Spacing="5">
+                <Ellipse
+                    x:Name="OutcomeDot"
+                    Width="6"
+                    Height="6"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed" />
+                <TextBlock
+                    FontSize="10"
+                    Foreground="{ThemeResource TextFaint}"
+                    Text="{x:Bind Host.LastConnectedText}" />
+            </StackPanel>
         </StackPanel>
     </Border>
 </UserControl>
