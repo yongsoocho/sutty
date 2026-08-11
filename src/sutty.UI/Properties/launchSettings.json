@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "sutty.UI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "sutty.UI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

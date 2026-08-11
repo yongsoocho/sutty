@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="sutty.UI.Views.SettingsPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:h="using:sutty.UI.Helpers"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Unloaded="SettingsPanel_Unloaded">
+
+    <UserControl.Resources>
+        <Style x:Key="SettingsHeading" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{ThemeResource TextPrimary}" />
+        </Style>
+        <Style x:Key="SettingsLabel" TargetType="TextBlock">
+            <Setter Property="CharacterSpacing" Value="60" />
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{ThemeResource TextMuted}" />
+            <Setter Property="Margin" Value="1,0,0,5" />
+        </Style>
+        <Style x:Key="SettingsCard" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBg}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12" />
+        </Style>
+        <Style x:Key="SettingsNumber" TargetType="NumberBox">
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="MinHeight" Value="36" />
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="{ThemeResource SidePanelBg}">
+        <!--  타이틀바 오버레이 영역(40px)을 피해서 시작  -->
+        <NavigationView
+            x:Name="SettingsNav"
+            Margin="0,36,0,0"
+            Background="Transparent"
+            IsBackButtonVisible="Collapsed"
+            IsPaneToggleButtonVisible="False"
+            IsSettingsVisible="False"
+            OpenPaneLength="166"
+            PaneDisplayMode="Left"
+            SelectionChanged="SettingsNav_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Appearance" FontSize="12.5" Tag="Appearance">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE790;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Terminal" FontSize="12.5" Tag="Terminal">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE756;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Connection" FontSize="12.5" Tag="Connection">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE968;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Window" FontSize="12.5" Tag="Window">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE740;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <Grid Padding="16,12,16,16">
+
+                    <!--  ── Appearance: 언어/테마 (선택 즉시 적용/저장) ──  -->
+                    <StackPanel x:Name="AppearancePane" Spacing="10">
+                        <TextBlock Style="{StaticResource SettingsHeading}" Text="{x:Bind h:Loc.T('모양 / 언어', 'Appearance')}" />
+                        <TextBlock
+                            Margin="0,-4,0,0"
+                            FontSize="10.5"
+                            Foreground="{ThemeResource TextMuted}"
+                            Text="{x:Bind h:Loc.T('선택하면 즉시 적용되고 저장됩니다.', 'Choices apply and save immediately.')}" />
+
+                        <!--  언어  -->
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Style="{StaticResource SettingsLabel}" Text="LANGUAGE / 언어" />
+                                <ComboBox
+                                    x:Name="LanguageCombo"
+                                    HorizontalAlignment="Stretch"
+                                    CornerRadius="7"
+                                    FontSize="12.5"
+                                    MinHeight="36"
+                                    SelectionChanged="LanguageCombo_SelectionChanged">
+                                    <ComboBoxItem Content="한국어" />
+                                    <ComboBoxItem Content="English" />
+                                </ComboBox>
+                                <TextBlock
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('현재 열린 화면에 즉시 반영됩니다.', 'Applies immediately to the currently open UI.')}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCard}">
+                            <ToggleSwitch
+                                x:Name="DarkModeToggle"
+                                FontSize="12.5"
+                                Header="Dark / Light"
+                                OffContent="Light"
+                                OnContent="Dark"
+                                Toggled="DarkModeToggle_Toggled" />
+                        </Border>
+                        <Border Style="{StaticResource SettingsCard}">
+                            <RadioButtons
+                                x:Name="ThemeRadios"
+                                FontSize="12.5"
+                                Header="Theme"
+                                SelectionChanged="ThemeRadios_SelectionChanged" />
+                        </Border>
+                    </StackPanel>
+
+                    <!--  ── Terminal ──  -->
+                    <StackPanel
+                        x:Name="TerminalPane"
+                        Spacing="10"
+                        Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsHeading}" Text="Terminal" />
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="10">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="TERMINAL FONT" />
+                                    <TextBox
+                                        x:Name="FontFamilyBox"
+                                        FontSize="12.5"
+                                        LostFocus="FontFamilyBox_LostFocus"
+                                        MinHeight="36"
+                                        TextChanged="FontFamilyBox_TextChanged"
+                                        Style="{StaticResource DarkInput}" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="SIZE" />
+                                    <NumberBox
+                                        x:Name="FontSizeBox"
+                                        Maximum="32"
+                                        Minimum="8"
+                                        SpinButtonPlacementMode="Compact"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                </StackPanel>
+                                <RadioButtons
+                                    x:Name="TerminalModeRadios"
+                                    Header="{x:Bind h:Loc.T('기본 보기 모드', 'Default view mode')}"
+                                    MaxColumns="2"
+                                    SelectionChanged="TerminalModeRadios_SelectionChanged">
+                                    <x:String>REPL</x:String>
+                                    <x:String>TERMINAL</x:String>
+                                </RadioButtons>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!--  ── Connection ──  -->
+                    <StackPanel
+                        x:Name="ConnectionPane"
+                        Spacing="10"
+                        Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsHeading}" Text="Connection defaults" />
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="10">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="DEFAULT SSH PORT" />
+                                    <NumberBox
+                                        x:Name="DefaultPortBox"
+                                        Maximum="65535"
+                                        Minimum="1"
+                                        SpinButtonPlacementMode="Hidden"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="KEEP-ALIVE INTERVAL (SECONDS)" />
+                                    <NumberBox
+                                        x:Name="KeepAliveBox"
+                                        Maximum="3600"
+                                        Minimum="0"
+                                        SpinButtonPlacementMode="Compact"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!--  접속 히스토리 (append-only 로그) 설정  -->
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Style="{StaticResource SettingsLabel}" Text="HISTORY" />
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="{x:Bind h:Loc.T('보관 일수 (지난 기록은 자동 삭제)', 'Retention days (older logs auto-deleted)')}" />
+                                    <NumberBox
+                                        x:Name="HistoryDaysBox"
+                                        Maximum="365"
+                                        Minimum="1"
+                                        SpinButtonPlacementMode="Compact"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!--  ── Window ──  -->
+                    <StackPanel
+                        x:Name="WindowPane"
+                        Spacing="10"
+                        Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsHeading}" Text="Window size" />
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="10">
+                                <TextBlock
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('입력값과 드래그 변경 모두 자동 저장되며 즉시 적용됩니다.', 'Typed and dragged size changes save automatically and apply immediately.')}"
+                                    TextWrapping="Wrap" />
+                                <TextBlock Style="{StaticResource SettingsLabel}" Text="MAIN WINDOW (WIDTH × HEIGHT)" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <NumberBox
+                                        x:Name="MainWidthBox"
+                                        Grid.Column="0"
+                                        Maximum="7680"
+                                        Minimum="640"
+                                        PlaceholderText="width"
+                                        SpinButtonPlacementMode="Hidden"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                    <NumberBox
+                                        x:Name="MainHeightBox"
+                                        Grid.Column="1"
+                                        Maximum="4320"
+                                        Minimum="480"
+                                        PlaceholderText="height"
+                                        SpinButtonPlacementMode="Hidden"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                </Grid>
+                                <TextBlock Style="{StaticResource SettingsLabel}" Text="RIGHT PANEL WIDTH (PX, 300~800)" />
+                                <NumberBox
+                                    x:Name="PanelWidthBox"
+                                    Maximum="800"
+                                    Minimum="300"
+                                    PlaceholderText="width"
+                                    SpinButtonPlacementMode="Hidden"
+                                    ValueChanged="NumberBox_ValueChanged"
+                                    Style="{StaticResource SettingsNumber}" />
+                                <TextBlock Style="{StaticResource SettingsLabel}" Text="SETTINGS WINDOW (WIDTH × HEIGHT)" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <NumberBox
+                                        x:Name="SettingWidthBox"
+                                        Grid.Column="0"
+                                        Maximum="7680"
+                                        Minimum="360"
+                                        PlaceholderText="width"
+                                        SpinButtonPlacementMode="Hidden"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                    <NumberBox
+                                        x:Name="SettingHeightBox"
+                                        Grid.Column="1"
+                                        Maximum="4320"
+                                        Minimum="360"
+                                        PlaceholderText="height"
+                                        SpinButtonPlacementMode="Hidden"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                </Grid>
+            </ScrollViewer>
+
+            <NavigationView.PaneFooter>
+                <!--  자동 저장 debounce가 남아 있을 때 즉시 flush하는 보조 동작  -->
+                <StackPanel
+                    Margin="12,0,12,12"
+                    Orientation="Vertical"
+                    Spacing="6">
+                    <Button
+                        Height="36"
+                        HorizontalAlignment="Stretch"
+                        Background="{ThemeResource AccentGradient}"
+                        BorderThickness="0"
+                        Click="Save_Click"
+                        Content="{x:Bind h:Loc.T('지금 저장', 'Save now')}"
+                        CornerRadius="8"
+                        FontSize="12.5"
+                        FontWeight="SemiBold"
+                        Foreground="#FFFFFF">
+                        <Button.Resources>
+                            <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
+                            <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                        </Button.Resources>
+                    </Button>
+                    <TextBlock
+                        x:Name="SavedText"
+                        HorizontalAlignment="Center"
+                        AutomationProperties.LiveSetting="Polite"
+                        FontSize="10.5"
+                        Foreground="{ThemeResource StatusGreen}"
+                        Text="{x:Bind h:Loc.T('변경 사항은 자동 저장됩니다.', 'Changes save automatically.')}"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap"
+                        Visibility="Visible" />
+                </StackPanel>
+            </NavigationView.PaneFooter>
+        </NavigationView>
+    </Border>
+</UserControl>

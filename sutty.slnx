@@ -1,0 +1,35 @@
+<Solution>
+  <Configurations>
+    <Platform Name="ARM64" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="src/sutty.Command/sutty.Command.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
+  <Project Path="src/sutty.Core/sutty.Core.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
+  <Project Path="src/sutty.Setting/sutty.Setting.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
+  <Project Path="tests/sutty.Core.Security.SelfTest/sutty.Core.Security.SelfTest.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
+  <Project Path="tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
+  <Project Path="tests/sutty.Sftp.SelfTest/sutty.Sftp.SelfTest.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
+  <Project Path="src/sutty.UI/sutty.UI.csproj">
+    <Platform Solution="*|ARM64" Project="ARM64" />
+    <Platform Solution="*|x64" Project="x64" />
+    <Deploy />
+  </Project>
+</Solution>

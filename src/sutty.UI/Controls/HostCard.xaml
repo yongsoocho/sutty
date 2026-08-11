@@ -1,0 +1,108 @@
+<UserControl
+    x:Class="sutty.UI.Controls.HostCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!--
+        작은 반응형 카드 (UniformGridLayout에서 한 줄에 여러 개).
+        alias / hostname / tags / 마지막 접속을 표시한다.
+    -->
+    <Border
+        x:Name="CardRoot"
+        Padding="10,9"
+        Background="{ThemeResource CardBg}"
+        BorderBrush="{ThemeResource CardBorder}"
+        BorderThickness="1"
+        CornerRadius="8"
+        PointerEntered="Card_PointerEntered"
+        PointerExited="Card_PointerExited"
+        Tapped="Card_Tapped">
+
+        <StackPanel Spacing="3">
+            <Grid ColumnSpacing="6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    FontSize="12.5"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextPrimary}"
+                    Text="{x:Bind Host.Alias}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind Host.Alias}" />
+                <!--  상단 고정 카드에만 보이는 접속 횟수 배지  -->
+                <StackPanel
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="3">
+                    <Border
+                        Padding="5,1"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource AccentTint}"
+                        CornerRadius="8"
+                        Visibility="{x:Bind Host.HasCount}">
+                        <TextBlock
+                            FontSize="10"
+                            FontFamily="Cascadia Mono, Consolas"
+                            Foreground="{ThemeResource AccentTeal}"
+                            Text="{x:Bind Host.CountText}" />
+                    </Border>
+                    <Button
+                        x:Name="PinButton"
+                        Width="26"
+                        Height="26"
+                        Padding="0"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="PinButton_Click"
+                        Tapped="PinButton_Tapped">
+                        <FontIcon
+                            x:Name="PinIcon"
+                            FontSize="14"
+                            Glyph="&#xE718;" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+            <TextBlock
+                FontSize="11"
+                FontFamily="Cascadia Mono, Consolas"
+                Foreground="{ThemeResource TextMuted}"
+                Text="{x:Bind Host.Hostname}"
+                TextTrimming="CharacterEllipsis" />
+            <ItemsControl
+                ItemsSource="{x:Bind Host.Tags}"
+                Visibility="{x:Bind Host.HasTags}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsWrapGrid Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border
+                            Margin="0,1,5,1"
+                            Padding="6,1"
+                            Background="{ThemeResource AccentTint}"
+                            CornerRadius="8">
+                            <TextBlock
+                                FontSize="9.5"
+                                Foreground="{ThemeResource AccentTeal}"
+                                Text="{Binding}" />
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock
+                FontSize="10"
+                Foreground="{ThemeResource TextFaint}"
+                Text="{x:Bind Host.LastConnectedText}" />
+        </StackPanel>
+    </Border>
+</UserControl>

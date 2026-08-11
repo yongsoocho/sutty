@@ -1,0 +1,154 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  ContinuousIntegrationBuild: true
+
+jobs:
+  x64:
+    name: x64 ${{ matrix.configuration }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore locked dependencies
+        env:
+          RuntimeIdentifiers: win-x64;win-arm64
+        run: >-
+          dotnet restore .\sutty.slnx
+          --locked-mode
+          -p:Platform=x64
+          -p:Configuration=${{ matrix.configuration }}
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Build
+        run: >-
+          dotnet build .\sutty.slnx
+          --configuration ${{ matrix.configuration }}
+          --no-restore
+          -p:Platform=x64
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Run security self-tests
+        if: matrix.configuration == 'Debug'
+        run: dotnet run --project .\tests\sutty.Core.Security.SelfTest\sutty.Core.Security.SelfTest.csproj --configuration Debug --no-restore
+
+      - name: Run terminal self-tests
+        if: matrix.configuration == 'Debug'
+        run: dotnet run --project .\tests\sutty.Terminal.SelfTest\sutty.Terminal.SelfTest.csproj --configuration Debug --no-restore
+
+      - name: Run SFTP self-tests
+        if: matrix.configuration == 'Debug'
+        run: dotnet run --project .\tests\sutty.Sftp.SelfTest\sutty.Sftp.SelfTest.csproj --configuration Debug --no-restore
+
+  arm64:
+    name: ARM64 compile
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore locked dependencies
+        env:
+          RuntimeIdentifiers: win-x64;win-arm64
+        run: >-
+          dotnet restore .\sutty.slnx
+          --locked-mode
+          -p:Platform=ARM64
+          -p:Configuration=Release
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Compile
+        run: >-
+          dotnet build .\sutty.slnx
+          --configuration Release
+          --no-restore
+          -p:Platform=ARM64
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+  release-artifact:
+    name: Validate unsigned x64 release artifact
+    runs-on: windows-latest
+    needs: [x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore locked dependencies
+        env:
+          RuntimeIdentifiers: win-x64;win-arm64
+        run: >-
+          dotnet restore .\sutty.slnx
+          --locked-mode
+          -p:Platform=x64
+          -p:Configuration=Release
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Publish unsigned artifact
+        run: >-
+          dotnet publish .\src\sutty.UI\sutty.UI.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          --output .\artifacts\release-win-x64
+          -p:Platform=x64
+          -p:GenerateAppxPackageOnBuild=false
+          -p:AppxPackageSigningEnabled=false
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+          -p:DebugSymbols=false
+          -p:DebugType=None
+
+      - name: Reject development data from the release artifact
+        shell: pwsh
+        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\release-win-x64
+
+      - name: Upload verified unsigned artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sutty-win-x64-unsigned
+          path: artifacts/release-win-x64
+          if-no-files-found: error
