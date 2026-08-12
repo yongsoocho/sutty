@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using sutty.Core.Models;
+using sutty.Core.Routing;
 using sutty.Setting;
 using sutty.UI.Helpers;
 using System;
@@ -81,6 +82,13 @@ public sealed partial class HomePanel : UserControl
             ? draft.PrivateKeyPath?.Trim() ?? ""
             : "";
 
+        SelectRoute(draft.Route?.Type ?? ConnectionRouteType.Direct);
+        ProxyHostBox.Text = draft.Route?.Host ?? "";
+        ProxyPortBox.Text = draft.Route is { Port: > 0 } ? draft.Route.Port.ToString() : "";
+        ProxyUsernameBox.Text = draft.Route?.Username ?? "";
+        ProxyPasswordBox.Password = draft.Route?.Password ?? "";
+        EnterpriseRouteCheck.IsChecked = draft.RoutePolicy?.EnterpriseMode == true;
+
         _savedHostId = string.IsNullOrWhiteSpace(draft.SavedHostId) ? null : draft.SavedHostId;
         _credentialId = string.IsNullOrWhiteSpace(draft.CredentialId) ? null : draft.CredentialId;
         SaveProfileCheck.IsChecked = draft.SaveProfile || _savedHostId is not null;
@@ -145,6 +153,39 @@ public sealed partial class HomePanel : UserControl
         SettingsService.Current.LastAuthMethod = _authMethod.ToString();
         PersistSettings();
         UpdateAuthUi();
+    }
+
+    private void RouteCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ProxyPanel is null || ProxyPortBox is null)
+            return;
+
+        var type = SelectedRouteType();
+        ProxyPanel.Visibility = type == ConnectionRouteType.Direct
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        if (type != ConnectionRouteType.Direct && string.IsNullOrWhiteSpace(ProxyPortBox.Text))
+            ProxyPortBox.Text = type == ConnectionRouteType.HttpConnect ? "8080" : "1080";
+    }
+
+    private ConnectionRouteType SelectedRouteType()
+    {
+        var value = (RouteCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+        return Enum.TryParse<ConnectionRouteType>(value, out var type)
+            ? type
+            : ConnectionRouteType.Direct;
+    }
+
+    private void SelectRoute(ConnectionRouteType type)
+    {
+        RouteCombo.SelectedItem = RouteCombo.Items
+            .OfType<ComboBoxItem>()
+            .FirstOrDefault(item => string.Equals(
+                item.Tag as string,
+                type.ToString(),
+                StringComparison.Ordinal))
+            ?? RouteCombo.Items[0];
     }
 
     private void UpdateAuthUi()
@@ -359,6 +400,34 @@ public sealed partial class HomePanel : UserControl
         var selectedEnvironment = (EnvironmentCombo.SelectedItem as ComboBoxItem)?.Tag as string
             ?? "Unclassified";
 
+        var routeType = SelectedRouteType();
+        var enterpriseMode = EnterpriseRouteCheck.IsChecked == true;
+        if (enterpriseMode && routeType == ConnectionRouteType.Direct)
+        {
+            SettingsSaveStatusText.Text = Loc.T(
+                "기업 모드에서는 프록시 경로를 선택해야 합니다.",
+                "Enterprise mode requires a proxy route.");
+            SettingsSaveStatusText.Visibility = Visibility.Visible;
+            RouteCombo.Focus(FocusState.Programmatic);
+            return;
+        }
+
+        var proxyPort = 0;
+        if (routeType != ConnectionRouteType.Direct &&
+            (string.IsNullOrWhiteSpace(ProxyHostBox.Text) ||
+             !int.TryParse(ProxyPortBox.Text, out proxyPort) ||
+             proxyPort is < 1 or > 65_535))
+        {
+            SettingsSaveStatusText.Text = Loc.T(
+                "프록시 주소와 포트를 확인하세요.",
+                "Check the proxy host and port.");
+            SettingsSaveStatusText.Visibility = Visibility.Visible;
+            ProxyHostBox.Focus(FocusState.Programmatic);
+            return;
+        }
+
+        SettingsSaveStatusText.Visibility = Visibility.Collapsed;
+
         ConnectRequested?.Invoke(this, new SshConnectionInfo
         {
             Host = host,
@@ -378,6 +447,23 @@ public sealed partial class HomePanel : UserControl
             GroupName = saveProfile ? GroupBox.Text.Trim() : "",
             Environment = saveProfile ? selectedEnvironment : "Unclassified",
             IsFavorite = saveProfile && FavoriteCheck.IsChecked == true,
+            Route = new ConnectionRoute
+            {
+                Id = routeType == ConnectionRouteType.Direct
+                    ? "direct"
+                    : $"adhoc-{routeType.ToString().ToLowerInvariant()}",
+                Type = routeType,
+                Host = routeType == ConnectionRouteType.Direct ? "" : ProxyHostBox.Text.Trim(),
+                Port = routeType == ConnectionRouteType.Direct ? 0 : proxyPort,
+                Username = routeType == ConnectionRouteType.Direct ? "" : ProxyUsernameBox.Text.Trim(),
+                Password = routeType == ConnectionRouteType.Direct ? "" : ProxyPasswordBox.Password,
+                ProxyDns = true,
+            },
+            RoutePolicy = new ConnectionRoutePolicy
+            {
+                EnterpriseMode = enterpriseMode,
+                DisableDirect = enterpriseMode,
+            },
         });
     }
 

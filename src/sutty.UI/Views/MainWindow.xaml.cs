@@ -2,9 +2,12 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using sutty.Core.Diagnostics;
 using sutty.Core.Models;
 using sutty.Core.Security;
+using sutty.Core.Routing;
 using sutty.Core.Sessions;
 using sutty.Core.Terminal;
 using sutty.Setting;
@@ -183,6 +186,7 @@ namespace sutty.UI.Views
                     "Folder" => CreateFileTreePanel(),
                     "Command" => CreateCommandPanel(),
                     "Multi" => CreateMultiPanel(),
+                    "Logs" => new ConnectionLogPanel(),
                     _ => null
                 };
 
@@ -479,7 +483,7 @@ namespace sutty.UI.Views
             }
 
             var productionTargets = targets
-                .Where(slot => slot.View!.Session.Info.Tags.Any(IsProductionTag))
+                .Where(slot => slot.IsProduction)
                 .ToList();
             if (productionTargets.Count > 0)
             {
@@ -528,30 +532,27 @@ namespace sutty.UI.Views
                 _ = RunBroadcastOnSlotAsync(slot, command);
         }
 
-        private static bool IsProductionTag(string tag)
-        {
-            var normalized = tag.Trim();
-            return normalized.Equals("prod", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.Equals("production", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.StartsWith("prod-", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.StartsWith("prod_", StringComparison.OrdinalIgnoreCase);
-        }
-
         private static async Task RunBroadcastOnSlotAsync(ViewModels.MultiSlotVm slot, string command)
         {
             slot.LastOutput = "…";
             slot.ResultText = Helpers.Loc.T("실행 중", "running");
             try
             {
-                var result = await slot.View!.RunExternalCommandDetailedAsync(command);
+                var result = await slot.ExecuteAsync(command);
                 var output = result.CombinedOutput;
-                slot.ResultText = result.ExitCode is int exitCode
-                    ? $"exit {exitCode}"
-                    : result.ExitSignal is { Length: > 0 } signal
-                        ? signal.ToLowerInvariant()
-                        : Helpers.Loc.T("실패", "failed");
+                slot.ResultText = slot.LocalView is not null
+                    ? Helpers.Loc.T("완료", "complete")
+                    : result.ExitCode is int exitCode
+                        ? $"exit {exitCode}"
+                        : result.ExitSignal is { Length: > 0 } signal
+                            ? signal.ToLowerInvariant()
+                            : Helpers.Loc.T("실패", "failed");
                 slot.LastOutput = string.IsNullOrWhiteSpace(output)
-                    ? result.Succeeded ? "(no output)" : Helpers.Loc.T("(출력 없이 실패)", "(failed with no output)")
+                    ? slot.LocalView is not null
+                        ? Helpers.Loc.T("(출력 없음)", "(no output)")
+                        : result.Succeeded
+                            ? Helpers.Loc.T("(출력 없음)", "(no output)")
+                            : Helpers.Loc.T("(출력 없이 실패)", "(failed with no output)")
                     : output.Length > 400 ? output[..400] + "…" : output;
             }
             catch (Exception ex)
@@ -593,6 +594,78 @@ namespace sutty.UI.Views
             (TitleTabs.SelectedItem as TabViewItem)?.DataContext as SessionView;
 
         private ISshSession? ActiveSession => ActiveSessionView?.Session;
+
+        private async void Root_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
+            var altDown = IsKeyDown(Windows.System.VirtualKey.Menu);
+            var shortcutNumber = ShortcutNumber(e.Key);
+
+            if (controlDown && !altDown)
+            {
+                if (shortcutNumber is int tabNumber)
+                {
+                    var index = tabNumber - 1;
+                    if (index >= 0 && index < TitleTabs.TabItems.Count)
+                    {
+                        e.Handled = true;
+                        if (_isMultiView && LeftNav.MenuItems.Count > 0)
+                            LeftNav.SelectedItem = LeftNav.MenuItems[0];
+                        TitleTabs.SelectedItem = TitleTabs.TabItems[index];
+                        UpdateSessionArea();
+                    }
+                    return;
+                }
+
+                if (e.Key == Windows.System.VirtualKey.T)
+                {
+                    e.Handled = true;
+                    await OpenLocalTerminalTabAsync();
+                    return;
+                }
+
+                // Win32 VK_OEM_COMMA. VirtualKey does not expose a named comma member.
+                if ((int)e.Key == 0xBC)
+                {
+                    e.Handled = true;
+                    OpenSettingWindow();
+                }
+                return;
+            }
+
+            if (!altDown || controlDown || shortcutNumber is not int navigationNumber)
+                return;
+
+            var items = LeftNav.MenuItems
+                .Concat(LeftNav.FooterMenuItems)
+                .OfType<NavigationViewItem>()
+                .ToArray();
+            var navigationIndex = navigationNumber - 1;
+            if (navigationIndex < 0 || navigationIndex >= items.Length)
+                return;
+
+            e.Handled = true;
+            var item = items[navigationIndex];
+            if (item.Tag is "Setting")
+                OpenSettingWindow();
+            else
+                LeftNav.SelectedItem = item;
+        }
+
+        private static int? ShortcutNumber(Windows.System.VirtualKey key)
+        {
+            var value = (int)key;
+            if (value is >= 0x31 and <= 0x39)
+                return value - 0x30;
+            if (value is >= 0x61 and <= 0x69)
+                return value - 0x60;
+            return null;
+        }
+
+        private static bool IsKeyDown(Windows.System.VirtualKey key) =>
+            Microsoft.UI.Input.InputKeyboardSource
+                .GetKeyStateForCurrentThread(key)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
         private async void TitleTabs_AddTabButtonClick(TabView sender, object args)
             => await OpenLocalTerminalTabAsync();
@@ -696,6 +769,15 @@ namespace sutty.UI.Views
             }
             catch (ArgumentException ex)
             {
+                ConnectionLogStore.Append(
+                    Guid.Empty,
+                    info.Title,
+                    $"{info.Host}:{info.Port}",
+                    ConnectionLogSeverity.Error,
+                    "Validation",
+                    "SSH 연결 주소가 올바르지 않습니다.",
+                    "The SSH connection address is invalid.",
+                    ex.Message);
                 var invalidHostDialog = new ContentDialog
                 {
                     Title = Helpers.Loc.T("연결 주소 확인", "Check connection address"),
@@ -709,11 +791,35 @@ namespace sutty.UI.Views
                 return;
             }
 
-            var savedProfile = await PersistSavedProfileAsync(info);
-
             info.HostKeyPromptAsync ??= PromptUnknownHostKeyAsync;
 
-            var session = _sessions.Create(info);
+            ISshSession session;
+            try
+            {
+                session = _sessions.Create(info);
+            }
+            catch (RoutePolicyViolationException error)
+            {
+                ConnectionLogStore.Append(
+                    Guid.Empty,
+                    info.Title,
+                    $"{info.Host}:{info.Port}",
+                    ConnectionLogSeverity.Error,
+                    "Route policy",
+                    "연결 경로 정책이 SSH 연결을 차단했습니다.",
+                    "The connection route policy blocked this SSH connection.",
+                    error.Message);
+                var routeDialog = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("연결 경로 정책", "Connection route policy"),
+                    Content = error.Message,
+                    CloseButtonText = "OK",
+                    XamlRoot = Content.XamlRoot,
+                };
+                await routeDialog.ShowAsync();
+                return;
+            }
+            var savedProfile = await PersistSavedProfileAsync(info);
             var view = new SessionView(session);
             view.WorkingDirectoryChanged += SessionView_WorkingDirectoryChanged;
 
@@ -796,6 +902,15 @@ namespace sutty.UI.Views
             catch (Exception error)
             {
                 Debug.WriteLine($"Unexpected connection failure: {error.GetType().Name}");
+                ConnectionLogStore.Append(
+                    session.Id,
+                    info.Title,
+                    $"{info.Host}:{info.Port}",
+                    ConnectionLogSeverity.Error,
+                    "UI connection flow",
+                    "SSH 연결 처리 중 예상하지 못한 오류가 발생했습니다.",
+                    "An unexpected error occurred in the SSH connection flow.",
+                    error.ToString());
             }
             finally
             {
@@ -826,6 +941,69 @@ namespace sutty.UI.Views
                 if (RightPanel.Content is HostListPanel historyPanel)
                     historyPanel.RefreshFromStore();
             }
+
+            if (outcome == "Failed")
+                await ShowConnectionFailureAsync(session);
+        }
+
+        private async Task ShowConnectionFailureAsync(ISshSession session)
+        {
+            var diagnostic = ConnectionLogStore.Snapshot()
+                .LastOrDefault(entry => entry.SessionId == session.Id &&
+                                        entry.Severity >= ConnectionLogSeverity.Error);
+            var content = new StackPanel { Spacing = 8 };
+            content.Children.Add(new TextBlock
+            {
+                Text = diagnostic is null
+                    ? Helpers.Loc.T(
+                        "SSH 연결을 완료하지 못했습니다.",
+                        "The SSH connection could not be completed.")
+                    : Helpers.Loc.T(diagnostic.MessageKo, diagnostic.MessageEn),
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = session.LastError ?? Helpers.Loc.T("알 수 없는 오류", "Unknown error"),
+                Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    "DNS·소켓·키 교환·호스트 키·인증 단계의 상세 기록은 로그 화면에서 확인할 수 있습니다.",
+                    "Detailed DNS, socket, key-exchange, host-key, and authentication diagnostics are available in Logs."),
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = Helpers.Loc.T("SSH 연결 실패", "SSH connection failed"),
+                Content = content,
+                PrimaryButtonText = Helpers.Loc.T("로그 열기", "Open logs"),
+                CloseButtonText = Helpers.Loc.T("닫기", "Close"),
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot,
+            };
+
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+                SelectNavigationItem("Logs");
+        }
+
+        private void SelectNavigationItem(string tag)
+        {
+            var item = LeftNav.MenuItems
+                .Concat(LeftNav.FooterMenuItems)
+                .OfType<NavigationViewItem>()
+                .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, tag, StringComparison.Ordinal));
+            if (item is not null)
+                LeftNav.SelectedItem = item;
         }
 
         private async Task<sutty.Command.HostProfile?> PersistSavedProfileAsync(SshConnectionInfo info)
@@ -1012,7 +1190,7 @@ namespace sutty.UI.Views
 
             // Multi 그리드가 보이는 중이면 열린 세션 목록으로 갱신
             if (_isMultiView)
-                MultiGrid.SetSessions(GetOpenSessionViews());
+                MultiGrid.SetSessions(GetOpenTerminalViews());
 
             // Keep the cached Files panel bound to the active tab even while it is hidden.
             // This invalidates old-server nodes/transfers before the panel can be shown again.
@@ -1027,6 +1205,21 @@ namespace sutty.UI.Views
             {
                 if (item is TabViewItem tab && tab.DataContext is SessionView view)
                     views.Add(view);
+            }
+            return views;
+        }
+
+        private System.Collections.Generic.List<FrameworkElement> GetOpenTerminalViews()
+        {
+            var views = new System.Collections.Generic.List<FrameworkElement>();
+            foreach (var item in TitleTabs.TabItems)
+            {
+                if (item is not TabViewItem tab)
+                    continue;
+                if (tab.DataContext is SessionView sessionView)
+                    views.Add(sessionView);
+                else if (tab.DataContext is LocalTerminalView localView)
+                    views.Add(localView);
             }
             return views;
         }
@@ -1097,7 +1290,8 @@ namespace sutty.UI.Views
         private void ApplySettingsChanges(SettingChangeKind changes)
         {
             if (changes.HasFlag(SettingChangeKind.TerminalAppearance) ||
-                changes.HasFlag(SettingChangeKind.TerminalMode))
+                changes.HasFlag(SettingChangeKind.TerminalMode) ||
+                changes.HasFlag(SettingChangeKind.TerminalFeatures))
             {
                 foreach (var view in GetOpenSessionViews())
                     view.ApplyTerminalSettings();
@@ -1129,6 +1323,7 @@ namespace sutty.UI.Views
                     case FileTreePanel localizedFiles: localizedFiles.RefreshLanguage(); break;
                     case CommandPanel localizedCommands: localizedCommands.RefreshLanguage(); break;
                     case MultiCommandPanel localizedMulti: localizedMulti.RefreshLanguage(); break;
+                    case ConnectionLogPanel localizedLogs: localizedLogs.RefreshLanguage(); break;
                 }
             }
 

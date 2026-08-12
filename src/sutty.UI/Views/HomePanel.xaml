@@ -289,7 +289,53 @@
                             Foreground="{ThemeResource TextMuted}"
                             Text="{x:Bind h:Loc.T('연결 옵션', 'Connection options')}" />
                     </Expander.Header>
-                    <StackPanel Padding="0,8,0,2">
+                    <StackPanel Padding="0,8,0,2" Spacing="10">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('연결 경로', 'CONNECTION ROUTE')}" />
+                            <ComboBox
+                                x:Name="RouteCombo"
+                                Height="36"
+                                SelectedIndex="0"
+                                SelectionChanged="RouteCombo_SelectionChanged">
+                                <ComboBoxItem Content="Direct" Tag="Direct" />
+                                <ComboBoxItem Content="HTTP CONNECT" Tag="HttpConnect" />
+                                <ComboBoxItem Content="SOCKS4" Tag="Socks4" />
+                                <ComboBoxItem Content="SOCKS5" Tag="Socks5" />
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel x:Name="ProxyPanel" Spacing="8" Visibility="Collapsed">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="88" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('프록시 주소', 'PROXY HOST')}" />
+                                    <TextBox x:Name="ProxyHostBox" Style="{StaticResource FormInput}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('포트', 'PORT')}" />
+                                    <TextBox
+                                        x:Name="ProxyPortBox"
+                                        BeforeTextChanging="PortBox_BeforeTextChanging"
+                                        InputScope="Number"
+                                        MaxLength="5"
+                                        Style="{StaticResource FormInput}" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBox
+                                x:Name="ProxyUsernameBox"
+                                Header="{x:Bind h:Loc.T('프록시 사용자 (선택)', 'Proxy user (optional)')}"
+                                Style="{StaticResource FormInput}" />
+                            <PasswordBox
+                                x:Name="ProxyPasswordBox"
+                                Header="{x:Bind h:Loc.T('프록시 비밀번호 (선택)', 'Proxy password (optional)')}"
+                                Style="{StaticResource FormPassword}" />
+                        </StackPanel>
+                        <CheckBox
+                            x:Name="EnterpriseRouteCheck"
+                            Content="{x:Bind h:Loc.T('기업 모드: 직접 연결 및 자동 우회 금지', 'Enterprise mode: block direct connection and fallback')}"
+                            Foreground="{ThemeResource TextMuted}" />
                         <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('연결 유지 간격 (초)', 'KEEP-ALIVE (SECONDS)')}" />
                         <NumberBox
                             x:Name="KeepAliveBox"

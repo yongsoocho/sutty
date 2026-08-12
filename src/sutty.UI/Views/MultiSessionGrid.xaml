@@ -28,7 +28,7 @@
                 FontSize="15"
                 FontWeight="SemiBold"
                 Foreground="{ThemeResource TextPrimary}"
-                Text="Multi command" />
+                Text="{x:Bind h:Loc.T('다중 명령', 'Multi command')}" />
             <Border
                 Padding="8,2"
                 VerticalAlignment="Center"
@@ -75,7 +75,7 @@
                                 VerticalAlignment="Center"
                                 FontSize="12"
                                 Foreground="{ThemeResource TextMuted}"
-                                Text="empty" />
+                                Text="{x:Bind h:Loc.T('비어 있음', 'empty')}" />
                         </Border>
 
                             <!--  세션 슬롯  -->

@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using sutty.Core.Plugins;
 using sutty.Core.Commands;
 using sutty.Core.Sessions;
 using sutty.Core.Sftp;
@@ -53,6 +54,10 @@ namespace sutty.UI.Views
         private readonly object _terminalOutputGate = new();
         private readonly Queue<byte[]> _terminalOutputQueue = new();
         private readonly SemaphoreSlim _commandGate = new(1, 1);
+        private readonly CommandSuggestionEngine _suggestionEngine = new();
+        private readonly List<string> _commandHistory = [];
+        private IReadOnlyList<string> _savedCommandSuggestions = [];
+        private string? _activeSuggestion;
         private int _terminalQueuedBytes;
         private long _terminalDroppedBytes;
         private bool _terminalBacklogResetPending;
@@ -74,6 +79,8 @@ namespace sutty.UI.Views
             _prompt = $"{user}@{session.Info.Host}";
             InitializeComponent();
 
+            ReloadSavedCommandSuggestions();
+
             ApplyTerminalSettings();
             ActualThemeChanged += (_, _) =>
             {
@@ -83,6 +90,11 @@ namespace sutty.UI.Views
             };
 
             TitleText.Text = $"{user}@{Session.Info.Title} · {Session.Info.Host}:{Session.Info.Port}";
+            RoutePillText.Text = Session.Info.Route?.DisplayName ??
+                Session.AuditContext.RouteType.ToString().ToUpperInvariant();
+            ToolTipService.SetToolTip(
+                RoutePillText,
+                $"route={Session.AuditContext.RouteId} · correlation={Session.AuditContext.CorrelationId}");
             UpdatePrompt();
 
             // 업타임 카운터 (연결 중일 때 1초마다 갱신)
@@ -120,6 +132,8 @@ namespace sutty.UI.Views
             TerminalText.LineHeight = Math.Ceiling(size * 1.5);
             InputPrompt.FontFamily = family;
             InputPrompt.FontSize = size;
+            Controls.TerminalHighlight.Refresh(CellsList);
+            UpdateCommandSuggestion();
 
             var modeChanged = _isTerminal != (settings.TerminalMode == "Terminal");
             _isTerminal = settings.TerminalMode == "Terminal";
@@ -589,6 +603,7 @@ namespace sutty.UI.Views
 
         private async Task<CommandExecutionResult> RunCommandCoreAsync(string command)
         {
+            RememberCommand(command);
             await _commandGate.WaitAsync();
             try
             {
@@ -704,6 +719,9 @@ namespace sutty.UI.Views
 
         private async void CommandBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
+            if (TryAcceptCommandSuggestion(e))
+                return;
+
             if (e.Key != Windows.System.VirtualKey.Enter) return;
 
             // Shift+Enter → 줄바꿈 (기본 동작에 맡긴다)
@@ -732,6 +750,130 @@ namespace sutty.UI.Views
 
             CommandBox.Text = "";
             await RunCommandAsync(command);
+        }
+
+        private void CommandBox_TextChanged(object sender, TextChangedEventArgs e)
+            => UpdateCommandSuggestion();
+
+        private void CommandBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            ReloadSavedCommandSuggestions();
+            UpdateCommandSuggestion();
+        }
+
+        private void ReloadSavedCommandSuggestions()
+        {
+            try
+            {
+                _savedCommandSuggestions = sutty.Command.CommandStore.GetAll()
+                    .Select(command => command.CommandText)
+                    .Where(command => !string.IsNullOrWhiteSpace(command))
+                    .ToArray();
+            }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Command suggestion source unavailable: {error.GetType().Name}");
+            }
+        }
+
+        private void RememberCommand(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command))
+                return;
+
+            _commandHistory.Add(NormalizeNewlines(command).Trim());
+            if (_commandHistory.Count > 500)
+                _commandHistory.RemoveRange(0, _commandHistory.Count - 500);
+        }
+
+        private void UpdateCommandSuggestion()
+        {
+            _activeSuggestion = null;
+            if (!SettingsService.Current.EnableCommandSuggestions ||
+                string.IsNullOrWhiteSpace(CommandBox.Text))
+            {
+                SuggestionPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            var input = NormalizeNewlines(CommandBox.Text);
+            var suggestion = _suggestionEngine.Suggest(new CommandSuggestionRequest(
+                input,
+                _commandHistory,
+                _savedCommandSuggestions));
+            if (suggestion is null)
+            {
+                SuggestionPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            _activeSuggestion = suggestion.Text;
+            SuggestionText.Text = suggestion.Text;
+            SuggestionHint.Text = SettingsService.Current.AcceptSuggestionWithTab
+                ? Loc.T("→ / Tab으로 적용", "Accept with → / Tab")
+                : Loc.T("→로 적용", "Accept with →");
+            SuggestionPanel.Visibility = Visibility.Visible;
+        }
+
+        private bool TryAcceptCommandSuggestion(KeyRoutedEventArgs e)
+        {
+            if (_activeSuggestion is null ||
+                CommandBox.SelectionLength != 0 ||
+                CommandBox.SelectionStart != CommandBox.Text.Length ||
+                IsKeyDown(Windows.System.VirtualKey.Shift) ||
+                IsKeyDown(Windows.System.VirtualKey.Control) ||
+                IsKeyDown(Windows.System.VirtualKey.Menu))
+            {
+                return false;
+            }
+
+            var accepts = e.Key == Windows.System.VirtualKey.Right ||
+                (e.Key == Windows.System.VirtualKey.Tab &&
+                 SettingsService.Current.AcceptSuggestionWithTab);
+            if (!accepts)
+                return false;
+
+            e.Handled = true;
+            CommandBox.Text = _activeSuggestion;
+            CommandBox.SelectionStart = CommandBox.Text.Length;
+            return true;
+        }
+
+        private async void SessionView_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
+            var shiftDown = IsKeyDown(Windows.System.VirtualKey.Shift);
+            if (e.Key != Windows.System.VirtualKey.Insert || (!controlDown && !shiftDown))
+                return;
+
+            e.Handled = true;
+            if (controlDown)
+            {
+                var focused = FocusManager.GetFocusedElement(XamlRoot);
+                var selected = focused switch
+                {
+                    TextBox textBox => textBox.SelectedText,
+                    TextBlock textBlock => textBlock.SelectedText,
+                    _ when _isTerminal => TerminalText.SelectedText,
+                    _ => string.Empty,
+                };
+                ClipboardHelper.CopyText(selected);
+                return;
+            }
+
+            var clipboardText = await ClipboardHelper.GetTextAsync();
+            if (string.IsNullOrEmpty(clipboardText))
+                return;
+
+            if (_isTerminal)
+            {
+                await SendTerminalTextAsync(ClipboardHelper.NormalizeTerminalPaste(clipboardText));
+            }
+            else
+            {
+                ClipboardHelper.InsertAtSelection(CommandBox, clipboardText);
+                CommandBox.Focus(FocusState.Programmatic);
+            }
         }
 
         // ── Interactive PTY input/output ──

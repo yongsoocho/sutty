@@ -33,7 +33,7 @@ The evidence baseline is the source tree, not disabled UI or future-looking comm
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
-| UX-A11Y-001 | P1 | Partial | Major views have keyboard handlers and focus states; complete tab order, access-key, dialog, and E2E coverage is missing.<br>주요 화면에 키보드 처리와 focus 상태가 있지만 전체 tab order·access key·dialog·E2E 검증이 없습니다. |
+| UX-A11Y-001 | P1 | Partial | Tab, left-navigation, new-tab, Settings, copy, and paste shortcuts exist with focus states; complete tab order, access-key, dialog, and E2E coverage is missing.<br>탭·왼쪽 탐색·새 탭·설정·복사·붙여넣기 단축키와 focus 상태가 있지만 전체 tab order·access key·dialog·E2E 검증이 없습니다. |
 | UX-A11Y-002 | P1 | Partial | Theme resources and scalable WinUI controls exist; High Contrast and 200% text-scale acceptance are unverified.<br>테마 리소스와 확대 가능한 WinUI 컨트롤은 있지만 High Contrast·200% 텍스트 확대 인수 검증이 없습니다. |
 | UX-A11Y-003 | P1 | Partial | Some controls expose Automation names; full Narrator navigation and HelpText coverage is missing.<br>일부 컨트롤에 Automation name이 있지만 전체 Narrator 탐색과 HelpText가 부족합니다. |
 | UX-A11Y-004 | P1 | Partial | Several states combine text and color; environment and warning semantics are not consistently covered.<br>여러 상태가 텍스트와 색을 함께 사용하지만 환경·경고 의미가 일관되게 적용되지 않았습니다. |
@@ -61,7 +61,7 @@ The evidence baseline is the source tree, not disabled UI or future-looking comm
 | SSH-004 | P1 | Partial | SSH.NET loads supported OpenSSH/PEM keys; PPK v2/v3 import and a complete key-format matrix are missing.<br>SSH.NET 지원 OpenSSH/PEM 키는 읽지만 PPK v2/v3 가져오기와 전체 key-format 매트릭스가 없습니다. |
 | SSH-005 | P0 | Implemented | Unknown/trusted/changed states fail closed, both SSH and SFTP verify, changed keys block, and focused security self-tests cover persistence and concurrency.<br>Unknown/trusted/changed 상태를 기본 차단으로 처리하고 SSH·SFTP 모두 검증하며 변경 키 차단과 저장·동시성 self-test가 있습니다. |
 | SSH-006 | P1 | Planned | Jump Host is disabled and has no backend.<br>Jump Host는 비활성이고 backend가 없습니다. |
-| SSH-007 | P1 | Planned | HTTP/SOCKS proxy is not implemented.<br>HTTP/SOCKS proxy를 구현하지 않았습니다. |
+| SSH-007 | P1 | Partial | Direct, HTTP CONNECT, SOCKS4, and SOCKS5 routes create real SSH.NET connections and the same route is used for SFTP. Managed profiles, explicit proxy-DNS evidence, jump/audited adapters, and the enterprise matrix are incomplete.<br>Direct·HTTP CONNECT·SOCKS4·SOCKS5 경로가 실제 SSH.NET 연결을 만들고 SFTP도 같은 경로를 사용합니다. 관리형 프로필·명시적 proxy-DNS 증거·jump/감사 어댑터·기업용 매트릭스는 미완성입니다. |
 | SSH-008 | P1 | Partial | Keepalive is applied per connection; automatic reconnect and replay safety UX are missing.<br>연결별 keepalive는 적용하지만 자동 재연결과 replay 안전 UX가 없습니다. |
 | SSH-009 | P1 | Planned | Negotiated KEX/cipher/MAC/host-key information is not surfaced.<br>협상된 KEX/cipher/MAC/host-key 정보를 표시하지 않습니다. |
 | SSH-010 | P0 | Planned | There is no explicit product policy or tested override model for legacy algorithms.<br>Legacy 알고리즘을 위한 명시적 제품 정책과 검증된 override 모델이 없습니다. |
@@ -83,11 +83,12 @@ The native renderer is intentionally transitional. See [ADR 0001](adr/0001-termi
 | --- | --- | --- | --- |
 | TERM-001 | P0 | Partial | A persistent real `ShellStream` PTY exists; the required vim/tmux/htop/sudo compatibility matrix has not passed.<br>실제 지속 `ShellStream` PTY가 있지만 필수 vim/tmux/htop/sudo 호환 매트릭스를 통과하지 않았습니다. |
 | TERM-002 | P0 | Partial | Cursor, erase, scroll region, alternate screen, and device responses exist; SGR style/color, mouse, and broad VT compatibility do not.<br>커서·지우기·스크롤 영역·대체 화면·장치 응답은 있지만 SGR 색·스타일·마우스·폭넓은 VT 호환성이 없습니다. |
-| TERM-003 | P0 | Partial | Control letters, Tab, arrows, navigation keys, DECCKM, and F1–F12 are sent; exhaustive shortcut/input validation is missing.<br>Control 문자·Tab·방향키·탐색키·DECCKM·F1–F12는 전송하지만 전체 shortcut/input 검증이 없습니다. |
+| TERM-003 | P0 | Partial | Control letters, Tab, arrows, navigation keys, DECCKM, and F1–F12 are sent. Global tab/navigation/settings shortcuts and Ctrl/Shift+Insert are implemented; exhaustive input validation is missing.<br>Control 문자·Tab·방향키·탐색키·DECCKM·F1–F12를 전송하며 전역 탭·내비게이션·설정 단축키와 Ctrl/Shift+Insert를 구현했습니다. 전체 입력 검증은 남아 있습니다. |
 | TERM-004 | P0 | Partial | Runtime server-side resize uses SSH.NET's public `ChangeWindowSize` API; shell/TUI and resize-stress integration evidence remains incomplete.<br>실행 중 서버 측 크기 변경은 SSH.NET 공개 `ChangeWindowSize` API를 사용하지만 셸/TUI·resize stress 통합 증거는 아직 완성되지 않았습니다. |
 | TERM-005 | P1 | Partial | Incremental UTF-8 input/output exists; Korean IME and wide/combining cell behavior are not acceptance-tested or complete.<br>점진적 UTF-8 입력·출력은 있지만 한글 IME와 넓은 문자·결합 문자 셀 동작이 완전하지 않고 인수 테스트가 없습니다. |
-| TERM-006 | P1 | Partial | Bounded scrollback and selectable text exist; terminal search, dedicated copy/paste UX, and 100,000-line evidence are missing.<br>제한된 scrollback과 텍스트 선택은 있지만 터미널 검색·전용 copy/paste UX·100,000줄 검증이 없습니다. |
+| TERM-006 | P1 | Partial | Bounded scrollback, selectable text, Ctrl+Insert copy, and Shift+Insert paste exist; terminal search, bracketed-paste mode detection, and 100,000-line evidence are missing.<br>제한된 scrollback·텍스트 선택·Ctrl+Insert 복사·Shift+Insert 붙여넣기가 있지만 터미널 검색·bracketed-paste 모드 감지·100,000줄 검증은 남아 있습니다. |
 | TERM-007 | P1 | Planned | Opt-in transcript storage and retention are not implemented.<br>선택형 transcript 저장과 보존 정책을 구현하지 않았습니다. |
+| TERM-008 | P1 | Implemented | REPL cells classify JSON/YAML syntax plus critical/error and warning text with bounded parsing. Recent and saved commands are suggested without execution and accepted with Right Arrow or optional Tab.<br>REPL 셀은 제한된 파싱으로 JSON/YAML 문법과 critical/error·warning 텍스트를 분류합니다. 최근·저장 명령은 실행 없이 제안되며 오른쪽 화살표 또는 선택형 Tab으로 적용합니다. |
 
 ## SFTP file system / SFTP 파일 시스템
 

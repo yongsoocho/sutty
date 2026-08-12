@@ -240,6 +240,7 @@
       "sutty.core": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "[8.0.3, )",
           "SSH.NET": "[2025.1.0, )"
         }
       },

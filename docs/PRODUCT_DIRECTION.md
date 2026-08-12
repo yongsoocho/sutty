@@ -16,7 +16,7 @@ Sutty combines everyday **local terminals, SSH, SFTP, reusable commands, and mul
 - It is a target for a future GA release, not a claim that the current Alpha is complete.
 - It does not include FTP/FTPS, Telnet/Serial, RDP/VNC/X11, cloud/mobile, or team collaboration.
 
-Therefore the replacement target is **PuTTY's SSH workflow and FileZilla's SFTP workflow**, not every protocol or platform those products support. Sutty must not claim full-product parity until that scope changes and the corresponding compatibility gates pass.
+Therefore the replacement target is the established **Windows SSH and SFTP administrator workflow**, not every protocol or platform available in unrelated client categories. Sutty must not claim full-product parity until that scope changes and the corresponding compatibility gates pass.
 
 Sutty remains local-first: no account, no cloud backend, and no team control plane.
 
@@ -107,7 +107,7 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - 미래 GA의 목표이며 현재 Alpha가 완성됐다는 뜻은 아닙니다.
 - FTP/FTPS, Telnet/Serial, RDP/VNC/X11, 클라우드·모바일·팀 협업은 포함하지 않습니다.
 
-따라서 대체 목표는 **PuTTY의 SSH 흐름과 FileZilla의 SFTP 흐름**이며 두 제품이 지원하는 모든 프로토콜·플랫폼이 아닙니다. 범위를 바꾸고 해당 호환성 게이트를 통과하기 전에는 전체 제품 동등성을 주장하지 않습니다.
+따라서 대체 목표는 Windows에서 널리 쓰이는 **SSH·SFTP 서버 관리 흐름**이며 관련 없는 클라이언트 범주의 모든 프로토콜·플랫폼이 아닙니다. 범위를 바꾸고 해당 호환성 게이트를 통과하기 전에는 전체 제품 동등성을 주장하지 않습니다.
 
 Sutty는 로컬 우선 원칙을 유지합니다. 계정, 클라우드 백엔드, 팀 제어면을 만들지 않습니다.
 

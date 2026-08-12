@@ -13,6 +13,10 @@ try
           "Language": "en",
           "TerminalFontFamily": "Cascadia Mono",
           "TerminalFontSize": 13,
+          "EnableStructuredTextHighlighting": true,
+          "EnableSeverityHighlighting": true,
+          "EnableCommandSuggestions": true,
+          "AcceptSuggestionWithTab": true,
           "DefaultSshPort": 70000,
           "DefaultKeepAliveSeconds": 30,
           "LastAuthMethod": "PublicKey",
@@ -35,6 +39,9 @@ try
     Assert(loaded.DefaultSshPort == 65_535, "port range normalization");
     Assert(loaded.HistoryTopHostCount == 16, "frequent-host setting normalization");
     Assert(loaded.RecentConnectionTags.SequenceEqual(["prod"]), "recent-tag deduplication");
+    Assert(loaded.EnableStructuredTextHighlighting, "structured highlighting setting load");
+    Assert(loaded.EnableSeverityHighlighting, "severity highlighting setting load");
+    Assert(loaded.EnableCommandSuggestions, "suggestion setting load");
 
     loaded.HistoryTopHostCount = 4;
     loaded.RightPanelWidth = 420;

@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using sutty.Core.Commands;
 using sutty.Core.Terminal;
 using sutty.Setting;
 using sutty.UI.Helpers;
@@ -28,6 +29,9 @@ public sealed partial class LocalTerminalView : UserControl
     private readonly object _terminalOutputGate = new();
     private readonly Queue<byte[]> _terminalOutputQueue = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
+    private readonly SemaphoreSlim _broadcastCommandGate = new(1, 1);
+    private readonly object _broadcastCaptureGate = new();
+    private TerminalBroadcastCapture? _broadcastCapture;
     private int _terminalQueuedBytes;
     private long _terminalDroppedBytes;
     private bool _terminalBacklogResetPending;
@@ -139,6 +143,7 @@ public sealed partial class LocalTerminalView : UserControl
             return;
 
         var data = args.Data.ToArray();
+        CaptureBroadcastOutput(data);
         lock (_terminalOutputGate)
         {
             if (data.Length > MaxTerminalBacklogBytes)
@@ -309,6 +314,69 @@ public sealed partial class LocalTerminalView : UserControl
         }
     }
 
+    /// <summary>
+    /// Sends a broadcast command to whichever shell currently owns this ConPTY tab. The
+    /// shell may be local PowerShell or a manually opened SSH shell. Portable echo markers
+    /// delimit the response without replacing that foreground process.
+    /// </summary>
+    public async Task<CommandExecutionResult> RunExternalCommandDetailedAsync(string command)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(command);
+        await _broadcastCommandGate.WaitAsync(_lifetimeCancellation.Token);
+        try
+        {
+            if (Terminal.TerminalState != TerminalState.Open)
+                throw new InvalidOperationException("Local terminal is not open.");
+
+            var startedAt = DateTimeOffset.UtcNow;
+            var started = Stopwatch.GetTimestamp();
+            var token = Guid.NewGuid().ToString("N");
+            var beginMarker = $"__SUTTY_BROADCAST_BEGIN_{token}__";
+            var endMarker = $"__SUTTY_BROADCAST_END_{token}__";
+            var capture = new TerminalBroadcastCapture(beginMarker, endMarker);
+            lock (_broadcastCaptureGate)
+                _broadcastCapture = capture;
+
+            var normalizedCommand = ClipboardHelper.NormalizeTerminalPaste(command).TrimEnd('\r');
+            var wireInput = $"echo {beginMarker}\r{normalizedCommand}\recho {endMarker}\r";
+
+            try
+            {
+                await SendTerminalTextAsync(wireInput);
+                var output = await capture.Completion
+                    .WaitAsync(TimeSpan.FromMinutes(10), _lifetimeCancellation.Token);
+                return new CommandExecutionResult(
+                    command,
+                    output,
+                    "",
+                    null,
+                    null,
+                    startedAt,
+                    Stopwatch.GetElapsedTime(started));
+            }
+            finally
+            {
+                lock (_broadcastCaptureGate)
+                {
+                    if (ReferenceEquals(_broadcastCapture, capture))
+                        _broadcastCapture = null;
+                }
+            }
+        }
+        finally
+        {
+            _broadcastCommandGate.Release();
+        }
+    }
+
+    private void CaptureBroadcastOutput(byte[] data)
+    {
+        TerminalBroadcastCapture? capture;
+        lock (_broadcastCaptureGate)
+            capture = _broadcastCapture;
+        capture?.Feed(data);
+    }
+
     private async void TerminalSurface_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
     {
         if (Terminal.TerminalState != TerminalState.Open)
@@ -359,6 +427,25 @@ public sealed partial class LocalTerminalView : UserControl
 
         args.Handled = true;
         await SendTerminalTextAsync(sequence);
+    }
+
+    private async void LocalTerminalView_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
+    {
+        var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
+        var shiftDown = IsKeyDown(Windows.System.VirtualKey.Shift);
+        if (args.Key != Windows.System.VirtualKey.Insert || (!controlDown && !shiftDown))
+            return;
+
+        args.Handled = true;
+        if (controlDown)
+        {
+            ClipboardHelper.CopyText(TerminalText.SelectedText);
+            return;
+        }
+
+        var clipboardText = await ClipboardHelper.GetTextAsync();
+        if (!string.IsNullOrEmpty(clipboardText))
+            await SendTerminalTextAsync(ClipboardHelper.NormalizeTerminalPaste(clipboardText));
     }
 
     private async void TerminalSurface_CharacterReceived(
@@ -515,4 +602,5 @@ public sealed partial class LocalTerminalView : UserControl
         => _terminalBuffer.ApplicationCursorKeys
             ? $"\x1bO{final}"
             : $"\x1b[{final}";
+
 }

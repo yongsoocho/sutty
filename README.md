@@ -41,15 +41,18 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
 - Up to 16 mixed local/SSH tabs, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged SSH sessions.
 - Immediately applied Korean/English settings, atomic settings persistence, and dark/light themes.
+- Direct, HTTP CONNECT, SOCKS4, and SOCKS5 connection routes shared by SSH and SFTP. Enterprise mode rejects direct routes instead of silently falling back.
+- REPL JSON/YAML syntax highlighting, red critical/error and amber warning marking, and history/saved-command suggestions accepted with Right Arrow or Tab.
+- Keyboard-first navigation: `Ctrl+1`–`Ctrl+9` tabs, `Ctrl+T` local tab, `Alt+1`–`Alt+6` work surfaces/settings, `Ctrl+,` settings, and Insert-style copy/paste.
 
 ### Why this is not GA
 
 - The SSH PTY and local ConPTY are real and support runtime resize, but the current WinUI text renderer is an **Alpha-only bridge**. It consumes SGR without rendering color/style and lacks mouse protocols and complete wide/combining-cell behavior. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
-- SSH agent, OTP/multi-prompt keyboard-interactive UI, legacy `.ppk` import, jump hosts, proxies, and automatic reconnect are unavailable. Password mode's non-interactive fallback handles password-like prompts only. Keepalive is available; disabled controls are not capabilities.
+- SSH agent, OTP/multi-prompt keyboard-interactive UI, legacy `.ppk` import, jump hosts, audited gateway adapters, external proxy commands, and automatic reconnect are unavailable. Direct HTTP/SOCKS proxy routes are an Alpha baseline without the complete enterprise route matrix. Password mode's non-interactive fallback handles password-like prompts only.
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP currently transfers files, not directory trees. It has no pause/retry/resume, final size/checksum verification, `chmod`, synchronized browsing, or a complete collision-policy matrix.
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent audit/export, timeout, or streaming workflow.
-- Port forwarding, import/export, enterprise policy, audit logs, support bundles, signed release automation, and the GA compatibility/accessibility matrices remain planned.
+- Port forwarding, managed gateway profiles, central audit transport, import/export, full enterprise policy, support bundles, signed release automation, and the GA compatibility/accessibility matrices remain planned.
 
 The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Enterprise implementation status](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md). Product gates and explicit non-goals are in [Product Direction](docs/PRODUCT_DIRECTION.md).
 
@@ -145,15 +148,18 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
 - 로컬/SSH 혼합 최대 16개 탭, 기본 선택 0개의 Multi 대상, PROD 태그 SSH 세션이 포함된 브로드캐스트의 추가 확인
 - 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마
+- SSH와 SFTP가 함께 사용하는 Direct·HTTP CONNECT·SOCKS4·SOCKS5 연결 경로. 기업 모드에서는 Direct 경로와 조용한 우회를 차단합니다.
+- REPL JSON/YAML 문법 강조, critical/error 빨간색·warning 노란색 표시, 최근/저장 명령 제안과 오른쪽 화살표·Tab 적용
+- `Ctrl+1`–`Ctrl+9` 탭, `Ctrl+T` 로컬 탭, `Alt+1`–`Alt+6` 작업 화면/설정, `Ctrl+,` 설정, Insert 방식 복사·붙여넣기 단축키
 
 ### GA가 아닌 이유
 
 - SSH PTY와 로컬 ConPTY는 실제이고 실행 중 크기 변경을 지원하지만 현재 WinUI 텍스트 렌더러는 **Alpha 전용 연결 단계**입니다. SGR을 소비하지만 색·스타일을 표시하지 않고, 마우스 프로토콜과 넓은 문자·결합 문자의 완전한 셀 처리가 없습니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
-- SSH agent, OTP·다중 prompt keyboard-interactive UI, 레거시 `.ppk` 가져오기, 점프 호스트, 프록시, 자동 재연결은 지원하지 않습니다. 비밀번호 방식의 비대화형 fallback은 password 형태 prompt만 처리합니다. Keepalive는 사용할 수 있지만 비활성화된 컨트롤은 기능이 아닙니다.
+- SSH agent, OTP·다중 prompt keyboard-interactive UI, 레거시 `.ppk` 가져오기, 점프 호스트, 감사 게이트웨이 어댑터, 외부 프록시 명령, 자동 재연결은 지원하지 않습니다. Direct HTTP/SOCKS 프록시는 Alpha 기준선이며 기업용 전체 경로 매트릭스는 아직 검증되지 않았습니다. 비밀번호 방식의 비대화형 fallback은 password 형태 prompt만 처리합니다.
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - 현재 SFTP는 파일만 전송하며 디렉터리 트리는 전송하지 않습니다. 일시정지·재시도·재개, 최종 크기/checksum 검증, `chmod`, 동기 탐색, 완전한 충돌 정책 매트릭스가 없습니다.
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 audit/export, timeout, streaming 흐름이 없습니다.
-- 포트 포워딩, 가져오기·내보내기, 기업 정책, 감사 로그, 지원 번들, 서명 릴리스 자동화, GA 호환성·접근성 매트릭스는 계획 상태입니다.
+- 포트 포워딩, 관리형 게이트웨이 프로필, 중앙 감사 전송, 가져오기·내보내기, 전체 기업 정책, 지원 번들, 서명 릴리스 자동화, GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
 현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Enterprise 구현 상태](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md), 제품 게이트와 명시적 비목표는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 있습니다.
 
