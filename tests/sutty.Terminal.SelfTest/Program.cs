@@ -1,4 +1,5 @@
 using sutty.UI.Helpers;
+using sutty.Core.Plugins;
 using sutty.Core.Terminal;
 using System.Runtime.Versioning;
 using System.Text;
@@ -45,6 +46,61 @@ Assert(screen.ApplicationCursorKeys, "DECCKM enables SS3 application cursor keys
 Feed("\x1b[?1l");
 Assert(!screen.ApplicationCursorKeys, "DECCKM reset restores normal cursor keys");
 
+screen.Reset();
+Feed("ABC\x1b[1D");
+Assert(screen.Render().Contains("C\u0332", StringComparison.Ordinal),
+    "cursor underlines occupied cells without hiding their character");
+
+var captureBegin = $"__SUTTY_BROADCAST_BEGIN_{Guid.NewGuid():N}__";
+var captureEnd = $"__SUTTY_BROADCAST_END_{Guid.NewGuid():N}__";
+var broadcastCapture = new TerminalBroadcastCapture(captureBegin, captureEnd);
+var capturedWire = Encoding.UTF8.GetBytes(
+    $"PS> echo {captureBegin}\r\n{captureBegin}\r\n" +
+    $"PS> Write-Output result\r\nresult\r\nPS> echo {captureEnd}\r\n{captureEnd}\r\n");
+for (var offset = 0; offset < capturedWire.Length;)
+{
+    var length = Math.Min(7, capturedWire.Length - offset);
+    broadcastCapture.Feed(capturedWire.AsSpan(offset, length));
+    offset += length;
+}
+var capturedBroadcastOutput = await broadcastCapture.Completion;
+Assert(capturedBroadcastOutput.Contains("result", StringComparison.Ordinal),
+    "broadcast output markers survive packet splitting");
+Assert(!capturedBroadcastOutput.Contains(captureBegin, StringComparison.Ordinal),
+    "echoed begin-marker command is not mistaken for marker output");
+
+var json = "{\"service\":\"api\",\"replicas\":3,\"ready\":true}";
+var jsonSpans = TerminalTextClassifier.Classify(json);
+Assert(HasKind(jsonSpans, TerminalTextHighlightKind.Property),
+    "JSON properties are classified");
+Assert(HasKind(jsonSpans, TerminalTextHighlightKind.String),
+    "JSON strings are classified");
+Assert(HasKind(jsonSpans, TerminalTextHighlightKind.Number),
+    "JSON numbers are classified");
+
+var yaml = "service: api\nreplicas: 3\n# rollout warning";
+var yamlSpans = TerminalTextClassifier.Classify(yaml);
+Assert(HasKind(yamlSpans, TerminalTextHighlightKind.Property),
+    "YAML properties are classified");
+Assert(HasKind(yamlSpans, TerminalTextHighlightKind.Comment),
+    "YAML comments are classified");
+Assert(HasKind(yamlSpans, TerminalTextHighlightKind.Warning),
+    "warning terms are classified");
+
+var dangerSpans = TerminalTextClassifier.Classify("sudo rm -rf /srv/cache");
+Assert(HasKind(dangerSpans, TerminalTextHighlightKind.Critical),
+    "dangerous commands are classified as critical");
+
+var suggestions = new CommandSuggestionEngine();
+var suggestion = suggestions.Suggest(new CommandSuggestionRequest(
+    "kubectl get",
+    ["kubectl get pods", "kubectl get services"],
+    ["kubectl get nodes"]));
+Assert(suggestion?.Text == "kubectl get services",
+    "newest matching command is suggested first");
+Assert(suggestions.Suggest(new CommandSuggestionRequest("no-match", [], [])) is null,
+    "suggestion engine leaves unmatched input unchanged");
+
 if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
 {
     await VerifyLocalConPtyAsync();
@@ -64,6 +120,10 @@ static void Assert(bool condition, string description)
         throw new InvalidOperationException($"Self-test failed: {description}");
 }
 
+static bool HasKind(
+    IReadOnlyList<TerminalTextSpan> spans,
+    TerminalTextHighlightKind kind) => spans.Any(span => span.Kind == kind);
+
 [SupportedOSPlatform("windows10.0.17763")]
 static async Task VerifyLocalConPtyAsync()
 {
@@ -74,10 +134,15 @@ static async Task VerifyLocalConPtyAsync()
     var decoder = Encoding.UTF8.GetDecoder();
     var sentinel = $"__SUTTY_LOCAL_PTY_{Guid.NewGuid():N}__";
     const string koreanSentinel = "한글-로컬-터미널";
+    var broadcastBegin = $"__SUTTY_BROADCAST_BEGIN_{Guid.NewGuid():N}__";
+    var broadcastResult = $"__SUTTY_BROADCAST_RESULT_{Guid.NewGuid():N}__";
+    var broadcastEnd = $"__SUTTY_BROADCAST_END_{Guid.NewGuid():N}__";
     var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var liveBroadcastCapture = new TerminalBroadcastCapture(broadcastBegin, broadcastEnd);
 
     terminal.TerminalDataReceived += (_, args) =>
     {
+        liveBroadcastCapture.Feed(args.Data.Span);
         lock (outputGate)
         {
             var characters = new char[Encoding.UTF8.GetMaxCharCount(args.Data.Length)];
@@ -114,6 +179,17 @@ static async Task VerifyLocalConPtyAsync()
         }
         Assert(await terminal.ResizeTerminalAsync(new TerminalSize(100, 30)),
             "local ConPTY resizes");
+        lock (outputGate)
+            output.Clear();
+        await terminal.SendTerminalInputAsync(
+            Encoding.UTF8.GetBytes(
+                $"echo {broadcastBegin}\rWrite-Output '{broadcastResult}'\recho {broadcastEnd}\r"));
+        var liveBroadcastOutput = await liveBroadcastCapture.Completion
+            .WaitAsync(TimeSpan.FromSeconds(10));
+        Assert(liveBroadcastOutput.Contains(broadcastResult, StringComparison.Ordinal),
+            "portable broadcast markers delimit actual local shell output");
+        Assert(!liveBroadcastOutput.Contains(broadcastBegin, StringComparison.Ordinal),
+            "actual local capture excludes begin marker");
         Console.WriteLine("Local ConPTY I/O and resize passed; closing...");
     }
     finally

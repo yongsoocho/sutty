@@ -1,9 +1,96 @@
 using sutty.Core.Security;
+using sutty.Core.Diagnostics;
+using sutty.Core.Models;
+using sutty.Core.Routing;
+using sutty.Core.Sessions;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using System.Text.Json.Nodes;
 
 AssertSshNet2025PublicApi();
+
+ConnectionLogStore.Clear();
+ConnectionLogStore.Append(
+    Guid.NewGuid(),
+    "diagnostic-test",
+    "server.internal:22",
+    ConnectionLogSeverity.Error,
+    "authentication",
+    "password=do-not-log passphrase:also-secret",
+    "token=hidden secret='hidden-too'",
+    "proxy=https://operator:proxy-secret@proxy.internal:8443");
+var sanitizedLog = ConnectionLogStore.Snapshot().Single();
+Assert(!sanitizedLog.MessageKo.Contains("do-not-log", StringComparison.Ordinal),
+    "connection log redacts password values");
+Assert(!sanitizedLog.MessageKo.Contains("also-secret", StringComparison.Ordinal),
+    "connection log redacts passphrase values");
+Assert(!sanitizedLog.MessageEn.Contains("hidden-too", StringComparison.Ordinal),
+    "connection log redacts named secret values");
+Assert(!sanitizedLog.Detail!.Contains("operator:proxy-secret", StringComparison.Ordinal),
+    "connection log redacts URI user info");
+ConnectionLogStore.Clear();
+
+const string failedConnectionPassword = "diagnostic-password-must-not-leak";
+var failedSession = new SshNetSession(new SshConnectionInfo
+{
+    Host = "127.0.0.1",
+    Port = 1,
+    Username = "diagnostic-user",
+    AuthMethod = SshAuthMethod.Password,
+    Password = failedConnectionPassword,
+});
+using (var connectionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+    await failedSession.ConnectAsync(connectionTimeout.Token);
+Assert(failedSession.State == SessionState.Failed,
+    "refused SSH connection enters failed state");
+var failedConnectionLogs = ConnectionLogStore.Snapshot()
+    .Where(entry => entry.SessionId == failedSession.Id)
+    .ToArray();
+Assert(failedConnectionLogs.Any(entry => entry.Severity >= ConnectionLogSeverity.Error),
+    "failed SSH connection emits an error diagnostic");
+Assert(failedConnectionLogs.Any(entry => entry.Severity == ConnectionLogSeverity.Verbose),
+    "failed SSH connection captures verbose SSH.NET diagnostics");
+Assert(!string.Join('\n', failedConnectionLogs.Select(entry =>
+        $"{entry.MessageKo}\n{entry.MessageEn}\n{entry.Detail}"))
+    .Contains(failedConnectionPassword, StringComparison.Ordinal),
+    "SSH.NET verbose diagnostics exclude the password");
+await failedSession.DisconnectAsync();
+ConnectionLogStore.Clear();
+
+var proxyRoute = RouteResolver.Resolve(
+    new ConnectionRoute
+    {
+        Id = "corp-proxy",
+        Type = ConnectionRouteType.Socks5,
+        Host = "proxy.internal",
+        Port = 1080,
+        Username = "proxy-user",
+        Password = "secret-not-for-audit",
+    },
+    new ConnectionRoutePolicy
+    {
+        EnterpriseMode = true,
+        AllowedRouteTypes = [ConnectionRouteType.Socks5],
+    });
+Assert(proxyRoute.Type == ConnectionRouteType.Socks5, "enterprise proxy route resolution");
+AssertThrows<RoutePolicyViolationException>(
+    () => RouteResolver.Resolve(
+        new ConnectionRoute(),
+        new ConnectionRoutePolicy { EnterpriseMode = true }),
+    "enterprise route policy blocks direct fallback");
+
+var auditContext = AuditContext.Create(
+    new SshConnectionInfo
+    {
+        Host = "server.internal",
+        Port = 22,
+        Username = "operator",
+    },
+    proxyRoute);
+Assert(auditContext.RouteId == "corp-proxy", "audit context carries route id");
+Assert(auditContext.CorrelationId.Length == 32, "audit context correlation id");
+Assert(!auditContext.ToString().Contains("secret-not-for-audit", StringComparison.Ordinal),
+    "audit context excludes proxy credentials");
 
 var scratch = Path.Combine(
     Path.GetTempPath(),

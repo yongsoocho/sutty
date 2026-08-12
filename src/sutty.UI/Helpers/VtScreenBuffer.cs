@@ -14,6 +14,8 @@ namespace sutty.UI.Helpers;
 public sealed class VtScreenBuffer
 {
     private const int MaxEscapeLength = 128;
+    private const char CursorUnderline = '\u0332';
+    private const char BlankCursor = '\u2581';
     private readonly int _maxScrollback;
     private readonly List<string> _scrollback = [];
     private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
@@ -92,12 +94,40 @@ public sealed class VtScreenBuffer
         for (var row = 0; row < screen.Rows; row++)
         {
             var cells = screen.GetRow(row);
-            if (_cursorVisible && row == screen.CursorRow)
-                cells[Math.Clamp(screen.CursorColumn, 0, screen.Columns - 1)] = '▌';
-            lines.Add(new string(cells).TrimEnd(' '));
+            lines.Add(_cursorVisible && row == screen.CursorRow
+                ? RenderCursorRow(cells, screen.CursorColumn)
+                : new string(cells).TrimEnd(' '));
         }
 
         return string.Join('\n', lines);
+    }
+
+    private static string RenderCursorRow(char[] cells, int cursorColumn)
+    {
+        cursorColumn = Math.Clamp(cursorColumn, 0, cells.Length - 1);
+        var lastContent = Array.FindLastIndex(cells, value => value != ' ');
+        var lastColumn = Math.Max(lastContent, cursorColumn);
+        var result = new StringBuilder(lastColumn + 2);
+
+        for (var column = 0; column <= lastColumn; column++)
+        {
+            var value = cells[column];
+            if (column != cursorColumn)
+            {
+                result.Append(value);
+                continue;
+            }
+
+            // A block cursor replaced the cell and hid the character underneath it.
+            // Keep occupied cells intact and add a zero-width underline; use a thin
+            // lower bar only when the cursor is sitting on an empty cell.
+            if (value == ' ')
+                result.Append(BlankCursor);
+            else
+                result.Append(value).Append(CursorUnderline);
+        }
+
+        return result.ToString().TrimEnd(' ');
     }
 
     private void Process(char value)

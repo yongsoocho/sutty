@@ -13,6 +13,7 @@ namespace sutty.UI.Views
     {
         public const int SlotCount = 16;
         private const double CellSpacing = 8;
+        private IReadOnlyList<FrameworkElement> _views = [];
 
         public ObservableCollection<MultiSlotVm> Slots { get; } = [];
 
@@ -21,7 +22,11 @@ namespace sutty.UI.Views
             InitializeComponent();
         }
 
-        public void RefreshLanguage() => Bindings.Update();
+        public void RefreshLanguage()
+        {
+            Bindings.Update();
+            SetSessions(_views);
+        }
 
         // 셀 크기를 가용 영역의 정확히 1/4로 → 4×4가 가로·세로 꽉 찬다
         private void Cells_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -34,34 +39,40 @@ namespace sutty.UI.Views
         }
 
         /// <summary>열린 세션들로 슬롯을 다시 채운다. 세션별 체크 상태와 결과 미리보기는 유지.</summary>
-        public void SetSessions(IReadOnlyList<SessionView> views)
+        public void SetSessions(IReadOnlyList<FrameworkElement> views)
         {
+            _views = views.ToArray();
             // 이전 상태 기억 (세션 기준)
             var previous = Slots
-                .Where(s => s.View is not null)
-                .ToDictionary(s => s.View!, s => (s.IsSelected, s.LastOutput, s.ResultText));
+                .Where(s => s.SessionKey is not null)
+                .ToDictionary(s => s.SessionKey!, s => (s.IsSelected, s.LastOutput, s.ResultText));
 
             Slots.Clear();
             for (var i = 0; i < SlotCount; i++)
             {
-                var view = i < views.Count ? views[i] : null;
-                var known = view is not null && previous.TryGetValue(view, out var prev);
+                var tabContent = i < views.Count ? views[i] : null;
+                var sessionView = tabContent as SessionView;
+                var localView = tabContent as LocalTerminalView;
+                var key = (object?)sessionView ?? localView;
+                var known = key is not null && previous.TryGetValue(key, out var prev);
                 Slots.Add(new MultiSlotVm
                 {
-                    View = view,
-                    // New sessions are never implicit broadcast targets. Preserve an
-                    // explicit prior choice only while the same session remains open.
-                    IsSelected = known && previous[view!].IsSelected,
-                    LastOutput = known ? previous[view!].LastOutput : "",
-                    ResultText = known ? previous[view!].ResultText : "",
+                    View = sessionView,
+                    LocalView = localView,
+                    // 새 로컬/SSH 탭은 기본 선택하고, 기존 탭은 사용자의 체크를 유지한다.
+                    IsSelected = known ? previous[key!].IsSelected : key is not null,
+                    LastOutput = known ? previous[key!].LastOutput : "",
+                    ResultText = known ? previous[key!].ResultText : "",
                 });
             }
 
-            CountText.Text = $"{views.Count} / {SlotCount} sessions";
+            CountText.Text = Helpers.Loc.T(
+                $"{views.Count} / {SlotCount}개 세션",
+                $"{views.Count} / {SlotCount} sessions");
         }
 
         /// <summary>체크된(브로드캐스트 대상) 슬롯들.</summary>
         public List<MultiSlotVm> GetTargetSlots() =>
-            Slots.Where(s => s.View is not null && s.IsSelected).ToList();
+            Slots.Where(s => s.HasSession && s.IsSelected).ToList();
     }
 }

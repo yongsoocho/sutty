@@ -23,6 +23,8 @@ This document maps the current repository to the Windows Enterprise Product Plan
 | Credential vault | Opt-in AES-256-GCM records use a random master key protected for the current Windows user. Plaintext secrets are excluded from settings, SQLite, history, and crash messages. |
 | Connection history | Every completed attempt appends success, failure, or cancellation, bounded diagnostic code, and duration. Duplicate attempts remain separate rows. Retention and frequent-host count are settings. |
 | Desktop state | Theme, language, terminal mode, window sizes, and right-panel width persist locally. Resize persistence is debounced. |
+| Route foundation | Direct, HTTP CONNECT, SOCKS4, and SOCKS5 routes are resolved before client creation and shared by SSH/SFTP. Enterprise mode rejects Direct without fallback; one credential-free correlation context is created per session. |
+| Terminal productivity | REPL JSON/YAML and severity highlighting, bounded command suggestions, Right/Tab acceptance, tab/navigation/settings shortcuts, and Insert-style copy/paste are implemented. |
 
 ## Verification added for this milestone
 
@@ -30,12 +32,13 @@ This document maps the current repository to the Windows Enterprise Product Plan
 - Empty local database, legacy saved-host migration, profile create/update/favorite/delete, append-only duplicate history, outcome records, and frequent-host aggregation.
 - Legacy settings compatibility, value normalization, atomic persistence, panel-width persistence, and corrupt-file fallback.
 - Existing terminal parser/input and safe SFTP path/transfer checks remain part of the solution.
+- Route-policy rejection, credential-free audit context, structured-text classification, danger/warning classification, and command-suggestion ordering have focused self-tests.
 - x64 Debug is warning-free. x64 and ARM64 Release builds complete; the only remaining trim diagnostics originate in Windows SDK runtime assemblies rather than Sutty code.
 
 ## Remaining release gates
 
 1. Replace the transitional native terminal renderer with the approved hardened, package-local renderer and pass the full shell/TUI/Unicode/input/security matrix.
-2. Complete OTP and multi-prompt keyboard-interactive authentication, Windows SSH agent support, jump hosts, proxies, reconnect policy, and algorithm-policy UX.
+2. Complete OTP and multi-prompt keyboard-interactive authentication, Windows SSH agent support, jump hosts, managed gateway profiles, audited route adapters, proxy-DNS verification, reconnect policy, and algorithm-policy UX.
 3. Add recursive directory transfer, complete collision policy, verification, retry/resume, restart recovery, symlink policy, and large-file/deep-path evidence.
 4. Add local, remote, and dynamic port forwarding with bind-risk warnings and lifecycle tests.
 5. Finish streaming command output, typed named parameters, durable Multi details/export, timeouts, and redacted audit events.

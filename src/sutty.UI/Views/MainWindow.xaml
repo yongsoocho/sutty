@@ -11,7 +11,10 @@
     Title="Sutty"
     mc:Ignorable="d">
     <!--  테마(Dark/Light)는 코드에서 설정값으로 지정하고, 우상단 토글로 전환한다  -->
-    <Grid x:Name="Root" Background="{ThemeResource AppBg}">
+    <Grid
+        x:Name="Root"
+        Background="{ThemeResource AppBg}"
+        PreviewKeyDown="Root_PreviewKeyDown">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />
@@ -119,6 +122,15 @@
                         Tag="Multi">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE8A9;" Style="{StaticResource CompactRailIcon}" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+
+                    <NavigationViewItem
+                        Content="{x:Bind h:Loc.T('로그', 'Logs')}"
+                        Style="{StaticResource CompactRailItem}"
+                        Tag="Logs">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE9D9;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
                 </NavigationView.MenuItems>

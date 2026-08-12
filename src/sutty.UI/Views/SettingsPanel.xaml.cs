@@ -22,7 +22,9 @@ namespace sutty.UI.Views
         Connection = ConnectionPort | ConnectionKeepAlive,
         History = 1 << 6,
         Window = 1 << 7,
-        All = Language | Theme | TerminalAppearance | TerminalMode | Connection | History | Window,
+        TerminalFeatures = 1 << 8,
+        All = Language | Theme | TerminalAppearance | TerminalMode | TerminalFeatures |
+              Connection | History | Window,
     }
 
     public sealed class SettingsChangedEventArgs : EventArgs
@@ -78,6 +80,10 @@ namespace sutty.UI.Views
             FontFamilyBox.Text = settings.TerminalFontFamily;
             FontSizeBox.Value = settings.TerminalFontSize;
             TerminalModeRadios.SelectedIndex = settings.TerminalMode == "Terminal" ? 1 : 0;
+            StructuredHighlightToggle.IsOn = settings.EnableStructuredTextHighlighting;
+            SeverityHighlightToggle.IsOn = settings.EnableSeverityHighlighting;
+            CommandSuggestionToggle.IsOn = settings.EnableCommandSuggestions;
+            SuggestionTabToggle.IsOn = settings.AcceptSuggestionWithTab;
             DefaultPortBox.Value = settings.DefaultSshPort;
             KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
             HistoryDaysBox.Value = settings.HistoryRetentionDays;
@@ -158,6 +164,19 @@ namespace sutty.UI.Views
             SettingsService.Current.TerminalMode =
                 TerminalModeRadios.SelectedIndex == 1 ? "Terminal" : "Repl";
             CommitChangesNow(SettingChangeKind.TerminalMode);
+        }
+
+        private void TerminalFeatureToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading)
+                return;
+
+            var settings = SettingsService.Current;
+            settings.EnableStructuredTextHighlighting = StructuredHighlightToggle.IsOn;
+            settings.EnableSeverityHighlighting = SeverityHighlightToggle.IsOn;
+            settings.EnableCommandSuggestions = CommandSuggestionToggle.IsOn;
+            settings.AcceptSuggestionWithTab = SuggestionTabToggle.IsOn;
+            CommitChangesNow(SettingChangeKind.TerminalFeatures);
         }
 
         private void FontFamilyBox_TextChanged(object sender, TextChangedEventArgs e)

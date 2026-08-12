@@ -12,6 +12,18 @@ public sealed class AppSettings
     public string TerminalFontFamily { get; set; } = "Cascadia Mono";
     public int TerminalFontSize { get; set; } = 13;
 
+    /// <summary>Color JSON/YAML keys, strings, numbers, literals, and comments in REPL cells.</summary>
+    public bool EnableStructuredTextHighlighting { get; set; } = true;
+
+    /// <summary>Mark critical/error text red and warning text amber.</summary>
+    public bool EnableSeverityHighlighting { get; set; } = true;
+
+    /// <summary>Suggest matching recent and saved commands while entering a REPL command.</summary>
+    public bool EnableCommandSuggestions { get; set; } = true;
+
+    /// <summary>Allow Tab, in addition to Right Arrow, to accept a visible suggestion.</summary>
+    public bool AcceptSuggestionWithTab { get; set; } = true;
+
     public int DefaultSshPort { get; set; } = 22;
     public int DefaultKeepAliveSeconds { get; set; } = 30;
 

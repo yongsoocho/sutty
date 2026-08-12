@@ -159,6 +159,22 @@
                                     <x:String>REPL</x:String>
                                     <x:String>TERMINAL</x:String>
                                 </RadioButtons>
+                                <ToggleSwitch
+                                    x:Name="StructuredHighlightToggle"
+                                    Header="{x:Bind h:Loc.T('JSON / YAML 문법 강조', 'JSON / YAML syntax highlighting')}"
+                                    Toggled="TerminalFeatureToggle_Toggled" />
+                                <ToggleSwitch
+                                    x:Name="SeverityHighlightToggle"
+                                    Header="{x:Bind h:Loc.T('위험·경고 키워드 강조', 'Critical and warning highlighting')}"
+                                    Toggled="TerminalFeatureToggle_Toggled" />
+                                <ToggleSwitch
+                                    x:Name="CommandSuggestionToggle"
+                                    Header="{x:Bind h:Loc.T('명령 자동 제안', 'Command suggestions')}"
+                                    Toggled="TerminalFeatureToggle_Toggled" />
+                                <ToggleSwitch
+                                    x:Name="SuggestionTabToggle"
+                                    Header="{x:Bind h:Loc.T('Tab으로 제안 적용', 'Accept suggestions with Tab')}"
+                                    Toggled="TerminalFeatureToggle_Toggled" />
                             </StackPanel>
                         </Border>
                     </StackPanel>

@@ -1,8 +1,14 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using sutty.Core.Commands;
 using sutty.Core.Sessions;
+using sutty.Core.Terminal;
+using sutty.UI.Helpers;
 using sutty.UI.Views;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace sutty.UI.ViewModels;
 
@@ -15,6 +21,7 @@ public sealed class MultiSlotVm : ObservableObject
 {
     // XAML 타입 생성기가 init 접근자를 지원하지 않아 set 사용 (생성 후 바꾸지 말 것)
     public SessionView? View { get; set; }
+    public LocalTerminalView? LocalView { get; set; }
 
     /// <summary>체크된 세션에만 명령이 전송된다 (기본 전체 체크).</summary>
     public bool IsSelected { get; set; }
@@ -35,33 +42,67 @@ public sealed class MultiSlotVm : ObservableObject
         set => SetProperty(ref _resultText, value);
     }
 
-    public bool HasSession => View is not null;
-    public bool IsEmpty => View is null;
+    public bool HasSession => View is not null || LocalView is not null;
+    public bool IsEmpty => !HasSession;
 
-    public string Title => View?.Session.Info.Title ?? "";
+    public string Title => View?.Session.Info.Title
+        ?? (LocalView is null ? "" : "PowerShell");
 
-    public string HostText => View is null
-        ? ""
-        : $"{View.Session.Info.Host}:{View.Session.Info.Port}";
+    public string HostText => View is not null
+        ? $"{View.Session.Info.Host}:{View.Session.Info.Port}"
+        : LocalView is not null
+            ? $"{Loc.T("로컬", "local")} · {Environment.UserName}@{Environment.MachineName}"
+            : "";
 
-    public string StateText => View?.Session.State switch
-    {
-        null => "",
-        SessionState.Connecting => "connecting…",
-        SessionState.Connected => "connected",
-        SessionState.Disconnecting => "disconnecting…",
-        SessionState.Disconnected => "disconnected",
-        SessionState.Failed => "failed",
-        _ => "ready",
-    };
-
-    public Brush? StateBrush => View is null
-        ? null
-        : (Brush)Application.Current.Resources[View.Session.State switch
+    public string StateText => View is not null
+        ? View.Session.State switch
         {
-            SessionState.Connected => "StatusGreen",
-            SessionState.Connecting or SessionState.Disconnecting => "StatusAmber",
-            SessionState.Failed => "StatusRed",
-            _ => "StatusIdle",
-        }];
+            SessionState.Connecting => Loc.T("연결 중…", "connecting…"),
+            SessionState.Connected => Loc.T("연결됨", "connected"),
+            SessionState.Disconnecting => Loc.T("연결 종료 중…", "disconnecting…"),
+            SessionState.Disconnected => Loc.T("연결 끊김", "disconnected"),
+            SessionState.Failed => Loc.T("실패", "failed"),
+            _ => Loc.T("준비", "ready"),
+        }
+        : LocalView?.Terminal.TerminalState switch
+        {
+            TerminalState.Opening => Loc.T("시작 중…", "starting…"),
+            TerminalState.Open => Loc.T("로컬 · 실행 중", "local · running"),
+            TerminalState.Failed => Loc.T("로컬 · 실패", "local · failed"),
+            TerminalState.Closed => Loc.T("로컬 · 닫힘", "local · closed"),
+            _ => "",
+        };
+
+    public Brush? StateBrush => IsEmpty
+        ? null
+        : (Brush)Application.Current.Resources[View is not null
+            ? View.Session.State switch
+            {
+                SessionState.Connected => "StatusGreen",
+                SessionState.Connecting or SessionState.Disconnecting => "StatusAmber",
+                SessionState.Failed => "StatusRed",
+                _ => "StatusIdle",
+            }
+            : LocalView!.Terminal.TerminalState switch
+            {
+                TerminalState.Open => "StatusGreen",
+                TerminalState.Opening => "StatusAmber",
+                TerminalState.Failed => "StatusRed",
+                _ => "StatusIdle",
+            }];
+
+    public object? SessionKey => (object?)View ?? LocalView;
+
+    public Task<CommandExecutionResult> ExecuteAsync(string command) => View is not null
+        ? View.RunExternalCommandDetailedAsync(command)
+        : LocalView is not null
+            ? LocalView.RunExternalCommandDetailedAsync(command)
+            : Task.FromException<CommandExecutionResult>(
+                new InvalidOperationException("The broadcast slot is empty."));
+
+    public bool IsProduction => View?.Session.Info.Tags.Any(tag =>
+        tag.Trim().Equals("prod", StringComparison.OrdinalIgnoreCase) ||
+        tag.Trim().Equals("production", StringComparison.OrdinalIgnoreCase) ||
+        tag.Trim().StartsWith("prod-", StringComparison.OrdinalIgnoreCase) ||
+        tag.Trim().StartsWith("prod_", StringComparison.OrdinalIgnoreCase)) == true;
 }

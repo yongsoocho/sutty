@@ -2,6 +2,7 @@ using sutty.Core.Models;
 using sutty.Core.Commands;
 using sutty.Core.Sftp;
 using sutty.Core.Terminal;
+using sutty.Core.Routing;
 
 namespace sutty.Core.Sessions;
 
@@ -16,6 +17,7 @@ public interface ISshSession : IInteractiveTerminal
     Guid Id { get; }
     SshConnectionInfo Info { get; }
     SessionState State { get; }
+    AuditContext AuditContext { get; }
 
     /// <summary>State가 Failed일 때 마지막 오류 메시지.</summary>
     string? LastError { get; }

@@ -1,7 +1,9 @@
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using sutty.Core.Commands;
+using sutty.Core.Diagnostics;
 using sutty.Core.Models;
+using sutty.Core.Routing;
 using sutty.Core.Security;
 using sutty.Core.Sftp;
 using sutty.Core.Terminal;
@@ -20,6 +22,8 @@ public sealed class SshNetSession : ISshSession
     private ShellStream? _terminalStream;
     private readonly SshNetSftpService _sftpService;
     private readonly HostEndpointIdentity _hostEndpoint;
+    private readonly ResolvedConnectionRoute _route;
+    private readonly SshNetDiagnosticLoggerFactory _diagnosticLoggerFactory;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly SemaphoreSlim _terminalGate = new(1, 1);
     private readonly SemaphoreSlim _terminalWriteGate = new(1, 1);
@@ -30,6 +34,7 @@ public sealed class SshNetSession : ISshSession
     public Guid Id { get; } = Guid.NewGuid();
     public SshConnectionInfo Info { get; }
     public SessionState State { get; private set; } = SessionState.Idle;
+    public AuditContext AuditContext { get; }
     public string? LastError { get; private set; }
     public ISftpService Sftp => _sftpService;
     public SftpConnectionState SftpState { get; private set; } = SftpConnectionState.NotConnected;
@@ -50,6 +55,12 @@ public sealed class SshNetSession : ISshSession
         Info = info;
         _sftpService = new SshNetSftpService(() => _sftpClient);
         _hostEndpoint = HostEndpointIdentity.Create(info.Host, info.Port);
+        _route = RouteResolver.Resolve(info.Route, info.RoutePolicy);
+        AuditContext = AuditContext.Create(info, _route);
+        _diagnosticLoggerFactory = new SshNetDiagnosticLoggerFactory(
+            Id,
+            info.Title,
+            _hostEndpoint.Value);
     }
 
     public async Task ConnectAsync(CancellationToken ct = default)
@@ -62,6 +73,17 @@ public sealed class SshNetSession : ISshSession
 
             LastError = null;
             LastSftpError = null;
+            var connectionStarted = Stopwatch.GetTimestamp();
+            Log(
+                ConnectionLogSeverity.Information,
+                "SSH",
+                "SSH 연결 시도를 시작했습니다.",
+                "Starting SSH connection attempt.");
+            Log(
+                ConnectionLogSeverity.Verbose,
+                "Configuration",
+                $"대상={_hostEndpoint.Value}; 사용자={Info.Username}; 인증={Info.AuthMethod}; 경로={DescribeRoute()}; 제한시간=15초; keepalive={Info.KeepAliveSeconds}초",
+                $"target={_hostEndpoint.Value}; user={Info.Username}; auth={Info.AuthMethod}; route={DescribeRoute()}; timeout=15s; keepalive={Info.KeepAliveSeconds}s");
             // TrustOnce belongs to one logical connection attempt. SSH and its optional
             // SFTP transport share this context, but a failed/disconnected reconnect must
             // start unknown again instead of inheriting an earlier in-memory decision.
@@ -74,6 +96,11 @@ public sealed class SshNetSession : ISshSession
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                Log(
+                    ConnectionLogSeverity.Warning,
+                    "SSH",
+                    "SSH 연결 시도가 취소되었습니다.",
+                    "The SSH connection attempt was cancelled.");
                 await CleanUpAsync();
                 SetSftpState(SftpConnectionState.NotConnected);
                 SetState(SessionState.Disconnected);
@@ -82,6 +109,7 @@ public sealed class SshNetSession : ISshSession
             catch (Exception ex)
             {
                 LastError = ex.Message;
+                LogFailure("SSH", ex, ConnectionLogSeverity.Error);
                 await CleanUpAsync();
                 SetSftpState(SftpConnectionState.NotConnected);
                 SetState(SessionState.Failed);
@@ -92,14 +120,34 @@ public sealed class SshNetSession : ISshSession
             // subsystem and must not turn a working terminal into a failed session.
             SetSftpState(SftpConnectionState.Connecting);
             SetState(SessionState.Connected);
+            Log(
+                ConnectionLogSeverity.Information,
+                "SSH",
+                $"SSH 연결이 완료되었습니다 ({Stopwatch.GetElapsedTime(connectionStarted).TotalMilliseconds:N0} ms).",
+                $"SSH connection established ({Stopwatch.GetElapsedTime(connectionStarted).TotalMilliseconds:N0} ms).");
 
             try
             {
+                Log(
+                    ConnectionLogSeverity.Verbose,
+                    "SFTP",
+                    "SFTP subsystem 연결을 시작합니다.",
+                    "Starting SFTP subsystem connection.");
                 _sftpClient = await ConnectSftpClientAsync(trustContext, ct);
                 SetSftpState(SftpConnectionState.Ready);
+                Log(
+                    ConnectionLogSeverity.Information,
+                    "SFTP",
+                    "SFTP subsystem을 사용할 수 있습니다.",
+                    "SFTP subsystem is ready.");
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                Log(
+                    ConnectionLogSeverity.Warning,
+                    "SFTP",
+                    "SFTP 연결 중 전체 세션 연결이 취소되었습니다.",
+                    "The connection was cancelled while opening SFTP.");
                 await CleanUpAsync();
                 SetSftpState(SftpConnectionState.NotConnected);
                 SetState(SessionState.Disconnected);
@@ -108,6 +156,7 @@ public sealed class SshNetSession : ISshSession
             catch (Exception ex)
             {
                 LastSftpError = ex.Message;
+                LogFailure("SFTP", ex, ConnectionLogSeverity.Warning);
                 await CleanUpSftpAsync();
                 SetSftpState(SftpConnectionState.Unavailable);
             }
@@ -361,6 +410,11 @@ public sealed class SshNetSession : ISshSession
             await CleanUpAsync();
             SetSftpState(SftpConnectionState.NotConnected);
             SetState(SessionState.Disconnected);
+            Log(
+                ConnectionLogSeverity.Information,
+                "SSH",
+                "SSH 및 SFTP 연결을 종료했습니다.",
+                "SSH and SFTP connections were closed.");
         }
         finally
         {
@@ -544,6 +598,7 @@ public sealed class SshNetSession : ISshSession
 
             try
             {
+                using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
                 await client.ConnectAsync(ct);
                 return client;
             }
@@ -574,6 +629,7 @@ public sealed class SshNetSession : ISshSession
 
             try
             {
+                using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
                 await client.ConnectAsync(ct);
                 return client;
             }
@@ -604,6 +660,7 @@ public sealed class SshNetSession : ISshSession
     {
         if (verifier.LastError is { } verificationError)
         {
+            LogFailure("Host key", verificationError, ConnectionLogSeverity.Error);
             throw new System.Security.SecurityException(
                 $"Host-key verification failed for {_hostEndpoint.Value}: {verificationError.Message}",
                 verificationError);
@@ -612,6 +669,13 @@ public sealed class SshNetSession : ISshSession
         var verification = verifier.LastVerification;
         if (verification?.State == HostKeyTrustState.Changed)
         {
+            Log(
+                ConnectionLogSeverity.Critical,
+                "Host key",
+                $"서버 호스트 키가 변경되었습니다: {verification.Endpoint.Value}",
+                $"The server host key has changed: {verification.Endpoint.Value}",
+                $"trusted={verification.TrustedKey?.Algorithm} {verification.TrustedKey?.Sha256Fingerprint}\n" +
+                $"presented={verification.PresentedKey.Algorithm} {verification.PresentedKey.Sha256Fingerprint}");
             throw new HostKeyChangedException(
                 verification.Endpoint,
                 verification.TrustedKey!,
@@ -620,6 +684,13 @@ public sealed class SshNetSession : ISshSession
 
         if (verification?.State != HostKeyTrustState.Unknown)
             return false;
+
+        Log(
+            ConnectionLogSeverity.Warning,
+            "Host key",
+            $"처음 보는 서버 호스트 키입니다: {verification.Endpoint.Value}",
+            $"The server presented an unknown host key: {verification.Endpoint.Value}",
+            $"algorithm={verification.PresentedKey.Algorithm}; fingerprint={verification.PresentedKey.Sha256Fingerprint}");
 
         if (!mayPrompt)
         {
@@ -641,10 +712,25 @@ public sealed class SshNetSession : ISshSession
         ct.ThrowIfCancellationRequested();
         if (decision == HostKeyDecision.Cancel || !verifier.ApplyLastDecision(decision))
         {
+            Log(
+                ConnectionLogSeverity.Warning,
+                "Host key",
+                "사용자가 서버 호스트 키를 신뢰하지 않아 연결을 취소했습니다.",
+                "The connection was cancelled because the server host key was not trusted.");
             throw new System.Security.SecurityException(
                 $"Host key for {_hostEndpoint.Value} was not trusted. Connection cancelled.",
                 connectError);
         }
+
+        Log(
+            ConnectionLogSeverity.Information,
+            "Host key",
+            decision == HostKeyDecision.TrustAndSave
+                ? "서버 호스트 키를 확인하고 저장했습니다. 새 연결로 다시 시도합니다."
+                : "서버 호스트 키를 이번 연결에서만 신뢰합니다. 새 연결로 다시 시도합니다.",
+            decision == HostKeyDecision.TrustAndSave
+                ? "The server host key was verified and saved. Retrying with a fresh connection."
+                : "The server host key is trusted for this connection only. Retrying with a fresh connection.");
 
         return true;
     }
@@ -680,10 +766,34 @@ public sealed class SshNetSession : ISshSession
                 throw new NotSupportedException("SSH agent 인증은 아직 지원하지 않습니다.");
         }
 
-        return new Renci.SshNet.ConnectionInfo(Info.Host, Info.Port, user, methods.ToArray())
+        var connectionInfo = _route.Type switch
         {
-            Timeout = TimeSpan.FromSeconds(15),
+            ConnectionRouteType.Direct =>
+                new Renci.SshNet.ConnectionInfo(Info.Host, Info.Port, user, methods.ToArray()),
+            ConnectionRouteType.HttpConnect or ConnectionRouteType.Socks4 or ConnectionRouteType.Socks5 =>
+                new Renci.SshNet.ConnectionInfo(
+                    Info.Host,
+                    Info.Port,
+                    user,
+                    _route.Type switch
+                    {
+                        ConnectionRouteType.HttpConnect => ProxyTypes.Http,
+                        ConnectionRouteType.Socks4 => ProxyTypes.Socks4,
+                        ConnectionRouteType.Socks5 => ProxyTypes.Socks5,
+                        _ => ProxyTypes.None,
+                    },
+                    _route.Host,
+                    _route.Port,
+                    _route.Username,
+                    _route.Password,
+                    methods.ToArray()),
+            _ => throw new NotSupportedException(
+                $"The {_route.Type} route requires a configured enterprise route adapter."),
         };
+
+        connectionInfo.Timeout = TimeSpan.FromSeconds(15);
+        connectionInfo.LoggerFactory = _diagnosticLoggerFactory;
+        return connectionInfo;
     }
 
     /// <summary>
@@ -757,4 +867,38 @@ public sealed class SshNetSession : ISshSession
         TerminalState = state;
         TerminalStateChanged?.Invoke(this, state);
     }
+
+    private string DescribeRoute() => _route.Type == ConnectionRouteType.Direct
+        ? "direct"
+        : $"{_route.Type}({_route.Host}:{_route.Port})";
+
+    private void LogFailure(
+        string category,
+        Exception error,
+        ConnectionLogSeverity severity)
+    {
+        var summary = ConnectionFailureDetails.Summarize(error);
+        Log(
+            severity,
+            category,
+            summary.Korean,
+            summary.English,
+            ConnectionFailureDetails.Format(error));
+    }
+
+    private void Log(
+        ConnectionLogSeverity severity,
+        string category,
+        string messageKo,
+        string messageEn,
+        string? detail = null) =>
+        ConnectionLogStore.Append(
+            Id,
+            Info.Title,
+            _hostEndpoint.Value,
+            severity,
+            category,
+            messageKo,
+            messageEn,
+            detail);
 }

@@ -1,6 +1,7 @@
 namespace sutty.Core.Models;
 
 using sutty.Core.Security;
+using sutty.Core.Routing;
 
 public enum SshAuthMethod
 {
@@ -26,6 +27,12 @@ public sealed class SshConnectionInfo
     public bool Compression { get; set; }
     public bool X11Forwarding { get; set; }
     public List<string> Tags { get; set; } = [];
+
+    /// <summary>Network route shared by this session's SSH and SFTP transports.</summary>
+    public ConnectionRoute Route { get; set; } = new();
+
+    /// <summary>Fail-closed route constraints evaluated before a socket is opened.</summary>
+    public ConnectionRoutePolicy RoutePolicy { get; set; } = new();
 
     /// <summary>Optional id of the explicit saved-host profile that opened this connection.</summary>
     public string? SavedHostId { get; set; }
