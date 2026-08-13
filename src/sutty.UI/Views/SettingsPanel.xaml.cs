@@ -4,8 +4,10 @@ using Microsoft.UI.Xaml.Controls;
 using sutty.Setting;
 using sutty.UI.Helpers;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace sutty.UI.Views
 {
@@ -55,6 +57,7 @@ namespace sutty.UI.Views
         private readonly DispatcherQueueTimer _saveTimer;
         private bool _loading = true;
         private SettingChangeKind _pendingChanges;
+        private IReadOnlyList<string> _installedFonts = [];
 
         public SettingsPanel()
         {
@@ -79,6 +82,11 @@ namespace sutty.UI.Views
 
             FontFamilyBox.Text = settings.TerminalFontFamily;
             FontSizeBox.Value = settings.TerminalFontSize;
+            PopulateTerminalAppearanceChoices(settings);
+            ScrollbackBox.Value = settings.TerminalScrollbackLines;
+            CursorBlinkToggle.IsOn = settings.TerminalCursorBlink;
+            ScreenReaderToggle.IsOn = settings.TerminalScreenReaderMode;
+            LoadShellProfileToggle.IsOn = settings.LoadLocalShellProfile;
             TerminalModeRadios.SelectedIndex = settings.TerminalMode == "Terminal" ? 1 : 0;
             StructuredHighlightToggle.IsOn = settings.EnableStructuredTextHighlighting;
             SeverityHighlightToggle.IsOn = settings.EnableSeverityHighlighting;
@@ -97,9 +105,51 @@ namespace sutty.UI.Views
 
             SettingsNav.SelectedItem = SettingsNav.MenuItems.First();
             _loading = false;
+            _ = LoadInstalledFontsAsync();
         }
 
         private static double PositiveOrNaN(int value) => value > 0 ? value : double.NaN;
+
+        private void PopulateTerminalAppearanceChoices(AppSettings settings)
+        {
+            TerminalThemeCombo.Items.Clear();
+            TerminalThemeCombo.Items.Add(new ComboBoxItem
+            {
+                Content = Loc.T("앱 테마에 맞춤", "Follow application theme"),
+                Tag = TerminalThemeCatalog.FollowApplication,
+            });
+            foreach (var preset in TerminalThemeCatalog.Presets)
+            {
+                TerminalThemeCombo.Items.Add(new ComboBoxItem
+                {
+                    Content = preset.DisplayName,
+                    Tag = preset.Id,
+                });
+            }
+
+            TerminalThemeCombo.SelectedItem = TerminalThemeCombo.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(
+                    item.Tag as string,
+                    settings.TerminalTheme,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? TerminalThemeCombo.Items[0];
+
+            CursorStyleCombo.Items.Clear();
+            AddCursorChoice("underline", Loc.T("밑줄 — 글자를 가리지 않음", "Underline — does not cover text"));
+            AddCursorChoice("bar", Loc.T("얇은 세로선", "Thin bar"));
+            AddCursorChoice("block", Loc.T("블록", "Block"));
+            CursorStyleCombo.SelectedItem = CursorStyleCombo.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(
+                    item.Tag as string,
+                    settings.TerminalCursorStyle,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? CursorStyleCombo.Items[0];
+        }
+
+        private void AddCursorChoice(string id, string displayName) =>
+            CursorStyleCombo.Items.Add(new ComboBoxItem { Content = displayName, Tag = id });
 
         private void SettingsNav_SelectionChanged(
             NavigationView sender,
@@ -129,6 +179,9 @@ namespace sutty.UI.Views
                 return;
 
             SettingsService.Current.Language = LanguageCombo.SelectedIndex == 1 ? "en" : "ko";
+            _loading = true;
+            PopulateTerminalAppearanceChoices(SettingsService.Current);
+            _loading = false;
             CommitChangesNow(SettingChangeKind.Language);
         }
 
@@ -166,6 +219,38 @@ namespace sutty.UI.Views
             CommitChangesNow(SettingChangeKind.TerminalMode);
         }
 
+        private void TerminalAppearanceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loading)
+                return;
+
+            var settings = SettingsService.Current;
+            if (TerminalThemeCombo.SelectedItem is ComboBoxItem themeItem &&
+                themeItem.Tag is string terminalTheme)
+            {
+                settings.TerminalTheme = terminalTheme;
+            }
+
+            if (CursorStyleCombo.SelectedItem is ComboBoxItem cursorItem &&
+                cursorItem.Tag is string cursorStyle)
+            {
+                settings.TerminalCursorStyle = cursorStyle;
+            }
+
+            CommitChangesNow(SettingChangeKind.TerminalAppearance);
+        }
+
+        private void TerminalAppearanceToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading)
+                return;
+
+            SettingsService.Current.TerminalCursorBlink = CursorBlinkToggle.IsOn;
+            SettingsService.Current.TerminalScreenReaderMode = ScreenReaderToggle.IsOn;
+            SettingsService.Current.LoadLocalShellProfile = LoadShellProfileToggle.IsOn;
+            CommitChangesNow(SettingChangeKind.TerminalAppearance);
+        }
+
         private void TerminalFeatureToggle_Toggled(object sender, RoutedEventArgs e)
         {
             if (_loading)
@@ -179,14 +264,77 @@ namespace sutty.UI.Views
             CommitChangesNow(SettingChangeKind.TerminalFeatures);
         }
 
-        private void FontFamilyBox_TextChanged(object sender, TextChangedEventArgs e)
+        private async Task LoadInstalledFontsAsync()
+        {
+            try
+            {
+                var fonts = await InstalledFontCatalog.GetAsync();
+                var current = SettingsService.Current.TerminalFontFamily.Trim();
+                _installedFonts = string.IsNullOrWhiteSpace(current) ||
+                                  fonts.Contains(current, StringComparer.CurrentCultureIgnoreCase)
+                    ? fonts
+                    : [current, .. fonts];
+                FontFamilyBox.ItemsSource = _installedFonts;
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Installed font enumeration failed: {error.GetType().Name}");
+            }
+        }
+
+        private void FontFamilyBox_TextChanged(
+            AutoSuggestBox sender,
+            AutoSuggestBoxTextChangedEventArgs args)
         {
             if (_loading)
                 return;
 
-            if (!string.IsNullOrWhiteSpace(FontFamilyBox.Text))
-                SettingsService.Current.TerminalFontFamily = FontFamilyBox.Text.Trim();
-            QueueChanges(SettingChangeKind.TerminalAppearance);
+            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+            {
+                var query = sender.Text.Trim();
+                sender.ItemsSource = _installedFonts
+                    .Where(font => query.Length == 0 ||
+                                   font.Contains(query, StringComparison.CurrentCultureIgnoreCase))
+                    .OrderBy(font => !font.StartsWith(
+                        query,
+                        StringComparison.CurrentCultureIgnoreCase))
+                    .ThenBy(font => font, StringComparer.CurrentCultureIgnoreCase)
+                    .Take(100)
+                    .ToArray();
+            }
+
+            ApplyFontFamilyText(commitImmediately: false);
+        }
+
+        private void FontFamilyBox_SuggestionChosen(
+            AutoSuggestBox sender,
+            AutoSuggestBoxSuggestionChosenEventArgs args)
+        {
+            if (args.SelectedItem is string font)
+                sender.Text = font;
+            ApplyFontFamilyText(commitImmediately: true);
+        }
+
+        private void FontFamilyBox_QuerySubmitted(
+            AutoSuggestBox sender,
+            AutoSuggestBoxQuerySubmittedEventArgs args)
+        {
+            if (args.ChosenSuggestion is string font)
+                sender.Text = font;
+            ApplyFontFamilyText(commitImmediately: true);
+        }
+
+        private void ApplyFontFamilyText(bool commitImmediately)
+        {
+            if (_loading || string.IsNullOrWhiteSpace(FontFamilyBox.Text))
+                return;
+
+            SettingsService.Current.TerminalFontFamily = FontFamilyBox.Text.Trim();
+            if (commitImmediately)
+                CommitChangesNow(SettingChangeKind.TerminalAppearance);
+            else
+                QueueChanges(SettingChangeKind.TerminalAppearance);
         }
 
         private void FontFamilyBox_LostFocus(object sender, RoutedEventArgs e)
@@ -215,6 +363,7 @@ namespace sutty.UI.Views
             var settings = SettingsService.Current;
             var value = (int)sender.Value;
             if (ReferenceEquals(sender, FontSizeBox)) settings.TerminalFontSize = value;
+            else if (ReferenceEquals(sender, ScrollbackBox)) settings.TerminalScrollbackLines = value;
             else if (ReferenceEquals(sender, DefaultPortBox)) settings.DefaultSshPort = value;
             else if (ReferenceEquals(sender, KeepAliveBox)) settings.DefaultKeepAliveSeconds = value;
             else if (ReferenceEquals(sender, HistoryDaysBox)) settings.HistoryRetentionDays = value;
@@ -225,7 +374,7 @@ namespace sutty.UI.Views
             else if (ReferenceEquals(sender, SettingHeightBox)) settings.SettingWindowHeight = value;
             else if (ReferenceEquals(sender, PanelWidthBox)) settings.RightPanelWidth = value;
 
-            var kind = ReferenceEquals(sender, FontSizeBox)
+            var kind = ReferenceEquals(sender, FontSizeBox) || ReferenceEquals(sender, ScrollbackBox)
                 ? SettingChangeKind.TerminalAppearance
                 : ReferenceEquals(sender, DefaultPortBox)
                     ? SettingChangeKind.ConnectionPort

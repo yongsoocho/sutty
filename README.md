@@ -30,7 +30,7 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 
 - Password and OpenSSH/PEM private-key authentication. Password mode also answers password-like keyboard-interactive prompts through a non-interactive fallback; recent key paths can be suggested without saving the key contents, password, or passphrase.
 - Local PowerShell tabs opened with the top `+` button, backed by a real ConPTY process with runtime resize and process-tree cleanup.
-- A real persistent PTY channel with runtime server-side resize, control keys, navigation keys, F1–F12, incremental UTF-8 decoding, bounded output buffering, cursor operations, scroll regions, and alternate-screen handling.
+- A real persistent PTY channel rendered by package-local xterm.js in a hardened WebView2, with ANSI/VT color and style, mouse/input modes, IME/CJK/emoji handling, alternate screen, search, clipboard shortcuts, bounded output backpressure, and runtime server-side resize.
 - Fail-closed SSH host-key verification. Unknown keys offer **Connect once**, **Trust and save**, or **Cancel**; changed saved keys are blocked.
 - Independent SSH, Terminal, and SFTP states, so an unavailable SFTP subsystem does not close a working SSH session.
 - REPL and Multi command execution backed by structured standard output, standard error, exit status/signal, and duration; reusable positional command templates remain available.
@@ -40,21 +40,21 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - Append-only connection-attempt history plus explicit Saved Host profiles, groups, environments, favorites, and search in SQLite.
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
 - Up to 16 mixed local/SSH tabs, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged SSH sessions.
-- Immediately applied Korean/English settings, atomic settings persistence, and dark/light themes.
+- Immediately applied Korean/English settings, atomic settings persistence, dark/light themes, terminal palettes (including Ubuntu, Atom One Dark, Dracula, GitHub, and Solarized), cursor/scrollback/accessibility controls, and optional PowerShell profile loading for prompt customizers.
 - Direct, HTTP CONNECT, SOCKS4, and SOCKS5 connection routes shared by SSH and SFTP. Enterprise mode rejects direct routes instead of silently falling back.
 - REPL JSON/YAML syntax highlighting, red critical/error and amber warning marking, and history/saved-command suggestions accepted with Right Arrow or Tab.
 - Keyboard-first navigation: `Ctrl+1`–`Ctrl+9` tabs, `Ctrl+T` local tab, `Alt+1`–`Alt+6` work surfaces/settings, `Ctrl+,` settings, and Insert-style copy/paste.
 
 ### Why this is not GA
 
-- The SSH PTY and local ConPTY are real and support runtime resize, but the current WinUI text renderer is an **Alpha-only bridge**. It consumes SGR without rendering color/style and lacks mouse protocols and complete wide/combining-cell behavior. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
+- The package-local xterm.js/WebView2 renderer is integrated for both SSH and local ConPTY, but the required shell/TUI/Unicode/input/security/latency/soak acceptance matrix is not complete. Terminal compatibility therefore remains **Alpha, not GA**. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
 - SSH agent, OTP/multi-prompt keyboard-interactive UI, legacy `.ppk` import, jump hosts, audited gateway adapters, external proxy commands, and automatic reconnect are unavailable. Direct HTTP/SOCKS proxy routes are an Alpha baseline without the complete enterprise route matrix. Password mode's non-interactive fallback handles password-like prompts only.
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP currently transfers files, not directory trees. It has no pause/retry/resume, final size/checksum verification, `chmod`, synchronized browsing, or a complete collision-policy matrix.
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent audit/export, timeout, or streaming workflow.
 - Port forwarding, managed gateway profiles, central audit transport, import/export, full enterprise policy, support bundles, signed release automation, and the GA compatibility/accessibility matrices remain planned.
 
-The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Enterprise implementation status](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md). Product gates and explicit non-goals are in [Product Direction](docs/PRODUCT_DIRECTION.md).
+The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Enterprise implementation status](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md). Product gates and explicit non-goals are in [Product Direction](docs/PRODUCT_DIRECTION.md), and the current source plan is [Windows Multi SSH/SFTP Product Plan v2.0](docs/Sutty_Windows_Multi_SSH_SFTP_Product_Plan_v2.0_KO.docx).
 
 ### Explicitly unsupported scope
 
@@ -91,7 +91,7 @@ Read [Security](SECURITY.md) before reporting or sharing diagnostic data.
 - Windows 11 24H2 or later
 - x64 or ARM64
 - .NET SDK 10.0.302, selected by `global.json`
-- Windows App SDK 2.3.1 and SSH.NET 2025.1.0, pinned by the project and lock files
+- Windows App SDK 2.3.1 and SSH.NET 2026.0.0, pinned by the project and lock files
 - Internet access for the first NuGet restore
 
 For x64:
@@ -137,7 +137,7 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 
 - 비밀번호와 OpenSSH/PEM 개인키 인증. 비밀번호 방식은 password 형태의 keyboard-interactive prompt에 비대화형 fallback으로 답하며, 키 내용·비밀번호·passphrase를 저장하지 않고 최근 키 경로만 제안할 수 있습니다.
 - 상단 `+` 버튼으로 여는 로컬 PowerShell 탭. 실제 ConPTY 프로세스, 실행 중 크기 변경, 프로세스 트리 정리를 사용합니다.
-- 실행 중 서버 측 크기 변경, 제어키·탐색키·F1–F12, 점진적 UTF-8 디코딩, 제한된 출력 버퍼, 커서 동작, 스크롤 영역, 대체 화면을 처리하는 실제 지속 PTY 채널
+- 패키지 내부 xterm.js와 보안 설정한 WebView2로 표시하는 실제 지속 PTY 채널. ANSI/VT 색·스타일, 마우스·입력 모드, IME·한글·이모지, 대체 화면, 검색, 클립보드 단축키, 제한된 출력 백프레셔, 실행 중 서버 측 크기 변경을 지원합니다.
 - 기본 차단 방식의 SSH 호스트키 검증. 알 수 없는 키는 **이번만 연결**, **신뢰하고 저장**, **취소**를 제공하며 저장된 키가 바뀌면 연결을 차단합니다.
 - SFTP subsystem을 사용할 수 없어도 작동 중인 SSH 세션을 닫지 않는 SSH·Terminal·SFTP 독립 상태
 - 표준 출력·표준 오류·종료 상태/signal·소요 시간을 구조화하는 REPL·Multi 명령 실행과 재사용 가능한 위치형 명령 템플릿
@@ -147,14 +147,14 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·그룹·환경·즐겨찾기·검색
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
 - 로컬/SSH 혼합 최대 16개 탭, 기본 선택 0개의 Multi 대상, PROD 태그 SSH 세션이 포함된 브로드캐스트의 추가 확인
-- 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마
+- 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마, Ubuntu·Atom One Dark·Dracula·GitHub·Solarized 터미널 팔레트, 커서·스크롤백·접근성 설정, 프롬프트 꾸미기를 위한 선택형 PowerShell 프로필 로딩
 - SSH와 SFTP가 함께 사용하는 Direct·HTTP CONNECT·SOCKS4·SOCKS5 연결 경로. 기업 모드에서는 Direct 경로와 조용한 우회를 차단합니다.
 - REPL JSON/YAML 문법 강조, critical/error 빨간색·warning 노란색 표시, 최근/저장 명령 제안과 오른쪽 화살표·Tab 적용
 - `Ctrl+1`–`Ctrl+9` 탭, `Ctrl+T` 로컬 탭, `Alt+1`–`Alt+6` 작업 화면/설정, `Ctrl+,` 설정, Insert 방식 복사·붙여넣기 단축키
 
 ### GA가 아닌 이유
 
-- SSH PTY와 로컬 ConPTY는 실제이고 실행 중 크기 변경을 지원하지만 현재 WinUI 텍스트 렌더러는 **Alpha 전용 연결 단계**입니다. SGR을 소비하지만 색·스타일을 표시하지 않고, 마우스 프로토콜과 넓은 문자·결합 문자의 완전한 셀 처리가 없습니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
+- 패키지 내부 xterm.js/WebView2 렌더러를 SSH와 로컬 ConPTY에 연결했지만 필수 셸·TUI·Unicode·입력·보안·지연·장시간 실행 인수 매트릭스는 아직 완성되지 않았습니다. 따라서 터미널 호환성은 계속 **Alpha이며 GA가 아닙니다**. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
 - SSH agent, OTP·다중 prompt keyboard-interactive UI, 레거시 `.ppk` 가져오기, 점프 호스트, 감사 게이트웨이 어댑터, 외부 프록시 명령, 자동 재연결은 지원하지 않습니다. Direct HTTP/SOCKS 프록시는 Alpha 기준선이며 기업용 전체 경로 매트릭스는 아직 검증되지 않았습니다. 비밀번호 방식의 비대화형 fallback은 password 형태 prompt만 처리합니다.
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - 현재 SFTP는 파일만 전송하며 디렉터리 트리는 전송하지 않습니다. 일시정지·재시도·재개, 최종 크기/checksum 검증, `chmod`, 동기 탐색, 완전한 충돌 정책 매트릭스가 없습니다.
@@ -198,7 +198,7 @@ Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정
 - Windows 11 24H2 이상
 - x64 또는 ARM64
 - `global.json`이 선택하는 .NET SDK 10.0.302
-- 프로젝트와 lock file이 고정하는 Windows App SDK 2.3.1과 SSH.NET 2025.1.0
+- 프로젝트와 lock file이 고정하는 Windows App SDK 2.3.1과 SSH.NET 2026.0.0
 - 최초 NuGet 복원을 위한 인터넷 연결
 
 x64 기준 명령입니다.

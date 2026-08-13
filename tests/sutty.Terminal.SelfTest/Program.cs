@@ -1,6 +1,7 @@
 using sutty.UI.Helpers;
 using sutty.Core.Plugins;
 using sutty.Core.Terminal;
+using System.Security.Cryptography;
 using System.Runtime.Versioning;
 using System.Text;
 
@@ -69,6 +70,41 @@ Assert(capturedBroadcastOutput.Contains("result", StringComparison.Ordinal),
 Assert(!capturedBroadcastOutput.Contains(captureBegin, StringComparison.Ordinal),
     "echoed begin-marker command is not mistaken for marker output");
 
+var coloredBegin = $"__SUTTY_BROADCAST_BEGIN_{Guid.NewGuid():N}__";
+var coloredEnd = $"__SUTTY_BROADCAST_END_{Guid.NewGuid():N}__";
+var coloredCapture = new TerminalBroadcastCapture(coloredBegin, coloredEnd);
+coloredCapture.Feed(Encoding.UTF8.GetBytes(
+    $"\x1b[93mPS> echo \x1b[37m{coloredBegin}\r\n" +
+    $"\x1b[38;5;9m{coloredBegin}\x1b[0m\r\n" +
+    $"colored result\r\n" +
+    $"\x1b[93mPS> echo \x1b[37m{coloredEnd}\r\n" +
+    $"\x1b[38;5;9m{coloredEnd}\x1b[0m\r\n"));
+var coloredOutput = await coloredCapture.Completion;
+Assert(coloredOutput.Contains("colored result", StringComparison.Ordinal),
+    "ANSI-colored shell markers complete broadcast capture");
+
+var partialBegin = $"__SUTTY_BROADCAST_BEGIN_{Guid.NewGuid():N}__";
+var partialEnd = $"__SUTTY_BROADCAST_END_{Guid.NewGuid():N}__";
+var partialCapture = new TerminalBroadcastCapture(partialBegin, partialEnd);
+partialCapture.Feed(Encoding.UTF8.GetBytes($"{partialBegin}\r\npartial result\r\n"));
+Assert(partialCapture.Snapshot().Contains("partial result", StringComparison.Ordinal),
+    "broadcast timeout recovery preserves partial output");
+
+var failedCapture = new TerminalBroadcastCapture(
+    $"__SUTTY_BROADCAST_BEGIN_{Guid.NewGuid():N}__",
+    $"__SUTTY_BROADCAST_END_{Guid.NewGuid():N}__");
+failedCapture.Fail(new InvalidOperationException("terminal closed"));
+var captureFailed = false;
+try
+{
+    await failedCapture.Completion;
+}
+catch (InvalidOperationException)
+{
+    captureFailed = true;
+}
+Assert(captureFailed, "terminal closure releases a pending broadcast capture");
+
 var json = "{\"service\":\"api\",\"replicas\":3,\"ready\":true}";
 var jsonSpans = TerminalTextClassifier.Classify(json);
 Assert(HasKind(jsonSpans, TerminalTextHighlightKind.Property),
@@ -101,6 +137,16 @@ Assert(suggestion?.Text == "kubectl get services",
 Assert(suggestions.Suggest(new CommandSuggestionRequest("no-match", [], [])) is null,
     "suggestion engine leaves unmatched input unchanged");
 
+if (OperatingSystem.IsWindows())
+{
+    var installedFonts = await InstalledFontCatalog.GetAsync();
+    Assert(installedFonts.Count > 0, "Windows font families are enumerated for Settings");
+    Assert(installedFonts.All(font => !font.StartsWith('@')),
+        "vertical aliases are excluded from the Settings font list");
+}
+
+VerifyPackagedRenderer();
+
 if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
 {
     await VerifyLocalConPtyAsync();
@@ -124,11 +170,38 @@ static bool HasKind(
     IReadOnlyList<TerminalTextSpan> spans,
     TerminalTextHighlightKind kind) => spans.Any(span => span.Kind == kind);
 
+static void VerifyPackagedRenderer()
+{
+    var assetDirectory = Path.Combine(AppContext.BaseDirectory, "TerminalAssets");
+    var html = File.ReadAllText(Path.Combine(assetDirectory, "index.html"));
+    var bridge = File.ReadAllText(Path.Combine(assetDirectory, "sutty-terminal.js"));
+    var xtermPath = Path.Combine(assetDirectory, "xterm-6.0.0.js");
+
+    Assert(html.Contains("default-src 'none'", StringComparison.Ordinal),
+        "terminal renderer denies resources by default");
+    Assert(html.Contains("connect-src 'none'", StringComparison.Ordinal),
+        "terminal renderer cannot open network connections");
+    Assert(!html.Contains("http://", StringComparison.OrdinalIgnoreCase) &&
+           !html.Contains("https://", StringComparison.OrdinalIgnoreCase),
+        "terminal renderer has no remote asset URL");
+    Assert(!bridge.Contains("innerHTML", StringComparison.Ordinal),
+        "terminal bridge does not inject terminal data into HTML");
+    Assert(bridge.Contains("terminal.onData", StringComparison.Ordinal) &&
+           bridge.Contains("terminal.write", StringComparison.Ordinal) &&
+           bridge.Contains("writeComplete", StringComparison.Ordinal) &&
+           bridge.Contains("ResizeObserver", StringComparison.Ordinal),
+        "terminal bridge covers input, output acknowledgement, and resize");
+
+    var hash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(xtermPath)));
+    Assert(hash == "14903579FF54664CD72F8E8699E6961A6272C21863EC1C3B118CDC8AF5D4A972",
+        "packaged xterm.js bytes match the reviewed version");
+}
+
 [SupportedOSPlatform("windows10.0.17763")]
 static async Task VerifyLocalConPtyAsync()
 {
     Console.WriteLine("Verifying local ConPTY I/O...");
-    var terminal = new WindowsConPtyTerminal();
+    var terminal = new WindowsConPtyTerminal(loadProfile: false);
     var output = new StringBuilder();
     var outputGate = new object();
     var decoder = Encoding.UTF8.GetDecoder();
@@ -184,8 +257,23 @@ static async Task VerifyLocalConPtyAsync()
         await terminal.SendTerminalInputAsync(
             Encoding.UTF8.GetBytes(
                 $"echo {broadcastBegin}\rWrite-Output '{broadcastResult}'\recho {broadcastEnd}\r"));
-        var liveBroadcastOutput = await liveBroadcastCapture.Completion
-            .WaitAsync(TimeSpan.FromSeconds(10));
+        string liveBroadcastOutput;
+        try
+        {
+            liveBroadcastOutput = await liveBroadcastCapture.Completion
+                .WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (TimeoutException error)
+        {
+            string captured;
+            lock (outputGate)
+                captured = output.ToString();
+            throw new TimeoutException(
+                $"Local broadcast markers did not complete. " +
+                $"Partial marker output: {liveBroadcastCapture.Snapshot()} " +
+                $"Captured terminal output: {captured}",
+                error);
+        }
         Assert(liveBroadcastOutput.Contains(broadcastResult, StringComparison.Ordinal),
             "portable broadcast markers delimit actual local shell output");
         Assert(!liveBroadcastOutput.Contains(broadcastBegin, StringComparison.Ordinal),
@@ -205,7 +293,7 @@ static async Task VerifyLocalConPtyAsync()
 static async Task VerifyCloseDuringHeavyOutputAsync()
 {
     Console.WriteLine("Verifying local ConPTY close under heavy output...");
-    var terminal = new WindowsConPtyTerminal();
+    var terminal = new WindowsConPtyTerminal(loadProfile: false);
     var readerPaused = new TaskCompletionSource(
         TaskCreationOptions.RunContinuationsAsynchronously);
     using var releaseReader = new ManualResetEventSlim(false);

@@ -24,6 +24,8 @@
          CopyToOutputDirectory가 없으면 언패키지 실행(exe 직접 실행)에서
          Assets가 출력 폴더에 복사되지 않아 ms-appx 이미지가 전부 안 보인다. -->
     <Content Include="Assets\**\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Pinned, package-local xterm.js renderer. Runtime CDN/network loading is forbidden. -->
+    <Content Include="Assets\Terminal\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Remove="Controls\HostCard.xaml" />
     <None Remove="Views\HomePanel.xaml" />
     <!-- The .ico used by AppWindow.SetIcon (title bar / taskbar / Alt+Tab). -->

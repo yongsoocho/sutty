@@ -27,6 +27,7 @@ namespace sutty.UI.Views
 
         /// <summary>동시에 열 수 있는 로컬/SSH 작업 탭 최대 개수.</summary>
         private const int MaxSessions = 16;
+        private static readonly TimeSpan BroadcastCommandTimeout = TimeSpan.FromSeconds(60);
 
         private readonly SessionManager _sessions = new();
         private readonly SemaphoreSlim _hostKeyPromptGate = new(1, 1);
@@ -34,6 +35,7 @@ namespace sutty.UI.Views
         private FileTreePanel? _fileTreePanel;
         private string _appIconPath = "";
         private bool _isMultiView;
+        private int _broadcastInProgress;
 
         public MainWindow()
         {
@@ -229,7 +231,6 @@ namespace sutty.UI.Views
             var environment = host.Environment;
             var favorite = host.IsPinned;
             CredentialSecret? credential = null;
-            var credentialLoadFailed = false;
 
             if (!string.IsNullOrWhiteSpace(profileId))
             {
@@ -260,7 +261,6 @@ namespace sutty.UI.Views
                                               Microsoft.Data.Sqlite.SqliteException or
                                               ArgumentException)
                 {
-                    credentialLoadFailed = true;
                     Debug.WriteLine($"Saved credential load failed: {error.GetType().Name}");
                     var warning = new ContentDialog
                     {
@@ -302,32 +302,56 @@ namespace sutty.UI.Views
                 IsFavorite = favorite,
             };
 
-            var canConnectImmediately = !credentialLoadFailed &&
-                                        !string.IsNullOrWhiteSpace(profileId) &&
-                                        (authMethod == SshAuthMethod.PublicKey ||
-                                         !string.IsNullOrEmpty(draft.Password));
-            if (canConnectImmediately)
+            // History cards execute a connection instead of returning to the editor.
+            // Secrets never live in SQLite, so request only a missing password in place.
+            draft.SaveProfile = false;
+            if (authMethod == SshAuthMethod.Password &&
+                string.IsNullOrEmpty(draft.Password) &&
+                !await PromptForHistoryPasswordAsync(draft))
             {
-                // Opening an unchanged saved profile should not rewrite or rotate its
-                // encrypted credential on every connection.
-                draft.SaveProfile = false;
-                await OpenSessionTabAsync(draft);
                 return;
             }
 
-            var homeItem = LeftNav.MenuItems[0];
-            LeftNav.SelectedItem = homeItem;
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                if (!ReferenceEquals(LeftNav.SelectedItem, homeItem)) return;
+            await OpenSessionTabAsync(draft);
+        }
 
-                if (RightPanel.Content is not HomePanel home)
-                {
-                    home = CreateHomePanel();
-                    RightPanel.Content = home;
-                }
-                home.ApplyConnectionDraft(draft);
+        private async Task<bool> PromptForHistoryPasswordAsync(SshConnectionInfo draft)
+        {
+            var passwordBox = new PasswordBox
+            {
+                Header = Helpers.Loc.T("비밀번호", "Password"),
+                PlaceholderText = Helpers.Loc.T("SSH 비밀번호 입력", "Enter SSH password"),
+                MinWidth = 320,
+            };
+            var content = new StackPanel { Spacing = 10 };
+            content.Children.Add(new TextBlock
+            {
+                Text = $"{draft.Username}@{draft.Host}:{draft.Port}",
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                TextWrapping = TextWrapping.Wrap,
             });
+            content.Children.Add(passwordBox);
+
+            var dialog = new ContentDialog
+            {
+                Title = Helpers.Loc.T("접속 기록에서 연결", "Connect from history"),
+                Content = content,
+                PrimaryButtonText = Helpers.Loc.T("연결", "Connect"),
+                CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                DefaultButton = ContentDialogButton.Primary,
+                IsPrimaryButtonEnabled = false,
+                XamlRoot = Content.XamlRoot,
+            };
+            passwordBox.PasswordChanged += (_, _) =>
+                dialog.IsPrimaryButtonEnabled = passwordBox.Password.Length > 0;
+            dialog.Opened += (_, _) => passwordBox.Focus(FocusState.Programmatic);
+
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                return false;
+
+            draft.Password = passwordBox.Password;
+            return draft.Password.Length > 0;
         }
 
         private FileTreePanel CreateFileTreePanel()
@@ -459,12 +483,46 @@ namespace sutty.UI.Views
         private MultiCommandPanel CreateMultiPanel()
         {
             var panel = new MultiCommandPanel();
-            panel.BroadcastRequested += async (_, command) => await BroadcastAsync(command);
+            panel.BroadcastRequested += async (_, command) =>
+                await BroadcastFromPanelAsync(panel, command);
             return panel;
         }
 
+        private async Task BroadcastFromPanelAsync(MultiCommandPanel panel, string command)
+        {
+            if (Interlocked.CompareExchange(ref _broadcastInProgress, 1, 0) != 0)
+            {
+                panel.ShowBroadcastStatus(Helpers.Loc.T(
+                    "이미 다른 브로드캐스트가 실행 중입니다.",
+                    "Another broadcast is already running."));
+                return;
+            }
+
+            var completed = false;
+            var failed = false;
+            panel.SetBroadcastRunning(true);
+            try
+            {
+                completed = await BroadcastAsync(command);
+            }
+            catch (Exception error)
+            {
+                failed = true;
+                Debug.WriteLine($"Broadcast batch failed: {error}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _broadcastInProgress, 0);
+                panel.SetBroadcastRunning(false, failed
+                    ? Helpers.Loc.T("브로드캐스트 실행 실패", "Broadcast failed")
+                    : completed
+                        ? Helpers.Loc.T("브로드캐스트 완료", "Broadcast complete")
+                        : null);
+            }
+        }
+
         // 체크된 모든 세션에 같은 명령을 병렬로 전송하고, 결과를 그리드 셀에 표시
-        private async Task BroadcastAsync(string command)
+        private async Task<bool> BroadcastAsync(string command)
         {
             var targets = MultiGrid.GetTargetSlots();
             if (targets.Count == 0)
@@ -479,7 +537,7 @@ namespace sutty.UI.Views
                     XamlRoot = Content.XamlRoot,
                 };
                 await dialog.ShowAsync();
-                return;
+                return false;
             }
 
             var productionTargets = targets
@@ -525,22 +583,31 @@ namespace sutty.UI.Views
                     XamlRoot = Content.XamlRoot,
                 };
                 if (await confirm.ShowAsync() != ContentDialogResult.Primary)
-                    return;
+                    return false;
             }
 
-            foreach (var slot in targets)
-                _ = RunBroadcastOnSlotAsync(slot, command);
+            await Task.WhenAll(targets.Select(slot =>
+                RunBroadcastOnSlotAsync(slot, command)));
+            return true;
         }
 
         private static async Task RunBroadcastOnSlotAsync(ViewModels.MultiSlotVm slot, string command)
         {
             slot.LastOutput = "…";
             slot.ResultText = Helpers.Loc.T("실행 중", "running");
+            using var timeoutCancellation = new CancellationTokenSource(BroadcastCommandTimeout);
             try
             {
-                var result = await slot.ExecuteAsync(command);
+                var result = await slot.ExecuteAsync(command, timeoutCancellation.Token);
                 var output = result.CombinedOutput;
-                slot.ResultText = slot.LocalView is not null
+                var timedOut = timeoutCancellation.IsCancellationRequested &&
+                               string.Equals(
+                                   result.ExitSignal,
+                                   "CANCELLED",
+                                   StringComparison.OrdinalIgnoreCase);
+                slot.ResultText = timedOut
+                    ? Helpers.Loc.T("시간 초과", "timed out")
+                    : slot.LocalView is not null
                     ? Helpers.Loc.T("완료", "complete")
                     : result.ExitCode is int exitCode
                         ? $"exit {exitCode}"
@@ -548,12 +615,23 @@ namespace sutty.UI.Views
                             ? signal.ToLowerInvariant()
                             : Helpers.Loc.T("실패", "failed");
                 slot.LastOutput = string.IsNullOrWhiteSpace(output)
-                    ? slot.LocalView is not null
+                    ? timedOut
+                        ? Helpers.Loc.T(
+                            "60초 안에 응답이 없어 중단했습니다.",
+                            "Stopped after no response for 60 seconds.")
+                        : slot.LocalView is not null
                         ? Helpers.Loc.T("(출력 없음)", "(no output)")
                         : result.Succeeded
                             ? Helpers.Loc.T("(출력 없음)", "(no output)")
                             : Helpers.Loc.T("(출력 없이 실패)", "(failed with no output)")
                     : output.Length > 400 ? output[..400] + "…" : output;
+            }
+            catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested)
+            {
+                slot.ResultText = Helpers.Loc.T("시간 초과", "timed out");
+                slot.LastOutput = Helpers.Loc.T(
+                    "60초 안에 응답이 없어 중단했습니다.",
+                    "Stopped after no response for 60 seconds.");
             }
             catch (Exception ex)
             {

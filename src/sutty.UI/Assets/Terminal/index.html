@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="dark light">
+  <title>Sutty Terminal</title>
+  <link rel="stylesheet" href="xterm-6.0.0.css">
+  <link rel="stylesheet" href="sutty-terminal.css">
+</head>
+<body>
+  <main id="terminal-root" aria-label="Terminal">
+    <div id="terminal"></div>
+    <section id="search" class="search" hidden aria-label="Search terminal output">
+      <input id="search-input" type="text" autocomplete="off" spellcheck="false">
+      <button id="search-previous" type="button" aria-label="Previous match">&#x2191;</button>
+      <button id="search-next" type="button" aria-label="Next match">&#x2193;</button>
+      <button id="search-close" type="button" aria-label="Close search">&#x2715;</button>
+    </section>
+  </main>
+  <script src="xterm-6.0.0.js"></script>
+  <script src="addon-fit-0.11.0.js"></script>
+  <script src="addon-search-0.16.0.js"></script>
+  <script src="sutty-terminal.js"></script>
+</body>
+</html>

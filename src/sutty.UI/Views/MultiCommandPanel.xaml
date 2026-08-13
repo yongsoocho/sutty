@@ -38,6 +38,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <TextBox
                     x:Name="BroadcastBox"
@@ -51,6 +52,7 @@
                     PreviewKeyDown="BroadcastBox_PreviewKeyDown"
                     TextWrapping="Wrap" />
                 <Button
+                    x:Name="RunBroadcastButton"
                     Grid.Row="1"
                     Height="32"
                     HorizontalAlignment="Stretch"
@@ -68,6 +70,24 @@
                         <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
                     </Button.Resources>
                 </Button>
+                <StackPanel
+                    x:Name="BroadcastStatusPanel"
+                    Grid.Row="2"
+                    HorizontalAlignment="Left"
+                    Orientation="Horizontal"
+                    Spacing="7"
+                    Visibility="Collapsed">
+                    <ProgressRing
+                        x:Name="BroadcastProgress"
+                        Width="14"
+                        Height="14"
+                        IsActive="False" />
+                    <TextBlock
+                        x:Name="BroadcastStatusText"
+                        VerticalAlignment="Center"
+                        FontSize="10.5"
+                        Foreground="{ThemeResource TextMuted}" />
+                </StackPanel>
             </Grid>
         </Grid>
 

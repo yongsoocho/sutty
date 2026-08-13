@@ -1,6 +1,5 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Commands;
 using sutty.Core.Terminal;
@@ -9,6 +8,7 @@ using sutty.UI.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,15 +17,14 @@ using Windows.UI;
 namespace sutty.UI.Views;
 
 /// <summary>
-/// A Windows-local PowerShell tab backed by ConPTY. The view shares Sutty's bounded
-/// VT screen model with SSH terminals while keeping local processes out of SSH/SFTP flows.
+/// A Windows-local PowerShell tab backed by ConPTY and the package-local terminal renderer.
+/// Local processes remain isolated from SSH/SFTP session ownership.
 /// </summary>
 public sealed partial class LocalTerminalView : UserControl
 {
     private const int MaxTerminalBacklogBytes = 4 * 1024 * 1024;
     private const int MaxTerminalDrainBytes = 256 * 1024;
 
-    private readonly VtScreenBuffer _terminalBuffer = new();
     private readonly object _terminalOutputGate = new();
     private readonly Queue<byte[]> _terminalOutputQueue = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
@@ -41,7 +40,8 @@ public sealed partial class LocalTerminalView : UserControl
     private TerminalSize _requestedTerminalSize = new(120, 40, 0, 0);
 
     public LocalTerminalView()
-        : this(new WindowsConPtyTerminal())
+        : this(new WindowsConPtyTerminal(
+            loadProfile: SettingsService.Current.LoadLocalShellProfile))
     {
     }
 
@@ -52,7 +52,13 @@ public sealed partial class LocalTerminalView : UserControl
 
         Terminal.TerminalStateChanged += OnTerminalStateChanged;
         Terminal.TerminalDataReceived += OnTerminalDataReceived;
-        _terminalBuffer.ResponseRequested += response => _ = SendTerminalTextAsync(response);
+        TerminalSurface.InputReceived += (_, data) => _ = SendTerminalTextAsync(data);
+        TerminalSurface.TerminalSizeChanged += TerminalSurface_TerminalSizeChanged;
+        TerminalSurface.RendererFailed += (_, message) =>
+        {
+            TerminalStatusText.Text = Loc.T("터미널 렌더러 오류", "Terminal renderer error");
+            ToolTipService.SetToolTip(StatusPill, message);
+        };
 
         ApplyTerminalSettings();
         RefreshLanguage();
@@ -70,15 +76,9 @@ public sealed partial class LocalTerminalView : UserControl
             ? "Cascadia Mono"
             : settings.TerminalFontFamily.Trim();
         var family = new FontFamily($"{familyName}, Consolas");
-        var size = Math.Clamp(settings.TerminalFontSize, 8, 32);
-
         TitleText.FontFamily = family;
         TerminalStatusText.FontFamily = family;
-        TerminalText.FontFamily = family;
-        TerminalText.FontSize = size;
-        TerminalText.LineHeight = Math.Ceiling(size * 1.5);
-
-        RequestTerminalResize();
+        TerminalSurface.ApplyCurrentSettings();
     }
 
     /// <summary>Refresh labels that depend on the current Korean/English setting.</summary>
@@ -116,6 +116,12 @@ public sealed partial class LocalTerminalView : UserControl
         if (Volatile.Read(ref _closed) != 0)
             return;
 
+        if (state is TerminalState.Closed or TerminalState.Failed)
+        {
+            FailActiveBroadcast(new InvalidOperationException(
+                Terminal.LastTerminalError ?? "The local terminal closed during broadcast."));
+        }
+
         DispatcherQueue.TryEnqueue(() =>
         {
             if (Volatile.Read(ref _closed) != 0)
@@ -124,16 +130,12 @@ public sealed partial class LocalTerminalView : UserControl
             if (state == TerminalState.Opening)
             {
                 ClearTerminalBacklog();
-                _terminalBuffer.Reset();
-                _terminalBuffer.Resize(
-                    checked((int)_requestedTerminalSize.Columns),
-                    checked((int)_requestedTerminalSize.Rows));
-                TerminalText.Text = _terminalBuffer.Render();
+                TerminalSurface.Reset();
             }
 
             UpdateTerminalStatus(state);
             if (state == TerminalState.Open)
-                TerminalSurface.Focus(FocusState.Programmatic);
+                TerminalSurface.FocusTerminal();
         });
     }
 
@@ -212,22 +214,14 @@ public sealed partial class LocalTerminalView : UserControl
 
         if (resetScreen)
         {
-            _terminalBuffer.Reset();
             var warning = Loc.T(
                 $"[sutty: 터미널 출력이 4 MiB 대기 한도를 초과하여 {droppedBytes:N0}바이트를 버리고 화면을 재설정했습니다.]\r\n",
                 $"[sutty: terminal output exceeded the 4 MiB backlog; dropped {droppedBytes:N0} bytes and reset the screen.]\r\n");
-            _terminalBuffer.Feed(Encoding.UTF8.GetBytes(warning));
+            TerminalSurface.Reset(warning);
         }
 
         foreach (var data in batch)
-            _terminalBuffer.Feed(data);
-
-        TerminalText.Text = _terminalBuffer.Render();
-        if (!_terminalBuffer.IsAlternateScreen)
-        {
-            TerminalSurface.UpdateLayout();
-            TerminalSurface.ChangeView(null, TerminalSurface.ScrollableHeight, null, true);
-        }
+            TerminalSurface.Write(data);
 
         Interlocked.Exchange(ref _terminalDrainQueued, 0);
         if (HasTerminalBacklog())
@@ -259,13 +253,9 @@ public sealed partial class LocalTerminalView : UserControl
             return;
         }
 
-        _requestedTerminalSize = CalculateTerminalSize();
+        _requestedTerminalSize = TerminalSurface.ViewportSize;
         ClearTerminalBacklog();
-        _terminalBuffer.Reset();
-        _terminalBuffer.Resize(
-            checked((int)_requestedTerminalSize.Columns),
-            checked((int)_requestedTerminalSize.Rows));
-        TerminalText.Text = _terminalBuffer.Render();
+        TerminalSurface.Reset();
 
         try
         {
@@ -319,10 +309,15 @@ public sealed partial class LocalTerminalView : UserControl
     /// shell may be local PowerShell or a manually opened SSH shell. Portable echo markers
     /// delimit the response without replacing that foreground process.
     /// </summary>
-    public async Task<CommandExecutionResult> RunExternalCommandDetailedAsync(string command)
+    public async Task<CommandExecutionResult> RunExternalCommandDetailedAsync(
+        string command,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(command);
-        await _broadcastCommandGate.WaitAsync(_lifetimeCancellation.Token);
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            _lifetimeCancellation.Token,
+            cancellationToken);
+        await _broadcastCommandGate.WaitAsync(linkedCancellation.Token);
         try
         {
             if (Terminal.TerminalState != TerminalState.Open)
@@ -342,15 +337,32 @@ public sealed partial class LocalTerminalView : UserControl
 
             try
             {
-                await SendTerminalTextAsync(wireInput);
-                var output = await capture.Completion
-                    .WaitAsync(TimeSpan.FromMinutes(10), _lifetimeCancellation.Token);
+                await Terminal.SendTerminalInputAsync(
+                    Encoding.UTF8.GetBytes(wireInput),
+                    linkedCancellation.Token);
+                var output = await capture.Completion.WaitAsync(linkedCancellation.Token);
                 return new CommandExecutionResult(
                     command,
                     output,
                     "",
                     null,
                     null,
+                    startedAt,
+                    Stopwatch.GetElapsedTime(started));
+            }
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested &&
+                !_lifetimeCancellation.IsCancellationRequested)
+            {
+                var partialOutput = await InterruptBroadcastAsync(capture);
+                return new CommandExecutionResult(
+                    command,
+                    partialOutput,
+                    Loc.T(
+                        "브로드캐스트 명령이 취소되었거나 시간 제한을 초과했습니다.",
+                        "The broadcast command was cancelled or timed out."),
+                    null,
+                    "CANCELLED",
                     startedAt,
                     Stopwatch.GetElapsedTime(started));
             }
@@ -369,6 +381,50 @@ public sealed partial class LocalTerminalView : UserControl
         }
     }
 
+    private async Task<string> InterruptBroadcastAsync(TerminalBroadcastCapture capture)
+    {
+        if (Terminal.TerminalState == TerminalState.Open &&
+            !_lifetimeCancellation.IsCancellationRequested)
+        {
+            using var interruptCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                _lifetimeCancellation.Token);
+            interruptCancellation.CancelAfter(TimeSpan.FromSeconds(2));
+            try
+            {
+                await Terminal.SendTerminalInputAsync(
+                    new byte[] { 0x03 },
+                    interruptCancellation.Token);
+            }
+            catch (Exception error) when (error is OperationCanceledException or
+                                          InvalidOperationException or IOException)
+            {
+                Debug.WriteLine($"Broadcast interrupt failed: {error.GetType().Name}");
+            }
+        }
+
+        try
+        {
+            return await capture.Completion.WaitAsync(
+                TimeSpan.FromSeconds(2),
+                _lifetimeCancellation.Token);
+        }
+        catch (Exception error) when (error is TimeoutException or
+                                      OperationCanceledException or
+                                      InvalidOperationException)
+        {
+            Debug.WriteLine($"Broadcast recovery used partial output: {error.GetType().Name}");
+            return capture.Snapshot();
+        }
+    }
+
+    private void FailActiveBroadcast(Exception error)
+    {
+        TerminalBroadcastCapture? capture;
+        lock (_broadcastCaptureGate)
+            capture = _broadcastCapture;
+        capture?.Fail(error);
+    }
+
     private void CaptureBroadcastOutput(byte[] data)
     {
         TerminalBroadcastCapture? capture;
@@ -377,131 +433,26 @@ public sealed partial class LocalTerminalView : UserControl
         capture?.Feed(data);
     }
 
-    private async void TerminalSurface_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
-    {
-        if (Terminal.TerminalState != TerminalState.Open)
-            return;
-
-        string? sequence = null;
-        if (IsKeyDown(Windows.System.VirtualKey.Control) &&
-            args.Key is >= Windows.System.VirtualKey.A and <= Windows.System.VirtualKey.Z)
-        {
-            sequence = ((char)((int)args.Key - (int)Windows.System.VirtualKey.A + 1)).ToString();
-        }
-        else
-        {
-            sequence = args.Key switch
-            {
-                Windows.System.VirtualKey.Enter => "\r",
-                Windows.System.VirtualKey.Back => "\x7f",
-                Windows.System.VirtualKey.Tab => "\t",
-                Windows.System.VirtualKey.Escape => "\x1b",
-                Windows.System.VirtualKey.Up => CursorKeySequence('A'),
-                Windows.System.VirtualKey.Down => CursorKeySequence('B'),
-                Windows.System.VirtualKey.Right => CursorKeySequence('C'),
-                Windows.System.VirtualKey.Left => CursorKeySequence('D'),
-                Windows.System.VirtualKey.Home => CursorKeySequence('H'),
-                Windows.System.VirtualKey.End => CursorKeySequence('F'),
-                Windows.System.VirtualKey.Insert => "\x1b[2~",
-                Windows.System.VirtualKey.Delete => "\x1b[3~",
-                Windows.System.VirtualKey.PageUp => "\x1b[5~",
-                Windows.System.VirtualKey.PageDown => "\x1b[6~",
-                Windows.System.VirtualKey.F1 => "\x1bOP",
-                Windows.System.VirtualKey.F2 => "\x1bOQ",
-                Windows.System.VirtualKey.F3 => "\x1bOR",
-                Windows.System.VirtualKey.F4 => "\x1bOS",
-                Windows.System.VirtualKey.F5 => "\x1b[15~",
-                Windows.System.VirtualKey.F6 => "\x1b[17~",
-                Windows.System.VirtualKey.F7 => "\x1b[18~",
-                Windows.System.VirtualKey.F8 => "\x1b[19~",
-                Windows.System.VirtualKey.F9 => "\x1b[20~",
-                Windows.System.VirtualKey.F10 => "\x1b[21~",
-                Windows.System.VirtualKey.F11 => "\x1b[23~",
-                Windows.System.VirtualKey.F12 => "\x1b[24~",
-                _ => null,
-            };
-        }
-
-        if (sequence is null)
-            return;
-
-        args.Handled = true;
-        await SendTerminalTextAsync(sequence);
-    }
-
-    private async void LocalTerminalView_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
-    {
-        var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
-        var shiftDown = IsKeyDown(Windows.System.VirtualKey.Shift);
-        if (args.Key != Windows.System.VirtualKey.Insert || (!controlDown && !shiftDown))
-            return;
-
-        args.Handled = true;
-        if (controlDown)
-        {
-            ClipboardHelper.CopyText(TerminalText.SelectedText);
-            return;
-        }
-
-        var clipboardText = await ClipboardHelper.GetTextAsync();
-        if (!string.IsNullOrEmpty(clipboardText))
-            await SendTerminalTextAsync(ClipboardHelper.NormalizeTerminalPaste(clipboardText));
-    }
-
-    private async void TerminalSurface_CharacterReceived(
-        UIElement sender,
-        CharacterReceivedRoutedEventArgs args)
-    {
-        if (Terminal.TerminalState != TerminalState.Open ||
-            IsKeyDown(Windows.System.VirtualKey.Control) ||
-            IsKeyDown(Windows.System.VirtualKey.Menu) ||
-            args.Character is < ' ' or '\x7f')
-        {
-            return;
-        }
-
-        args.Handled = true;
-        await SendTerminalTextAsync(args.Character.ToString());
-    }
-
-    private void TerminalSurface_PointerPressed(object sender, PointerRoutedEventArgs args)
-        => TerminalSurface.Focus(FocusState.Pointer);
-
     private void TerminalSurface_Loaded(object sender, RoutedEventArgs args)
     {
         if (Volatile.Read(ref _closed) != 0)
             return;
 
-        _requestedTerminalSize = CalculateTerminalSize();
-        if (Terminal.TerminalState != TerminalState.Open)
-        {
-            _terminalBuffer.Resize(
-                checked((int)_requestedTerminalSize.Columns),
-                checked((int)_requestedTerminalSize.Rows));
-            TerminalText.Text = _terminalBuffer.Render();
-        }
-
-        TerminalSurface.Focus(FocusState.Programmatic);
+        _requestedTerminalSize = TerminalSurface.ViewportSize;
+        TerminalSurface.FocusTerminal();
         _ = EnsureTerminalStartedAsync();
     }
 
-    private void TerminalSurface_SizeChanged(object sender, SizeChangedEventArgs args)
-        => RequestTerminalResize();
-
-    private void RequestTerminalResize()
+    private void TerminalSurface_TerminalSizeChanged(object? sender, TerminalSize size)
     {
-        _requestedTerminalSize = CalculateTerminalSize();
+        _requestedTerminalSize = size.Clamp();
+        UpdateTerminalStatus(Terminal.TerminalState);
 
         if (Terminal.TerminalState != TerminalState.Open)
-        {
-            _terminalBuffer.Resize(
-                checked((int)_requestedTerminalSize.Columns),
-                checked((int)_requestedTerminalSize.Rows));
-            TerminalText.Text = _terminalBuffer.Render();
-            UpdateTerminalStatus(Terminal.TerminalState);
             return;
-        }
 
+        // xterm fit events arrive in bursts while the window or splitter is dragged.
+        // Keep one worker and coalesce them so ConPTY ends at the latest dimensions.
         if (!_terminalResizeInProgress)
             _ = ResizeTerminalToLatestAsync();
     }
@@ -525,10 +476,6 @@ public sealed partial class LocalTerminalView : UserControl
                     break;
                 }
 
-                _terminalBuffer.Resize(
-                    checked((int)pending.Columns),
-                    checked((int)pending.Rows));
-                TerminalText.Text = _terminalBuffer.Render();
                 UpdateTerminalStatus(Terminal.TerminalState);
 
                 if (pending == _requestedTerminalSize)
@@ -549,19 +496,6 @@ public sealed partial class LocalTerminalView : UserControl
         }
     }
 
-    private TerminalSize CalculateTerminalSize()
-    {
-        var fontSize = Math.Clamp(SettingsService.Current.TerminalFontSize, 8, 32);
-        if (TerminalSurface.ActualWidth < 100 || TerminalSurface.ActualHeight < 80)
-            return new TerminalSize(120, 40);
-
-        var width = Math.Max(320, TerminalSurface.ActualWidth - 24);
-        var height = Math.Max(120, TerminalSurface.ActualHeight - 20);
-        var columns = (uint)Math.Clamp((int)Math.Floor(width / (fontSize * 0.62)), 20, 300);
-        var rows = (uint)Math.Clamp((int)Math.Floor(height / (fontSize * 1.5)), 5, 120);
-        return new TerminalSize(columns, rows, (uint)width, (uint)height);
-    }
-
     private void UpdateTerminalStatus(TerminalState state)
     {
         var (pillLabel, statusLabel, resourceKey) = state switch
@@ -569,7 +503,7 @@ public sealed partial class LocalTerminalView : UserControl
             TerminalState.Opening =>
                 ("STARTING", Loc.T("CONPTY · 시작 중", "CONPTY · starting"), "StatusAmber"),
             TerminalState.Open =>
-                ("RUNNING", $"CONPTY {_terminalBuffer.Columns}\u00D7{_terminalBuffer.Rows}", "StatusGreen"),
+                ("RUNNING", $"CONPTY {_requestedTerminalSize.Columns}\u00D7{_requestedTerminalSize.Rows}", "StatusGreen"),
             TerminalState.Failed =>
                 ("FAILED", Loc.T("CONPTY · 오류", "CONPTY · error"), "StatusRed"),
             _ =>
@@ -592,15 +526,5 @@ public sealed partial class LocalTerminalView : UserControl
                 ? Terminal.LastTerminalError ?? Loc.T("알 수 없는 오류", "Unknown error")
                 : null);
     }
-
-    private static bool IsKeyDown(Windows.System.VirtualKey key)
-        => Microsoft.UI.Input.InputKeyboardSource
-            .GetKeyStateForCurrentThread(key)
-            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-
-    private string CursorKeySequence(char final)
-        => _terminalBuffer.ApplicationCursorKeys
-            ? $"\x1bO{final}"
-            : $"\x1b[{final}";
 
 }

@@ -13,6 +13,12 @@ try
           "Language": "en",
           "TerminalFontFamily": "Cascadia Mono",
           "TerminalFontSize": 13,
+          "TerminalTheme": "untrusted-theme",
+          "TerminalCursorStyle": "giant-block",
+          "TerminalCursorBlink": false,
+          "TerminalScrollbackLines": 999999,
+          "TerminalScreenReaderMode": true,
+          "LoadLocalShellProfile": false,
           "EnableStructuredTextHighlighting": true,
           "EnableSeverityHighlighting": true,
           "EnableCommandSuggestions": true,
@@ -42,9 +48,18 @@ try
     Assert(loaded.EnableStructuredTextHighlighting, "structured highlighting setting load");
     Assert(loaded.EnableSeverityHighlighting, "severity highlighting setting load");
     Assert(loaded.EnableCommandSuggestions, "suggestion setting load");
+    Assert(loaded.TerminalTheme == "FollowApplication", "terminal theme allowlist normalization");
+    Assert(loaded.TerminalCursorStyle == "underline", "terminal cursor normalization");
+    Assert(loaded.TerminalScrollbackLines == 50_000, "terminal scrollback upper bound");
+    Assert(!loaded.TerminalCursorBlink, "terminal cursor-blink setting load");
+    Assert(loaded.TerminalScreenReaderMode, "terminal accessibility setting load");
+    Assert(!loaded.LoadLocalShellProfile, "local shell-profile setting load");
 
     loaded.HistoryTopHostCount = 4;
     loaded.RightPanelWidth = 420;
+    loaded.TerminalTheme = "AtomOneDark";
+    loaded.TerminalCursorStyle = "bar";
+    loaded.TerminalScrollbackLines = 12_000;
     var saved = SettingsService.Save(loaded);
     Assert(saved.Succeeded, "atomic setting save");
     Assert(!Directory.EnumerateFiles(scratch, "*.tmp").Any(), "setting temp cleanup");
@@ -52,6 +67,9 @@ try
     var json = JsonNode.Parse(File.ReadAllText(SettingsService.SettingsPath))!.AsObject();
     Assert(json["HistoryTopHostCount"]?.GetValue<int>() == 4, "PascalCase setting compatibility");
     Assert(json["RightPanelWidth"]?.GetValue<int>() == 420, "panel-width persistence");
+    Assert(json["TerminalTheme"]?.GetValue<string>() == "AtomOneDark", "terminal-theme persistence");
+    Assert(json["TerminalCursorStyle"]?.GetValue<string>() == "bar", "terminal-cursor persistence");
+    Assert(json["TerminalScrollbackLines"]?.GetValue<int>() == 12_000, "terminal-scrollback persistence");
 
     File.WriteAllText(SettingsService.SettingsPath, "{broken");
     SettingsService.ResetForTests();

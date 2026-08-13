@@ -128,35 +128,16 @@
             </Grid>
         </Border>
 
-        <!--  ── 실제 PTY 터미널: 키 입력 + bounded VT 화면 버퍼 ──  -->
+        <!--  ── 실제 PTY 터미널: package-local xterm.js/WebView2 renderer ──  -->
         <Grid
             x:Name="TerminalView"
             Grid.Row="1"
             Background="{ThemeResource TerminalBg}"
             Visibility="Collapsed">
-            <ScrollViewer
+            <controls:TerminalRendererControl
                 x:Name="TerminalSurface"
-                Padding="12,10"
-                Background="Transparent"
-                CharacterReceived="TerminalSurface_CharacterReceived"
-                HorizontalScrollBarVisibility="Auto"
-                IsTabStop="True"
                 Loaded="TerminalSurface_Loaded"
-                PointerPressed="TerminalSurface_PointerPressed"
-                PreviewKeyDown="TerminalSurface_PreviewKeyDown"
-                SizeChanged="TerminalSurface_SizeChanged"
-                VerticalScrollBarVisibility="Auto"
-                ZoomMode="Disabled">
-                <TextBlock
-                    x:Name="TerminalText"
-                    FontFamily="Cascadia Mono, Consolas"
-                    FontSize="13"
-                    Foreground="{ThemeResource TerminalFg}"
-                    IsTextSelectionEnabled="True"
-                    LineHeight="20"
-                    LineStackingStrategy="BlockLineHeight"
-                    TextWrapping="NoWrap" />
-            </ScrollViewer>
+                AutomationProperties.Name="SSH terminal" />
             <Border
                 x:Name="TerminalStatus"
                 Margin="12"

@@ -8,6 +8,7 @@ using sutty.UI.Helpers;
 using sutty.UI.Views;
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace sutty.UI.ViewModels;
@@ -93,10 +94,12 @@ public sealed class MultiSlotVm : ObservableObject
 
     public object? SessionKey => (object?)View ?? LocalView;
 
-    public Task<CommandExecutionResult> ExecuteAsync(string command) => View is not null
-        ? View.RunExternalCommandDetailedAsync(command)
+    public Task<CommandExecutionResult> ExecuteAsync(
+        string command,
+        CancellationToken cancellationToken = default) => View is not null
+        ? View.RunExternalCommandDetailedAsync(command, cancellationToken)
         : LocalView is not null
-            ? LocalView.RunExternalCommandDetailedAsync(command)
+            ? LocalView.RunExternalCommandDetailedAsync(command, cancellationToken)
             : Task.FromException<CommandExecutionResult>(
                 new InvalidOperationException("The broadcast slot is empty."));
 

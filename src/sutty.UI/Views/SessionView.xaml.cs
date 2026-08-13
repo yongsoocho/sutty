@@ -48,7 +48,6 @@ namespace sutty.UI.Views
         public bool HasOpenInteractiveTerminal => Session.TerminalState == TerminalState.Open;
 
         private readonly string _prompt;
-        private readonly VtScreenBuffer _terminalBuffer = new();
         private const int MaxTerminalBacklogBytes = 4 * 1024 * 1024;
         private const int MaxTerminalDrainBytes = 256 * 1024;
         private readonly object _terminalOutputGate = new();
@@ -108,7 +107,14 @@ namespace sutty.UI.Views
             Session.SftpStateChanged += OnSftpStateChanged;
             Session.TerminalStateChanged += OnTerminalStateChanged;
             Session.TerminalDataReceived += OnTerminalDataReceived;
-            _terminalBuffer.ResponseRequested += response => _ = SendTerminalTextAsync(response);
+            TerminalSurface.InputReceived += (_, data) => _ = SendTerminalTextAsync(data);
+            TerminalSurface.TerminalSizeChanged += TerminalSurface_TerminalSizeChanged;
+            TerminalSurface.RendererFailed += (_, message) =>
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    TerminalStatusText.Text = Loc.T("터미널 렌더러 오류", "Terminal renderer error");
+                    ToolTipService.SetToolTip(TerminalStatus, message);
+                });
             ApplyState(Session.State, initial: true);
             UpdateTerminalStatus(Session.TerminalState);
         }
@@ -127,9 +133,7 @@ namespace sutty.UI.Views
             CellsList.FontSize = size;
             CommandBox.FontFamily = family;
             CommandBox.FontSize = size;
-            TerminalText.FontFamily = family;
-            TerminalText.FontSize = size;
-            TerminalText.LineHeight = Math.Ceiling(size * 1.5);
+            TerminalSurface.ApplyCurrentSettings();
             InputPrompt.FontFamily = family;
             InputPrompt.FontSize = size;
             Controls.TerminalHighlight.Refresh(CellsList);
@@ -181,7 +185,7 @@ namespace sutty.UI.Views
             if (_isTerminal && Session.State == SessionState.Connected && TerminalSurface.IsLoaded)
             {
                 _ = EnsureTerminalStartedAsync();
-                TerminalSurface.Focus(FocusState.Programmatic);
+                TerminalSurface.FocusTerminal();
             }
         }
 
@@ -201,12 +205,11 @@ namespace sutty.UI.Views
                     // Retire output queued by the previous PTY generation before the new
                     // stream can publish its startup prompt.
                     ClearTerminalBacklog();
-                    _terminalBuffer.Reset();
-                    TerminalText.Text = _terminalBuffer.Render();
+                    TerminalSurface.Reset();
                 }
                 UpdateTerminalStatus(state);
                 if (state == TerminalState.Open && _isTerminal)
-                    TerminalSurface.Focus(FocusState.Programmatic);
+                    TerminalSurface.FocusTerminal();
             });
 
         private void OnTerminalDataReceived(object? sender, TerminalDataReceivedEventArgs e)
@@ -277,22 +280,14 @@ namespace sutty.UI.Views
 
             if (resetScreen)
             {
-                _terminalBuffer.Reset();
                 var warning = Loc.T(
-                    $"[sutty: 터미널 출력이 너무 빨라 {droppedBytes:N0}바이트를 버리고 화면을 재설정했습니다.]\r\n",
-                    $"[sutty: terminal output exceeded the 4 MiB backlog; dropped {droppedBytes:N0} bytes and reset the screen.]\r\n");
-                _terminalBuffer.Feed(Encoding.UTF8.GetBytes(warning));
+                    $"\r\n[sutty: 터미널 출력이 너무 빨라 {droppedBytes:N0}바이트를 버리고 화면을 재설정했습니다.]\r\n",
+                    $"\r\n[sutty: terminal output exceeded the 4 MiB backlog; dropped {droppedBytes:N0} bytes and reset the screen.]\r\n");
+                TerminalSurface.Reset(warning);
             }
 
             foreach (var data in batch)
-                _terminalBuffer.Feed(data);
-
-            TerminalText.Text = _terminalBuffer.Render();
-            if (!_terminalBuffer.IsAlternateScreen)
-            {
-                TerminalSurface.UpdateLayout();
-                TerminalSurface.ChangeView(null, TerminalSurface.ScrollableHeight, null, true);
-            }
+                TerminalSurface.Write(data);
 
             Interlocked.Exchange(ref _terminalDrainQueued, 0);
             if (HasTerminalBacklog())
@@ -322,9 +317,9 @@ namespace sutty.UI.Views
             {
                 TerminalState.Opening => (Loc.T("터미널 여는 중", "Opening terminal"), "StatusAmber"),
                 TerminalState.Open when Session.SupportsTerminalResize =>
-                    ($"PTY {_terminalBuffer.Columns}×{_terminalBuffer.Rows}", "StatusGreen"),
+                    ($"PTY {_requestedTerminalSize.Columns}×{_requestedTerminalSize.Rows}", "StatusGreen"),
                 TerminalState.Open =>
-                    ($"PTY {_terminalBuffer.Columns}×{_terminalBuffer.Rows} · {Loc.T("고정 크기", "fixed size")}", "StatusGreen"),
+                    ($"PTY {_requestedTerminalSize.Columns}×{_requestedTerminalSize.Rows} · {Loc.T("고정 크기", "fixed size")}", "StatusGreen"),
                 TerminalState.Failed =>
                     (Loc.T("터미널 오류", "Terminal error"), "StatusRed"),
                 _ => (Loc.T("터미널 닫힘", "Terminal closed"), "TextMuted"),
@@ -488,8 +483,10 @@ namespace sutty.UI.Views
             => (await RunCommandCoreAsync(command)).CombinedOutput;
 
         /// <summary>Structured result used by Multi so exit failures cannot look successful.</summary>
-        public Task<CommandExecutionResult> RunExternalCommandDetailedAsync(string command)
-            => RunCommandCoreAsync(command);
+        public Task<CommandExecutionResult> RunExternalCommandDetailedAsync(
+            string command,
+            CancellationToken cancellationToken = default)
+            => RunCommandCoreAsync(command, cancellationToken);
 
         // 프롬프트에 항상 현재 경로를 보여준다: /var/www ❯
         private void UpdatePrompt()
@@ -561,7 +558,8 @@ namespace sutty.UI.Views
         private async Task<string?> ResolveWorkingDirectoryCoreAsync(
             string remotePath,
             long? expectedRequestVersion = null,
-            Action<CommandExecutionResult>? resultCaptured = null)
+            Action<CommandExecutionResult>? resultCaptured = null,
+            CancellationToken cancellationToken = default)
         {
             if (Session.State != SessionState.Connected || string.IsNullOrWhiteSpace(remotePath))
                 return null;
@@ -575,7 +573,8 @@ namespace sutty.UI.Views
             var target = remotePath.Trim();
             var result = await Session.ExecuteCommandAsync(
                 $"cd {ShellDirectoryArgument(_cwd)} 2>/dev/null || exit $?; " +
-                $"cd {ShellDirectoryArgument(target)} 2>/dev/null && pwd");
+                $"cd {ShellDirectoryArgument(target)} 2>/dev/null && pwd",
+                cancellationToken);
             resultCaptured?.Invoke(result);
             var output = result.StandardOutput.Trim();
             var resolved = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -601,13 +600,15 @@ namespace sutty.UI.Views
         private async Task<string> RunCommandAsync(string command)
             => (await RunCommandCoreAsync(command)).CombinedOutput;
 
-        private async Task<CommandExecutionResult> RunCommandCoreAsync(string command)
+        private async Task<CommandExecutionResult> RunCommandCoreAsync(
+            string command,
+            CancellationToken cancellationToken = default)
         {
             RememberCommand(command);
-            await _commandGate.WaitAsync();
+            await _commandGate.WaitAsync(cancellationToken);
             try
             {
-                return await RunCommandCoreLockedAsync(command);
+                return await RunCommandCoreLockedAsync(command, cancellationToken);
             }
             finally
             {
@@ -615,7 +616,9 @@ namespace sutty.UI.Views
             }
         }
 
-        private async Task<CommandExecutionResult> RunCommandCoreLockedAsync(string command)
+        private async Task<CommandExecutionResult> RunCommandCoreLockedAsync(
+            string command,
+            CancellationToken cancellationToken)
         {
             if (Session.State != SessionState.Connected)
             {
@@ -652,7 +655,8 @@ namespace sutty.UI.Views
                     var target = trimmed == "cd" ? "~" : trimmed[3..].Trim();
                     output = await ResolveWorkingDirectoryCoreAsync(
                         target,
-                        resultCaptured: captured => result = captured) ?? "";
+                        resultCaptured: captured => result = captured,
+                        cancellationToken: cancellationToken) ?? "";
                     if (result is null)
                     {
                         result = new CommandExecutionResult(
@@ -672,7 +676,8 @@ namespace sutty.UI.Views
                 else
                 {
                     result = await Session.ExecuteCommandAsync(
-                        $"cd {ShellDirectoryArgument(_cwd)} 2>/dev/null || exit $?; {command}");
+                        $"cd {ShellDirectoryArgument(_cwd)} 2>/dev/null || exit $?; {command}",
+                        cancellationToken);
                     output = result.CombinedOutput;
                 }
 
@@ -841,6 +846,11 @@ namespace sutty.UI.Views
 
         private async void SessionView_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
+            // xterm owns terminal clipboard shortcuts so bracketed paste and selection are
+            // handled in the renderer. This handler only serves native REPL controls.
+            if (_isTerminal)
+                return;
+
             var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
             var shiftDown = IsKeyDown(Windows.System.VirtualKey.Shift);
             if (e.Key != Windows.System.VirtualKey.Insert || (!controlDown && !shiftDown))
@@ -854,7 +864,6 @@ namespace sutty.UI.Views
                 {
                     TextBox textBox => textBox.SelectedText,
                     TextBlock textBlock => textBlock.SelectedText,
-                    _ when _isTerminal => TerminalText.SelectedText,
                     _ => string.Empty,
                 };
                 ClipboardHelper.CopyText(selected);
@@ -865,15 +874,8 @@ namespace sutty.UI.Views
             if (string.IsNullOrEmpty(clipboardText))
                 return;
 
-            if (_isTerminal)
-            {
-                await SendTerminalTextAsync(ClipboardHelper.NormalizeTerminalPaste(clipboardText));
-            }
-            else
-            {
-                ClipboardHelper.InsertAtSelection(CommandBox, clipboardText);
-                CommandBox.Focus(FocusState.Programmatic);
-            }
+            ClipboardHelper.InsertAtSelection(CommandBox, clipboardText);
+            CommandBox.Focus(FocusState.Programmatic);
         }
 
         // ── Interactive PTY input/output ──
@@ -884,13 +886,9 @@ namespace sutty.UI.Views
                 Session.TerminalState is TerminalState.Open or TerminalState.Opening)
                 return;
 
-            _requestedTerminalSize = CalculateTerminalSize();
+            _requestedTerminalSize = TerminalSurface.ViewportSize;
             ClearTerminalBacklog();
-            _terminalBuffer.Reset();
-            _terminalBuffer.Resize(
-                checked((int)_requestedTerminalSize.Columns),
-                checked((int)_requestedTerminalSize.Rows));
-            TerminalText.Text = _terminalBuffer.Render();
+            TerminalSurface.Reset();
 
             try
             {
@@ -927,110 +925,32 @@ namespace sutty.UI.Views
             }
         }
 
-        private async void TerminalSurface_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
-        {
-            if (Session.TerminalState != TerminalState.Open)
-                return;
-
-            string? sequence = null;
-            if (IsKeyDown(Windows.System.VirtualKey.Control) &&
-                e.Key is >= Windows.System.VirtualKey.A and <= Windows.System.VirtualKey.Z)
-            {
-                sequence = ((char)((int)e.Key - (int)Windows.System.VirtualKey.A + 1)).ToString();
-            }
-            else
-            {
-                sequence = e.Key switch
-                {
-                    Windows.System.VirtualKey.Enter => "\r",
-                    Windows.System.VirtualKey.Back => "\x7f",
-                    Windows.System.VirtualKey.Tab => "\t",
-                    Windows.System.VirtualKey.Escape => "\x1b",
-                    Windows.System.VirtualKey.Up => CursorKeySequence('A'),
-                    Windows.System.VirtualKey.Down => CursorKeySequence('B'),
-                    Windows.System.VirtualKey.Right => CursorKeySequence('C'),
-                    Windows.System.VirtualKey.Left => CursorKeySequence('D'),
-                    Windows.System.VirtualKey.Home => CursorKeySequence('H'),
-                    Windows.System.VirtualKey.End => CursorKeySequence('F'),
-                    Windows.System.VirtualKey.Insert => "\x1b[2~",
-                    Windows.System.VirtualKey.Delete => "\x1b[3~",
-                    Windows.System.VirtualKey.PageUp => "\x1b[5~",
-                    Windows.System.VirtualKey.PageDown => "\x1b[6~",
-                    Windows.System.VirtualKey.F1 => "\x1bOP",
-                    Windows.System.VirtualKey.F2 => "\x1bOQ",
-                    Windows.System.VirtualKey.F3 => "\x1bOR",
-                    Windows.System.VirtualKey.F4 => "\x1bOS",
-                    Windows.System.VirtualKey.F5 => "\x1b[15~",
-                    Windows.System.VirtualKey.F6 => "\x1b[17~",
-                    Windows.System.VirtualKey.F7 => "\x1b[18~",
-                    Windows.System.VirtualKey.F8 => "\x1b[19~",
-                    Windows.System.VirtualKey.F9 => "\x1b[20~",
-                    Windows.System.VirtualKey.F10 => "\x1b[21~",
-                    Windows.System.VirtualKey.F11 => "\x1b[23~",
-                    Windows.System.VirtualKey.F12 => "\x1b[24~",
-                    _ => null,
-                };
-            }
-
-            if (sequence is null)
-                return;
-
-            e.Handled = true;
-            await SendTerminalTextAsync(sequence);
-        }
-
-        private async void TerminalSurface_CharacterReceived(
-            UIElement sender,
-            CharacterReceivedRoutedEventArgs args)
-        {
-            if (Session.TerminalState != TerminalState.Open ||
-                IsKeyDown(Windows.System.VirtualKey.Control) ||
-                IsKeyDown(Windows.System.VirtualKey.Menu) ||
-                args.Character is < ' ' or '\x7f')
-                return;
-
-            args.Handled = true;
-            await SendTerminalTextAsync(args.Character.ToString());
-        }
-
-        private void TerminalSurface_PointerPressed(object sender, PointerRoutedEventArgs e)
-            => TerminalSurface.Focus(FocusState.Pointer);
-
         private void TerminalSurface_Loaded(object sender, RoutedEventArgs e)
         {
-            _requestedTerminalSize = CalculateTerminalSize();
-            if (Session.TerminalState != TerminalState.Open)
-            {
-                _terminalBuffer.Resize(
-                    checked((int)_requestedTerminalSize.Columns),
-                    checked((int)_requestedTerminalSize.Rows));
-                TerminalText.Text = _terminalBuffer.Render();
-            }
+            _requestedTerminalSize = TerminalSurface.ViewportSize;
 
             if (_isTerminal && Session.State == SessionState.Connected)
                 _ = EnsureTerminalStartedAsync();
         }
 
-        private async void TerminalSurface_SizeChanged(object sender, SizeChangedEventArgs e)
+        private void TerminalSurface_TerminalSizeChanged(object? sender, TerminalSize size)
         {
-            var size = CalculateTerminalSize();
-            _requestedTerminalSize = size;
+            _requestedTerminalSize = size.Clamp();
+            UpdateTerminalStatus(Session.TerminalState);
 
-            if (Session.TerminalState != TerminalState.Open)
-            {
-                _terminalBuffer.Resize(checked((int)size.Columns), checked((int)size.Rows));
-                TerminalText.Text = _terminalBuffer.Render();
-                return;
-            }
-
-            if (!Session.SupportsTerminalResize)
+            if (Session.TerminalState != TerminalState.Open || !Session.SupportsTerminalResize)
                 return;
 
             // SizeChanged can fire in bursts while the splitter/window is dragged. Keep one
             // worker and coalesce pending events so the remote PTY finishes at the newest size.
+            if (!_terminalResizeInProgress)
+                _ = ResizeTerminalToLatestAsync();
+        }
+
+        private async Task ResizeTerminalToLatestAsync()
+        {
             if (_terminalResizeInProgress)
                 return;
-
             _terminalResizeInProgress = true;
 
             try
@@ -1041,10 +961,6 @@ namespace sutty.UI.Views
                     if (!await Session.ResizeTerminalAsync(pending))
                         break;
 
-                    _terminalBuffer.Resize(
-                        checked((int)pending.Columns),
-                        checked((int)pending.Rows));
-                    TerminalText.Text = _terminalBuffer.Render();
                     UpdateTerminalStatus(Session.TerminalState);
 
                     if (pending == _requestedTerminalSize)
@@ -1061,28 +977,10 @@ namespace sutty.UI.Views
             }
         }
 
-        private TerminalSize CalculateTerminalSize()
-        {
-            var fontSize = Math.Clamp(SettingsService.Current.TerminalFontSize, 8, 32);
-            if (TerminalSurface.ActualWidth < 100 || TerminalSurface.ActualHeight < 80)
-                return new TerminalSize(120, 40);
-
-            var width = Math.Max(320, TerminalSurface.ActualWidth - 24);
-            var height = Math.Max(120, TerminalSurface.ActualHeight - 20);
-            var columns = (uint)Math.Clamp((int)Math.Floor(width / (fontSize * 0.62)), 20, 300);
-            var rows = (uint)Math.Clamp((int)Math.Floor(height / (fontSize * 1.5)), 5, 120);
-            return new TerminalSize(columns, rows, (uint)width, (uint)height);
-        }
-
         private static bool IsKeyDown(Windows.System.VirtualKey key)
             => Microsoft.UI.Input.InputKeyboardSource
                 .GetKeyStateForCurrentThread(key)
                 .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-
-        private string CursorKeySequence(char final)
-            => _terminalBuffer.ApplicationCursorKeys
-                ? $"\x1bO{final}"
-                : $"\x1b[{final}";
 
         // 줄(명령/출력)의 내용을 아래 명령 입력줄로 가져온다 (바로 실행하진 않음)
         private void PasteCell_Click(object sender, RoutedEventArgs e)

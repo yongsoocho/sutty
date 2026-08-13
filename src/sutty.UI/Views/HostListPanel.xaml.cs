@@ -179,7 +179,9 @@ public sealed partial class HostListPanel : UserControl
                 .GroupBy(profile => ConnectionKey(profile.Host, profile.Port, profile.Username))
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
-            foreach (var profile in profiles)
+            // SAVED HOSTS is the pinned quick-access list. Releasing a pin removes the
+            // card immediately while retaining the non-secret profile and history link.
+            foreach (var profile in profiles.Where(profile => profile.IsFavorite))
                 _allSaved.Add(FromProfile(profile));
 
             foreach (var entry in HostHistoryStore.GetMostFrequent(

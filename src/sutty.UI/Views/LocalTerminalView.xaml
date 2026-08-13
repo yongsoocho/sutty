@@ -3,11 +3,11 @@
     x:Class="sutty.UI.Views.LocalTerminalView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:sutty.UI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     HorizontalAlignment="Stretch"
     VerticalAlignment="Stretch"
-    PreviewKeyDown="LocalTerminalView_PreviewKeyDown"
     mc:Ignorable="d">
 
     <Grid Background="{ThemeResource TerminalBg}">
@@ -77,30 +77,10 @@
             </Grid>
         </Border>
 
-        <ScrollViewer
+        <controls:TerminalRendererControl
             x:Name="TerminalSurface"
             Grid.Row="1"
-            Padding="12,10"
             AutomationProperties.Name="Local PowerShell terminal"
-            Background="Transparent"
-            CharacterReceived="TerminalSurface_CharacterReceived"
-            HorizontalScrollBarVisibility="Auto"
-            IsTabStop="True"
-            Loaded="TerminalSurface_Loaded"
-            PointerPressed="TerminalSurface_PointerPressed"
-            PreviewKeyDown="TerminalSurface_PreviewKeyDown"
-            SizeChanged="TerminalSurface_SizeChanged"
-            VerticalScrollBarVisibility="Auto"
-            ZoomMode="Disabled">
-            <TextBlock
-                x:Name="TerminalText"
-                FontFamily="Cascadia Mono, Consolas"
-                FontSize="13"
-                Foreground="{ThemeResource TerminalFg}"
-                IsTextSelectionEnabled="True"
-                LineHeight="20"
-                LineStackingStrategy="BlockLineHeight"
-                TextWrapping="NoWrap" />
-        </ScrollViewer>
+            Loaded="TerminalSurface_Loaded" />
     </Grid>
 </UserControl>

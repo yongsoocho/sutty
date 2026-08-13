@@ -17,7 +17,13 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly SemaphoreSlim _resizeGate = new(1, 1);
+    private readonly bool _loadProfile;
     private ConPtyHost? _host;
+
+    public WindowsConPtyTerminal(bool loadProfile = false)
+    {
+        _loadProfile = loadProfile;
+    }
 
     public TerminalState TerminalState { get; private set; } = TerminalState.Closed;
     public string? LastTerminalError { get; private set; }
@@ -41,7 +47,7 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
             ConPtyHost? host = null;
             try
             {
-                host = ConPtyHost.Create(size.Clamp());
+                host = ConPtyHost.Create(size.Clamp(), _loadProfile);
                 host.DataReceived += (_, data) =>
                 {
                     if (ReferenceEquals(Volatile.Read(ref _host), host))
@@ -216,7 +222,7 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
         public event EventHandler<ReadOnlyMemory<byte>>? DataReceived;
         public event EventHandler<Exception?>? Ended;
 
-        public static ConPtyHost Create(TerminalSize size)
+        public static ConPtyHost Create(TerminalSize size, bool loadProfile)
         {
             IntPtr inputRead = IntPtr.Zero;
             IntPtr inputWrite = IntPtr.Zero;
@@ -271,7 +277,8 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
                 startup.AttributeList = attributeList;
 
                 var shellPath = GetPowerShellPath();
-                var commandLine = new StringBuilder($"\"{shellPath}\" -NoLogo -NoProfile -NoExit");
+                var profileArgument = loadProfile ? string.Empty : " -NoProfile";
+                var commandLine = new StringBuilder($"\"{shellPath}\" -NoLogo{profileArgument} -NoExit");
                 var workingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 ThrowIfFalse(CreateProcess(
                     shellPath,

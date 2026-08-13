@@ -75,8 +75,8 @@ public sealed partial class HostCard : UserControl
 
         var actionLabel = hasSavedProfile
             ? Host.IsPinned
-                ? Helpers.Loc.T("즐겨찾기 해제", "Remove from favorites")
-                : Helpers.Loc.T("즐겨찾기 추가", "Add to favorites")
+                ? Helpers.Loc.T("저장 호스트에서 제거", "Remove from saved hosts")
+                : Helpers.Loc.T("저장 호스트에 추가", "Add to saved hosts")
             : Helpers.Loc.T("호스트 저장", "Save host");
         var targetLabel = $"{actionLabel}: {Host.Alias} ({Host.Hostname})";
         ToolTipService.SetToolTip(PrimaryActionButton, targetLabel);
