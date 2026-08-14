@@ -70,6 +70,7 @@ Assert(capturedBroadcastOutput.Contains("result", StringComparison.Ordinal),
 Assert(!capturedBroadcastOutput.Contains(captureBegin, StringComparison.Ordinal),
     "echoed begin-marker command is not mistaken for marker output");
 
+<<<<<<< HEAD
 var coloredBegin = $"__SUTTY_BROADCAST_BEGIN_{Guid.NewGuid():N}__";
 var coloredEnd = $"__SUTTY_BROADCAST_END_{Guid.NewGuid():N}__";
 var coloredCapture = new TerminalBroadcastCapture(coloredBegin, coloredEnd);
@@ -105,6 +106,8 @@ catch (InvalidOperationException)
 }
 Assert(captureFailed, "terminal closure releases a pending broadcast capture");
 
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 var json = "{\"service\":\"api\",\"replicas\":3,\"ready\":true}";
 var jsonSpans = TerminalTextClassifier.Classify(json);
 Assert(HasKind(jsonSpans, TerminalTextHighlightKind.Property),
@@ -137,6 +140,7 @@ Assert(suggestion?.Text == "kubectl get services",
 Assert(suggestions.Suggest(new CommandSuggestionRequest("no-match", [], [])) is null,
     "suggestion engine leaves unmatched input unchanged");
 
+<<<<<<< HEAD
 if (OperatingSystem.IsWindows())
 {
     var installedFonts = await InstalledFontCatalog.GetAsync();
@@ -147,6 +151,8 @@ if (OperatingSystem.IsWindows())
 
 VerifyPackagedRenderer();
 
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
 {
     await VerifyLocalConPtyAsync();
@@ -170,6 +176,7 @@ static bool HasKind(
     IReadOnlyList<TerminalTextSpan> spans,
     TerminalTextHighlightKind kind) => spans.Any(span => span.Kind == kind);
 
+<<<<<<< HEAD
 static void VerifyPackagedRenderer()
 {
     var assetDirectory = Path.Combine(AppContext.BaseDirectory, "TerminalAssets");
@@ -197,6 +204,8 @@ static void VerifyPackagedRenderer()
         "packaged xterm.js bytes match the reviewed version");
 }
 
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 [SupportedOSPlatform("windows10.0.17763")]
 static async Task VerifyLocalConPtyAsync()
 {
@@ -257,6 +266,7 @@ static async Task VerifyLocalConPtyAsync()
         await terminal.SendTerminalInputAsync(
             Encoding.UTF8.GetBytes(
                 $"echo {broadcastBegin}\rWrite-Output '{broadcastResult}'\recho {broadcastEnd}\r"));
+<<<<<<< HEAD
         string liveBroadcastOutput;
         try
         {
@@ -274,6 +284,10 @@ static async Task VerifyLocalConPtyAsync()
                 $"Captured terminal output: {captured}",
                 error);
         }
+=======
+        var liveBroadcastOutput = await liveBroadcastCapture.Completion
+            .WaitAsync(TimeSpan.FromSeconds(10));
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         Assert(liveBroadcastOutput.Contains(broadcastResult, StringComparison.Ordinal),
             "portable broadcast markers delimit actual local shell output");
         Assert(!liveBroadcastOutput.Contains(broadcastBegin, StringComparison.Ordinal),

@@ -605,7 +605,11 @@ namespace sutty.UI.Views
             CancellationToken cancellationToken = default)
         {
             RememberCommand(command);
+<<<<<<< HEAD
             await _commandGate.WaitAsync(cancellationToken);
+=======
+            await _commandGate.WaitAsync();
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
             try
             {
                 return await RunCommandCoreLockedAsync(command, cancellationToken);
@@ -846,11 +850,14 @@ namespace sutty.UI.Views
 
         private async void SessionView_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
+<<<<<<< HEAD
             // xterm owns terminal clipboard shortcuts so bracketed paste and selection are
             // handled in the renderer. This handler only serves native REPL controls.
             if (_isTerminal)
                 return;
 
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
             var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
             var shiftDown = IsKeyDown(Windows.System.VirtualKey.Shift);
             if (e.Key != Windows.System.VirtualKey.Insert || (!controlDown && !shiftDown))
@@ -864,6 +871,10 @@ namespace sutty.UI.Views
                 {
                     TextBox textBox => textBox.SelectedText,
                     TextBlock textBlock => textBlock.SelectedText,
+<<<<<<< HEAD
+=======
+                    _ when _isTerminal => TerminalText.SelectedText,
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
                     _ => string.Empty,
                 };
                 ClipboardHelper.CopyText(selected);
@@ -874,8 +885,20 @@ namespace sutty.UI.Views
             if (string.IsNullOrEmpty(clipboardText))
                 return;
 
+<<<<<<< HEAD
             ClipboardHelper.InsertAtSelection(CommandBox, clipboardText);
             CommandBox.Focus(FocusState.Programmatic);
+=======
+            if (_isTerminal)
+            {
+                await SendTerminalTextAsync(ClipboardHelper.NormalizeTerminalPaste(clipboardText));
+            }
+            else
+            {
+                ClipboardHelper.InsertAtSelection(CommandBox, clipboardText);
+                CommandBox.Focus(FocusState.Programmatic);
+            }
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         }
 
         // ── Interactive PTY input/output ──

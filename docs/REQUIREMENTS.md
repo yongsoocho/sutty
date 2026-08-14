@@ -81,12 +81,21 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
+<<<<<<< HEAD
 | TERM-001 | P0 | Partial | Persistent SSH `ShellStream` PTY and local ConPTY both use the package-local xterm.js renderer; the required vim/tmux/htop/sudo compatibility matrix has not passed.<br>지속 SSH `ShellStream` PTY와 로컬 ConPTY가 모두 패키지 내부 xterm.js 렌더러를 사용하지만 필수 vim/tmux/htop/sudo 호환 매트릭스를 통과하지 않았습니다. |
 | TERM-002 | P0 | Partial | xterm.js provides ANSI/VT SGR color/style, cursor/erase/scrolling, alternate screen, device responses, and mouse modes. The representative shell/TUI and malicious-sequence matrix is incomplete.<br>xterm.js가 ANSI/VT SGR 색·스타일, 커서·지우기·스크롤, 대체 화면, 장치 응답, 마우스 모드를 제공하지만 대표 셸·TUI 및 악성 sequence 매트릭스는 미완성입니다. |
 | TERM-003 | P0 | Partial | xterm.js owns control, navigation, function-key, application-mode, and IME input. Global tab/navigation/settings shortcuts and Ctrl/Shift+Insert are implemented; the exhaustive Windows keyboard-layout matrix is missing.<br>xterm.js가 제어·탐색·기능키·application mode·IME 입력을 처리하며 전역 탭·내비게이션·설정 단축키와 Ctrl/Shift+Insert를 구현했습니다. 전체 Windows 키보드 배열 매트릭스는 남아 있습니다. |
 | TERM-004 | P0 | Partial | Runtime server-side resize uses SSH.NET's public `ChangeWindowSize` API; shell/TUI and resize-stress integration evidence remains incomplete.<br>실행 중 서버 측 크기 변경은 SSH.NET 공개 `ChangeWindowSize` API를 사용하지만 셸/TUI·resize stress 통합 증거는 아직 완성되지 않았습니다. |
 | TERM-005 | P1 | Partial | xterm.js provides incremental UTF-8 rendering, IME composition, wide/emoji/combining cells, and a screen-reader mode. Korean IME and Unicode edge-case acceptance evidence is incomplete.<br>xterm.js가 점진적 UTF-8 표시, IME 조합, 넓은 문자·이모지·결합 문자 셀, 화면 읽기 모드를 제공하지만 한글 IME와 Unicode 경계 사례 인수 증거는 미완성입니다. |
 | TERM-006 | P1 | Partial | Bounded configurable scrollback, selection, Ctrl+Insert copy, Shift+Insert paste, bracketed-paste-aware xterm input, and Ctrl+F search exist; 100,000-line, latency, and long-session evidence is missing.<br>제한·설정 가능한 scrollback, 선택, Ctrl+Insert 복사, Shift+Insert 붙여넣기, bracketed paste를 인식하는 xterm 입력, Ctrl+F 검색이 있지만 100,000줄·지연·장시간 세션 증거는 남아 있습니다. |
+=======
+| TERM-001 | P0 | Partial | A persistent real `ShellStream` PTY exists; the required vim/tmux/htop/sudo compatibility matrix has not passed.<br>실제 지속 `ShellStream` PTY가 있지만 필수 vim/tmux/htop/sudo 호환 매트릭스를 통과하지 않았습니다. |
+| TERM-002 | P0 | Partial | Cursor, erase, scroll region, alternate screen, and device responses exist; SGR style/color, mouse, and broad VT compatibility do not.<br>커서·지우기·스크롤 영역·대체 화면·장치 응답은 있지만 SGR 색·스타일·마우스·폭넓은 VT 호환성이 없습니다. |
+| TERM-003 | P0 | Partial | Control letters, Tab, arrows, navigation keys, DECCKM, and F1–F12 are sent. Global tab/navigation/settings shortcuts and Ctrl/Shift+Insert are implemented; exhaustive input validation is missing.<br>Control 문자·Tab·방향키·탐색키·DECCKM·F1–F12를 전송하며 전역 탭·내비게이션·설정 단축키와 Ctrl/Shift+Insert를 구현했습니다. 전체 입력 검증은 남아 있습니다. |
+| TERM-004 | P0 | Partial | Runtime server-side resize uses SSH.NET's public `ChangeWindowSize` API; shell/TUI and resize-stress integration evidence remains incomplete.<br>실행 중 서버 측 크기 변경은 SSH.NET 공개 `ChangeWindowSize` API를 사용하지만 셸/TUI·resize stress 통합 증거는 아직 완성되지 않았습니다. |
+| TERM-005 | P1 | Partial | Incremental UTF-8 input/output exists; Korean IME and wide/combining cell behavior are not acceptance-tested or complete.<br>점진적 UTF-8 입력·출력은 있지만 한글 IME와 넓은 문자·결합 문자 셀 동작이 완전하지 않고 인수 테스트가 없습니다. |
+| TERM-006 | P1 | Partial | Bounded scrollback, selectable text, Ctrl+Insert copy, and Shift+Insert paste exist; terminal search, bracketed-paste mode detection, and 100,000-line evidence are missing.<br>제한된 scrollback·텍스트 선택·Ctrl+Insert 복사·Shift+Insert 붙여넣기가 있지만 터미널 검색·bracketed-paste 모드 감지·100,000줄 검증은 남아 있습니다. |
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 | TERM-007 | P1 | Planned | Opt-in transcript storage and retention are not implemented.<br>선택형 transcript 저장과 보존 정책을 구현하지 않았습니다. |
 | TERM-008 | P1 | Implemented | REPL cells classify JSON/YAML syntax plus critical/error and warning text with bounded parsing. Recent and saved commands are suggested without execution and accepted with Right Arrow or optional Tab.<br>REPL 셀은 제한된 파싱으로 JSON/YAML 문법과 critical/error·warning 텍스트를 분류합니다. 최근·저장 명령은 실행 없이 제안되며 오른쪽 화살표 또는 선택형 Tab으로 적용합니다. |
 

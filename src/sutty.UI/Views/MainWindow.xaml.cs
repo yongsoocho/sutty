@@ -586,9 +586,14 @@ namespace sutty.UI.Views
                     return false;
             }
 
+<<<<<<< HEAD
             await Task.WhenAll(targets.Select(slot =>
                 RunBroadcastOnSlotAsync(slot, command)));
             return true;
+=======
+            foreach (var slot in targets)
+                _ = RunBroadcastOnSlotAsync(slot, command);
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         }
 
         private static async Task RunBroadcastOnSlotAsync(ViewModels.MultiSlotVm slot, string command)
@@ -598,6 +603,7 @@ namespace sutty.UI.Views
             using var timeoutCancellation = new CancellationTokenSource(BroadcastCommandTimeout);
             try
             {
+<<<<<<< HEAD
                 var result = await slot.ExecuteAsync(command, timeoutCancellation.Token);
                 var output = result.CombinedOutput;
                 var timedOut = timeoutCancellation.IsCancellationRequested &&
@@ -608,6 +614,11 @@ namespace sutty.UI.Views
                 slot.ResultText = timedOut
                     ? Helpers.Loc.T("시간 초과", "timed out")
                     : slot.LocalView is not null
+=======
+                var result = await slot.ExecuteAsync(command);
+                var output = result.CombinedOutput;
+                slot.ResultText = slot.LocalView is not null
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
                     ? Helpers.Loc.T("완료", "complete")
                     : result.ExitCode is int exitCode
                         ? $"exit {exitCode}"
@@ -615,11 +626,15 @@ namespace sutty.UI.Views
                             ? signal.ToLowerInvariant()
                             : Helpers.Loc.T("실패", "failed");
                 slot.LastOutput = string.IsNullOrWhiteSpace(output)
+<<<<<<< HEAD
                     ? timedOut
                         ? Helpers.Loc.T(
                             "60초 안에 응답이 없어 중단했습니다.",
                             "Stopped after no response for 60 seconds.")
                         : slot.LocalView is not null
+=======
+                    ? slot.LocalView is not null
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
                         ? Helpers.Loc.T("(출력 없음)", "(no output)")
                         : result.Succeeded
                             ? Helpers.Loc.T("(출력 없음)", "(no output)")

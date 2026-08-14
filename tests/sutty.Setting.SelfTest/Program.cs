@@ -13,12 +13,15 @@ try
           "Language": "en",
           "TerminalFontFamily": "Cascadia Mono",
           "TerminalFontSize": 13,
+<<<<<<< HEAD
           "TerminalTheme": "untrusted-theme",
           "TerminalCursorStyle": "giant-block",
           "TerminalCursorBlink": false,
           "TerminalScrollbackLines": 999999,
           "TerminalScreenReaderMode": true,
           "LoadLocalShellProfile": false,
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
           "EnableStructuredTextHighlighting": true,
           "EnableSeverityHighlighting": true,
           "EnableCommandSuggestions": true,
@@ -48,12 +51,15 @@ try
     Assert(loaded.EnableStructuredTextHighlighting, "structured highlighting setting load");
     Assert(loaded.EnableSeverityHighlighting, "severity highlighting setting load");
     Assert(loaded.EnableCommandSuggestions, "suggestion setting load");
+<<<<<<< HEAD
     Assert(loaded.TerminalTheme == "FollowApplication", "terminal theme allowlist normalization");
     Assert(loaded.TerminalCursorStyle == "underline", "terminal cursor normalization");
     Assert(loaded.TerminalScrollbackLines == 50_000, "terminal scrollback upper bound");
     Assert(!loaded.TerminalCursorBlink, "terminal cursor-blink setting load");
     Assert(loaded.TerminalScreenReaderMode, "terminal accessibility setting load");
     Assert(!loaded.LoadLocalShellProfile, "local shell-profile setting load");
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 
     loaded.HistoryTopHostCount = 4;
     loaded.RightPanelWidth = 420;

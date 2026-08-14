@@ -33,7 +33,11 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[8.0.3, )",
+<<<<<<< HEAD
           "SSH.NET": "[2026.0.0, )"
+=======
+          "SSH.NET": "[2025.1.0, )"
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         }
       }
     }

@@ -40,14 +40,22 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - Append-only connection-attempt history plus explicit Saved Host profiles, groups, environments, favorites, and search in SQLite.
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
 - Up to 16 mixed local/SSH tabs, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged SSH sessions.
+<<<<<<< HEAD
 - Immediately applied Korean/English settings, atomic settings persistence, dark/light themes, terminal palettes (including Ubuntu, Atom One Dark, Dracula, GitHub, and Solarized), cursor/scrollback/accessibility controls, and optional PowerShell profile loading for prompt customizers.
+=======
+- Immediately applied Korean/English settings, atomic settings persistence, and dark/light themes.
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 - Direct, HTTP CONNECT, SOCKS4, and SOCKS5 connection routes shared by SSH and SFTP. Enterprise mode rejects direct routes instead of silently falling back.
 - REPL JSON/YAML syntax highlighting, red critical/error and amber warning marking, and history/saved-command suggestions accepted with Right Arrow or Tab.
 - Keyboard-first navigation: `Ctrl+1`–`Ctrl+9` tabs, `Ctrl+T` local tab, `Alt+1`–`Alt+6` work surfaces/settings, `Ctrl+,` settings, and Insert-style copy/paste.
 
 ### Why this is not GA
 
+<<<<<<< HEAD
 - The package-local xterm.js/WebView2 renderer is integrated for both SSH and local ConPTY, but the required shell/TUI/Unicode/input/security/latency/soak acceptance matrix is not complete. Terminal compatibility therefore remains **Alpha, not GA**. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
+=======
+- The SSH PTY and local ConPTY are real and support runtime resize, but the current WinUI text renderer is an **Alpha-only bridge**. It consumes SGR without rendering color/style and lacks mouse protocols and complete wide/combining-cell behavior. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 - SSH agent, OTP/multi-prompt keyboard-interactive UI, legacy `.ppk` import, jump hosts, audited gateway adapters, external proxy commands, and automatic reconnect are unavailable. Direct HTTP/SOCKS proxy routes are an Alpha baseline without the complete enterprise route matrix. Password mode's non-interactive fallback handles password-like prompts only.
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP currently transfers files, not directory trees. It has no pause/retry/resume, final size/checksum verification, `chmod`, synchronized browsing, or a complete collision-policy matrix.
@@ -147,14 +155,22 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·그룹·환경·즐겨찾기·검색
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
 - 로컬/SSH 혼합 최대 16개 탭, 기본 선택 0개의 Multi 대상, PROD 태그 SSH 세션이 포함된 브로드캐스트의 추가 확인
+<<<<<<< HEAD
 - 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마, Ubuntu·Atom One Dark·Dracula·GitHub·Solarized 터미널 팔레트, 커서·스크롤백·접근성 설정, 프롬프트 꾸미기를 위한 선택형 PowerShell 프로필 로딩
+=======
+- 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 - SSH와 SFTP가 함께 사용하는 Direct·HTTP CONNECT·SOCKS4·SOCKS5 연결 경로. 기업 모드에서는 Direct 경로와 조용한 우회를 차단합니다.
 - REPL JSON/YAML 문법 강조, critical/error 빨간색·warning 노란색 표시, 최근/저장 명령 제안과 오른쪽 화살표·Tab 적용
 - `Ctrl+1`–`Ctrl+9` 탭, `Ctrl+T` 로컬 탭, `Alt+1`–`Alt+6` 작업 화면/설정, `Ctrl+,` 설정, Insert 방식 복사·붙여넣기 단축키
 
 ### GA가 아닌 이유
 
+<<<<<<< HEAD
 - 패키지 내부 xterm.js/WebView2 렌더러를 SSH와 로컬 ConPTY에 연결했지만 필수 셸·TUI·Unicode·입력·보안·지연·장시간 실행 인수 매트릭스는 아직 완성되지 않았습니다. 따라서 터미널 호환성은 계속 **Alpha이며 GA가 아닙니다**. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
+=======
+- SSH PTY와 로컬 ConPTY는 실제이고 실행 중 크기 변경을 지원하지만 현재 WinUI 텍스트 렌더러는 **Alpha 전용 연결 단계**입니다. SGR을 소비하지만 색·스타일을 표시하지 않고, 마우스 프로토콜과 넓은 문자·결합 문자의 완전한 셀 처리가 없습니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 - SSH agent, OTP·다중 prompt keyboard-interactive UI, 레거시 `.ppk` 가져오기, 점프 호스트, 감사 게이트웨이 어댑터, 외부 프록시 명령, 자동 재연결은 지원하지 않습니다. Direct HTTP/SOCKS 프록시는 Alpha 기준선이며 기업용 전체 경로 매트릭스는 아직 검증되지 않았습니다. 비밀번호 방식의 비대화형 fallback은 password 형태 prompt만 처리합니다.
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - 현재 SFTP는 파일만 전송하며 디렉터리 트리는 전송하지 않습니다. 일시정지·재시도·재개, 최종 크기/checksum 검증, `chmod`, 동기 탐색, 완전한 충돌 정책 매트릭스가 없습니다.

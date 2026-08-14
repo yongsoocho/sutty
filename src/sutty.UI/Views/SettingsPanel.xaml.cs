@@ -219,7 +219,24 @@ namespace sutty.UI.Views
             CommitChangesNow(SettingChangeKind.TerminalMode);
         }
 
+<<<<<<< HEAD
         private void TerminalAppearanceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+=======
+        private void TerminalFeatureToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading)
+                return;
+
+            var settings = SettingsService.Current;
+            settings.EnableStructuredTextHighlighting = StructuredHighlightToggle.IsOn;
+            settings.EnableSeverityHighlighting = SeverityHighlightToggle.IsOn;
+            settings.EnableCommandSuggestions = CommandSuggestionToggle.IsOn;
+            settings.AcceptSuggestionWithTab = SuggestionTabToggle.IsOn;
+            CommitChangesNow(SettingChangeKind.TerminalFeatures);
+        }
+
+        private void FontFamilyBox_TextChanged(object sender, TextChangedEventArgs e)
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         {
             if (_loading)
                 return;
