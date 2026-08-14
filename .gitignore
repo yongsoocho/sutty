@@ -1,5 +1,9 @@
 # Asset
 Assets
+!src/sutty.UI/Assets/
+src/sutty.UI/Assets/*
+!src/sutty.UI/Assets/Terminal/
+!src/sutty.UI/Assets/Terminal/**
 
 # Build output
 bin/

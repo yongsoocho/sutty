@@ -12,6 +12,26 @@ public sealed class AppSettings
     public string TerminalFontFamily { get; set; } = "Cascadia Mono";
     public int TerminalFontSize { get; set; } = 13;
 
+<<<<<<< HEAD
+    /// <summary>Terminal palette id, or FollowApplication to follow the app light/dark mode.</summary>
+    public string TerminalTheme { get; set; } = "FollowApplication";
+
+    /// <summary>xterm cursor shape: underline, bar, or block.</summary>
+    public string TerminalCursorStyle { get; set; } = "underline";
+
+    public bool TerminalCursorBlink { get; set; } = true;
+
+    /// <summary>Bounded xterm scrollback retained per live terminal.</summary>
+    public int TerminalScrollbackLines { get; set; } = 5_000;
+
+    /// <summary>Expose xterm's accessibility tree for screen-reader users.</summary>
+    public bool TerminalScreenReaderMode { get; set; }
+
+    /// <summary>Load the user's PowerShell profile in newly opened local terminal tabs.</summary>
+    public bool LoadLocalShellProfile { get; set; } = true;
+
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
     /// <summary>Color JSON/YAML keys, strings, numbers, literals, and comments in REPL cells.</summary>
     public bool EnableStructuredTextHighlighting { get; set; } = true;
 

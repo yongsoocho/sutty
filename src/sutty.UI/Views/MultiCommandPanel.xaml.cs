@@ -36,6 +36,27 @@ namespace sutty.UI.Views
             EmptyText.Visibility = Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        public void SetBroadcastRunning(bool isRunning, string? status = null)
+        {
+            BroadcastBox.IsEnabled = !isRunning;
+            RunBroadcastButton.IsEnabled = !isRunning;
+            CommandsList.IsEnabled = !isRunning;
+            BroadcastProgress.IsActive = isRunning;
+            BroadcastProgress.Visibility = isRunning ? Visibility.Visible : Visibility.Collapsed;
+            BroadcastStatusText.Text = status ?? (isRunning
+                ? Helpers.Loc.T("세션별로 실행 중…", "Running on each session…")
+                : "");
+            BroadcastStatusPanel.Visibility = string.IsNullOrWhiteSpace(BroadcastStatusText.Text)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+
+        public void ShowBroadcastStatus(string status)
+        {
+            BroadcastStatusText.Text = status;
+            BroadcastStatusPanel.Visibility = Visibility.Visible;
+        }
+
         // WinUI TextBox는 줄구분자로 '\r'을 쓴다
         private static string NormalizeNewlines(string text)
             => text.Replace("\r\n", "\n").Replace('\r', '\n');

@@ -10,6 +10,21 @@
     <!-- VtScreenBuffer has no WinUI dependency; link the production source directly. -->
     <Compile Include="..\..\src\sutty.UI\Helpers\VtScreenBuffer.cs" Link="VtScreenBuffer.cs" />
     <Compile Include="..\..\src\sutty.UI\Helpers\TerminalBroadcastCapture.cs" Link="TerminalBroadcastCapture.cs" />
+<<<<<<< HEAD
+    <Compile Include="..\..\src\sutty.UI\Helpers\InstalledFontCatalog.cs" Link="InstalledFontCatalog.cs" />
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
     <ProjectReference Include="..\..\src\sutty.Core\sutty.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\src\sutty.UI\Assets\Terminal\index.html"
+             Link="TerminalAssets\index.html"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\sutty.UI\Assets\Terminal\sutty-terminal.js"
+             Link="TerminalAssets\sutty-terminal.js"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\sutty.UI\Assets\Terminal\xterm-6.0.0.js"
+             Link="TerminalAssets\xterm-6.0.0.js"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

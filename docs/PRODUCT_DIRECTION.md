@@ -52,7 +52,7 @@ This baseline is useful for development and controlled testing. It has not passe
 
 | Gate | Current gap |
 | --- | --- |
-| Terminal compatibility | Replace the transitional native renderer with the approved local xterm.js/WebView2 design, harden the bridge, preserve the current server PTY resize contract, and pass the shell/TUI/input/Unicode matrix. |
+| Terminal compatibility | The hardened package-local xterm.js/WebView2 renderer and server PTY resize contract are integrated; pass and record the remaining shell/TUI/input/Unicode/security/soak matrix before GA. |
 | Secure host and credentials | Saved Host separation and a local encrypted Vault now exist; complete duplicate/bulk UX, OTP/multi-prompt keyboard-interactive UI, and broader secret-lifetime/redaction tests. |
 | Host identity | Keep current unknown/trusted/changed enforcement, then add changed-key UX, rotation/management, audit, and integration coverage. |
 | SFTP correctness | Add directory transfer, recursive safety, complete collision policy, symlink handling, permission/error coverage, and large-file/deep-path tests. |
@@ -77,7 +77,7 @@ GA requires the relevant P0 and P1 rows in [Requirements Traceability](REQUIREME
 ### Delivery sequence
 
 1. **Foundation** — supported runtime/platforms, empty production data, architecture boundaries, migrations, and repeatable builds.
-2. **Secure SSH Alpha** — Saved Hosts, Vault, Known Hosts, authentication matrix, and a GA-candidate terminal renderer.
+2. **Secure SSH Alpha** — Saved Hosts, Vault, Known Hosts, authentication matrix, and GA evidence for the integrated terminal renderer.
 3. **SFTP Beta** — two-way file workflows, directory transfers, safe queue/retry/resume, and integrity/failure testing.
 4. **Operations Beta** — REPL/snippets, forwarding, jump/proxy, Multi results, production safeguards, and audit.
 5. **Enterprise RC** — local policy, import, diagnostics, accessibility, signed MSIX, update, and deployment validation.
@@ -143,7 +143,7 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 
 | 게이트 | 현재 남은 작업 |
 | --- | --- |
-| 터미널 호환성 | 임시 네이티브 렌더러를 승인된 로컬 xterm.js/WebView2 설계로 교체하고, bridge를 hardening하며, 현재 서버 PTY resize 계약을 유지하고 셸/TUI/입력/Unicode 매트릭스를 통과해야 합니다. |
+| 터미널 호환성 | 보안 설정한 패키지 내부 xterm.js/WebView2 렌더러와 서버 PTY resize 계약을 통합했습니다. GA 전에 남은 셸·TUI·입력·Unicode·보안·장시간 실행 매트릭스를 통과하고 기록해야 합니다. |
 | 안전한 Host와 자격 증명 | Saved Host 분리와 로컬 암호화 Vault는 구현됐으며 프로필 복제·일괄 UX, OTP·다중 prompt keyboard-interactive UI, 더 넓은 비밀정보 수명·redaction 테스트가 필요합니다. |
 | 호스트 신원 | 현재 unknown/trusted/changed 강제를 유지하고, 변경 키 UX, rotation/관리, audit, 통합 검증을 추가해야 합니다. |
 | SFTP 정확성 | 디렉터리 전송, 재귀 작업 안전성, 전체 충돌 정책, symlink 처리, 권한·오류 범위, 대용량 파일·깊은 경로 테스트가 필요합니다. |
@@ -168,7 +168,7 @@ GA가 되려면 [요구사항 추적표](REQUIREMENTS.md)의 해당 P0·P1 항�
 ### 개발 순서
 
 1. **Foundation** — 지원 runtime/platform, 빈 production 데이터, 구조 경계, migration, 반복 가능한 빌드
-2. **Secure SSH Alpha** — Saved Hosts, Vault, Known Hosts, 인증 매트릭스, GA 후보 터미널 렌더러
+2. **Secure SSH Alpha** — Saved Hosts, Vault, Known Hosts, 인증 매트릭스, 통합된 터미널 렌더러의 GA 증거
 3. **SFTP Beta** — 양방향 파일 작업, 디렉터리 전송, 안전한 queue/retry/resume, 무결성·실패 테스트
 4. **Operations Beta** — REPL/snippet, forwarding, jump/proxy, Multi 결과, 운영 환경 보호, audit
 5. **Enterprise RC** — 로컬 정책, 가져오기, 진단, 접근성, 서명 MSIX, 업데이트, 배포 검증

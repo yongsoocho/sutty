@@ -1,7 +1,7 @@
 # ADR 0001: Terminal Renderer / 터미널 렌더러
 
-- **Status / 상태:** Accepted for Alpha only; transitional / Alpha에만 승인된 임시 결정
-- **Date / 날짜:** 2026-08-11
+- **Status / 상태:** Implemented for Alpha; GA verification pending / Alpha 구현 완료, GA 검증 대기
+- **Date / 날짜:** 2026-08-13
 - **Decision owners / 결정 주체:** Sutty product and engineering / Sutty 제품·개발
 
 ## English
@@ -10,23 +10,15 @@
 
 The product specification selects a locally bundled **xterm.js renderer hosted in a hardened WebView2** for the GA terminal. It also requires a real SSH PTY, runtime server-side resize, ANSI/VT compatibility, alternate screen, color, mouse mode, Unicode cell correctness, search, copy/paste, input-method support, bounded resources, and security regression testing.
 
-The current Alpha already has a real SSH.NET `ShellStream` PTY with runtime server-side resize through the public `ChangeWindowSize` API, but its renderer is a native WinUI `TextBlock` backed by [`VtScreenBuffer`](../../src/sutty.UI/Helpers/VtScreenBuffer.cs). The buffer is bounded and understands a useful subset of cursor, erase, scrolling, alternate-screen, device-response, and application-cursor behavior. [`SessionView`](../../src/sutty.UI/Views/SessionView.xaml.cs) bounds queued terminal output and batches UI updates.
+The current Alpha now uses pinned package-local xterm.js 6.0.0, fit 0.11.0, and search 0.16.0 assets hosted by [`TerminalRendererControl`](../../src/sutty.UI/Controls/TerminalRendererControl.cs) in WebView2. Both SSH.NET `ShellStream` and local ConPTY feed the same renderer. The host measures the xterm viewport and preserves runtime server-side resize through the public `ChangeWindowSize` API.
 
-This is not an xterm-compatible renderer:
-
-- SGR is consumed without rendering color or style.
-- Mouse reporting is absent.
-- Wide, emoji, and combining characters do not have a complete terminal-cell model.
-- Search and dedicated terminal copy/paste behavior are incomplete.
-- The focused self-test is a parser smoke test, not the required shell/TUI/security/soak matrix.
+The renderer provides ANSI/VT color and style, alternate screen, mouse/input modes, IME and Unicode cell handling, selection, search, and bracketed-paste-aware input. Integration is complete for Alpha, but the required representative shell/TUI, malicious-sequence, keyboard-layout, latency, memory, and soak matrix is not complete; GA compatibility is therefore not claimed.
 
 ### Decision
 
-Keep the bounded native renderer only as an **Alpha engineering bridge** while SSH lifecycle, host-key, SFTP, and workspace flows are developed.
+Use the package-local xterm.js/WebView2 renderer as Sutty's single interactive terminal presentation for SSH and local ConPTY. Keep `VtScreenBuffer` only as a bounded parser/self-test fixture; do not grow it into a second runtime emulator.
 
-Sutty must not claim GA terminal compatibility, complete legacy-client replacement, or conformance for `vim`, `tmux`, ncurses, mouse applications, or arbitrary escape sequences while this decision remains active.
-
-Before GA, implement the specification's local xterm.js/WebView2 renderer unless a superseding ADR demonstrates an alternative with equal or stronger compatibility, security, accessibility, and maintenance evidence.
+Sutty must not claim GA terminal compatibility or conformance for the representative TUI matrix until the remaining acceptance evidence is recorded.
 
 ### Required transition controls
 
@@ -43,12 +35,12 @@ The replacement must:
 
 ### Consequences
 
-- The native buffer remains small and bounded; feature growth that tries to turn it into a second full terminal emulator should be rejected.
-- Alpha users receive a real interactive channel with clearly documented rendering limitations.
-- Renderer migration is a P0 GA gate and may change the terminal presentation implementation without changing the PTY/session contract.
-- Documentation and release notes must continue to say **Alpha, not GA** until the transition criteria have evidence.
+- Pinned third-party bytes and their MIT license are recorded beside the packaged assets.
+- The WebView2 origin is local-only, navigation and permissions are denied, no host object is exposed, and the typed versioned bridge validates message types and bounds.
+- Output uses bounded queues and one acknowledged in-flight write; overflow resets the screen with an explicit notice instead of slicing UTF-8 or VT sequences.
+- Documentation and release notes continue to say **Alpha, not GA** until the compatibility, security, latency, and soak criteria have evidence.
 
-Traceability: [TERM-001 through TERM-006](../REQUIREMENTS.md#terminal--터미널) remain Partial or Planned under this ADR.
+Traceability: [TERM-001 through TERM-006](../REQUIREMENTS.md#terminal--터미널) remain Partial until the required matrix has evidence.
 
 ---
 
@@ -58,23 +50,15 @@ Traceability: [TERM-001 through TERM-006](../REQUIREMENTS.md#terminal--터미널
 
 제품 명세는 GA 터미널로 **로컬에 포함한 xterm.js 렌더러와 hardening된 WebView2 host**를 선택합니다. 실제 SSH PTY, 실행 중 서버 resize, ANSI/VT 호환성, 대체 화면, 색상, 마우스 모드, 정확한 Unicode 셀, 검색, copy/paste, 입력기 지원, 제한된 리소스, 보안 회귀 테스트도 요구합니다.
 
-현재 Alpha에는 공개 `ChangeWindowSize` API로 실행 중 서버 측 크기 변경을 지원하는 실제 SSH.NET `ShellStream` PTY가 있지만 렌더러는 [`VtScreenBuffer`](../../src/sutty.UI/Helpers/VtScreenBuffer.cs)를 사용하는 네이티브 WinUI `TextBlock`입니다. 이 버퍼는 크기가 제한되어 있고 일부 커서·지우기·스크롤·대체 화면·장치 응답·application cursor 동작을 처리합니다. [`SessionView`](../../src/sutty.UI/Views/SessionView.xaml.cs)는 대기 중인 터미널 출력 크기를 제한하고 UI 갱신을 묶어서 처리합니다.
+현재 Alpha는 WebView2 안의 [`TerminalRendererControl`](../../src/sutty.UI/Controls/TerminalRendererControl.cs)이 패키지 내부에 고정한 xterm.js 6.0.0, fit 0.11.0, search 0.16.0을 사용합니다. SSH.NET `ShellStream`과 로컬 ConPTY가 같은 렌더러를 사용하며, host가 xterm viewport를 측정해 공개 `ChangeWindowSize` API의 실행 중 서버 측 크기 변경을 유지합니다.
 
-이는 xterm 호환 렌더러가 아닙니다.
-
-- SGR을 소비하지만 색과 스타일을 표시하지 않습니다.
-- 마우스 보고가 없습니다.
-- 넓은 문자·emoji·결합 문자를 위한 완전한 터미널 셀 모델이 없습니다.
-- 검색과 전용 터미널 copy/paste 동작이 미완성입니다.
-- 현재 집중형 self-test는 parser smoke test이며 필수 shell/TUI/security/soak 매트릭스가 아닙니다.
+렌더러는 ANSI/VT 색·스타일, 대체 화면, 마우스·입력 모드, IME·Unicode 셀, 선택, 검색, bracketed paste 입력을 제공합니다. Alpha 통합은 완료됐지만 대표 셸·TUI, 악성 sequence, 키보드 배열, 지연, 메모리, 장시간 실행 매트릭스는 아직 완성되지 않았으므로 GA 호환성을 주장하지 않습니다.
 
 ### 결정
 
-SSH 수명주기, 호스트키, SFTP, workspace 흐름을 개발하는 동안 제한된 네이티브 렌더러를 **Alpha 엔지니어링 연결 단계**로만 유지합니다.
+패키지 내부 xterm.js/WebView2 렌더러를 SSH와 로컬 ConPTY의 단일 대화형 터미널 표시 구현으로 사용합니다. `VtScreenBuffer`는 제한된 parser/self-test fixture로만 유지하며 두 번째 runtime emulator로 확장하지 않습니다.
 
-이 결정이 유효한 동안 Sutty는 GA 터미널 호환성, 기존 터미널 클라이언트의 완전한 대체, `vim`·`tmux`·ncurses·마우스 앱·임의 escape sequence 호환성을 주장하면 안 됩니다.
-
-GA 전에 명세의 로컬 xterm.js/WebView2 렌더러를 구현해야 합니다. 다른 대안을 선택하려면 동등하거나 더 강한 호환성·보안·접근성·유지보수 증거를 가진 후속 ADR이 필요합니다.
+대표 TUI 매트릭스의 남은 인수 증거가 기록될 때까지 Sutty는 GA 터미널 호환성을 주장하지 않습니다.
 
 ### 필수 전환 조건
 
@@ -91,9 +75,9 @@ GA 전에 명세의 로컬 xterm.js/WebView2 렌더러를 구현해야 합니다
 
 ### 결과
 
-- 네이티브 버퍼는 작고 제한된 상태로 유지합니다. 이를 두 번째 완전한 터미널 emulator로 키우려는 기능 확장은 거부해야 합니다.
-- Alpha 사용자는 렌더링 한계를 명확히 안내받은 실제 대화형 채널을 사용합니다.
-- 렌더러 전환은 P0 GA 게이트이며 PTY/session 계약을 유지한 채 표시 구현을 바꿀 수 있습니다.
-- 전환 조건의 증거가 생길 때까지 문서와 릴리스 노트는 계속 **Alpha, GA 아님**이라고 표시해야 합니다.
+- 고정한 third-party byte와 MIT 라이선스를 패키지 자산 옆에 기록합니다.
+- WebView2 origin은 로컬 전용이고 탐색·권한을 거부하며 host object를 노출하지 않습니다. 형식과 크기를 검증하는 typed versioned bridge만 사용합니다.
+- 출력은 제한된 queue와 한 개의 확인 대기 write를 사용합니다. overflow 시 UTF-8·VT sequence를 자르지 않고 명시적 알림과 함께 화면을 재설정합니다.
+- 호환성·보안·지연·장시간 실행 조건의 증거가 생길 때까지 문서와 릴리스 노트는 계속 **Alpha, GA 아님**이라고 표시합니다.
 
-추적: 이 ADR이 유효한 동안 [TERM-001부터 TERM-006](../REQUIREMENTS.md#terminal--터미널)은 Partial 또는 Planned 상태를 유지합니다.
+추적: 필수 매트릭스의 증거가 생길 때까지 [TERM-001부터 TERM-006](../REQUIREMENTS.md#terminal--터미널)은 Partial 상태를 유지합니다.

@@ -122,8 +122,16 @@ public static class SettingsService
             : "ko";
         settings.TerminalFontFamily = string.IsNullOrWhiteSpace(settings.TerminalFontFamily)
             ? "Cascadia Mono"
-            : settings.TerminalFontFamily.Trim();
-        settings.TerminalFontSize = Math.Clamp(settings.TerminalFontSize, 8, 48);
+            : settings.TerminalFontFamily.Trim()[..Math.Min(settings.TerminalFontFamily.Trim().Length, 128)];
+        settings.TerminalFontSize = Math.Clamp(settings.TerminalFontSize, 8, 32);
+        settings.TerminalTheme = NormalizeTerminalTheme(settings.TerminalTheme);
+        settings.TerminalCursorStyle = settings.TerminalCursorStyle?.ToLowerInvariant() switch
+        {
+            "block" => "block",
+            "bar" => "bar",
+            _ => "underline",
+        };
+        settings.TerminalScrollbackLines = Math.Clamp(settings.TerminalScrollbackLines, 100, 50_000);
         settings.DefaultSshPort = Math.Clamp(settings.DefaultSshPort, 1, 65_535);
         settings.DefaultKeepAliveSeconds = Math.Clamp(settings.DefaultKeepAliveSeconds, 0, 3_600);
         settings.LastAuthMethod = string.Equals(
@@ -142,6 +150,25 @@ public static class SettingsService
         settings.RecentPrivateKeyPaths = NormalizeList(settings.RecentPrivateKeyPaths, 12, 2_048);
         settings.RecentConnectionTags = NormalizeList(settings.RecentConnectionTags, 20, 32);
         return settings;
+    }
+
+    private static string NormalizeTerminalTheme(string? value)
+    {
+        string[] allowed =
+        [
+            "FollowApplication",
+            "DeepField",
+            "Ubuntu",
+            "AtomOneDark",
+            "Dracula",
+            "GitHubDark",
+            "GitHubLight",
+            "SolarizedDark",
+            "SolarizedLight",
+        ];
+        return allowed.FirstOrDefault(item =>
+                   string.Equals(item, value, StringComparison.OrdinalIgnoreCase))
+               ?? "FollowApplication";
     }
 
     private static List<string> NormalizeList(IEnumerable<string>? values, int limit, int maxLength) =>

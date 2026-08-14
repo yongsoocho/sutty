@@ -132,14 +132,21 @@
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel Spacing="10">
                                 <StackPanel>
-                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="TERMINAL FONT" />
-                                    <TextBox
+                                    <TextBlock
+                                        Style="{StaticResource SettingsLabel}"
+                                        Text="{x:Bind h:Loc.T('터미널 글꼴', 'TERMINAL FONT')}" />
+                                    <AutoSuggestBox
                                         x:Name="FontFamilyBox"
+                                        CornerRadius="7"
                                         FontSize="12.5"
+                                        IsSuggestionListOpen="False"
                                         LostFocus="FontFamilyBox_LostFocus"
                                         MinHeight="36"
+                                        PlaceholderText="Cascadia Mono"
+                                        QuerySubmitted="FontFamilyBox_QuerySubmitted"
+                                        SuggestionChosen="FontFamilyBox_SuggestionChosen"
                                         TextChanged="FontFamilyBox_TextChanged"
-                                        Style="{StaticResource DarkInput}" />
+                                        UpdateTextOnSelect="True" />
                                 </StackPanel>
                                 <StackPanel>
                                     <TextBlock Style="{StaticResource SettingsLabel}" Text="SIZE" />
@@ -151,6 +158,62 @@
                                         ValueChanged="NumberBox_ValueChanged"
                                         Style="{StaticResource SettingsNumber}" />
                                 </StackPanel>
+                                <StackPanel>
+                                    <TextBlock
+                                        Style="{StaticResource SettingsLabel}"
+                                        Text="{x:Bind h:Loc.T('터미널 색상 테마', 'TERMINAL COLOR THEME')}" />
+                                    <ComboBox
+                                        x:Name="TerminalThemeCombo"
+                                        HorizontalAlignment="Stretch"
+                                        CornerRadius="7"
+                                        FontSize="12.5"
+                                        MinHeight="36"
+                                        SelectionChanged="TerminalAppearanceCombo_SelectionChanged" />
+                                </StackPanel>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock
+                                            Style="{StaticResource SettingsLabel}"
+                                            Text="{x:Bind h:Loc.T('커서 모양', 'CURSOR STYLE')}" />
+                                        <ComboBox
+                                            x:Name="CursorStyleCombo"
+                                            HorizontalAlignment="Stretch"
+                                            CornerRadius="7"
+                                            FontSize="12.5"
+                                            MinHeight="36"
+                                            SelectionChanged="TerminalAppearanceCombo_SelectionChanged" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock
+                                            Style="{StaticResource SettingsLabel}"
+                                            Text="{x:Bind h:Loc.T('스크롤백 줄 수', 'SCROLLBACK LINES')}" />
+                                        <NumberBox
+                                            x:Name="ScrollbackBox"
+                                            Maximum="50000"
+                                            Minimum="100"
+                                            SpinButtonPlacementMode="Hidden"
+                                            ValueChanged="NumberBox_ValueChanged"
+                                            Style="{StaticResource SettingsNumber}" />
+                                    </StackPanel>
+                                </Grid>
+                                <ToggleSwitch
+                                    x:Name="CursorBlinkToggle"
+                                    Header="{x:Bind h:Loc.T('터미널 커서 깜박임', 'Blinking terminal cursor')}"
+                                    Toggled="TerminalAppearanceToggle_Toggled" />
+                                <ToggleSwitch
+                                    x:Name="ScreenReaderToggle"
+                                    Header="{x:Bind h:Loc.T('화면 읽기 프로그램 모드', 'Screen reader mode')}"
+                                    Toggled="TerminalAppearanceToggle_Toggled" />
+                                <ToggleSwitch
+                                    x:Name="LoadShellProfileToggle"
+                                    Header="{x:Bind h:Loc.T('로컬 PowerShell 프로필 불러오기', 'Load local PowerShell profile')}"
+                                    OffContent="{x:Bind h:Loc.T('새 로컬 탭에 미적용', 'Disabled for new local tabs')}"
+                                    OnContent="{x:Bind h:Loc.T('새 로컬 탭에 적용', 'Enabled for new local tabs')}"
+                                    Toggled="TerminalAppearanceToggle_Toggled" />
                                 <RadioButtons
                                     x:Name="TerminalModeRadios"
                                     Header="{x:Bind h:Loc.T('기본 보기 모드', 'Default view mode')}"

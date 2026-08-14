@@ -3,7 +3,7 @@ using Renci.SshNet.Common;
 namespace sutty.Core.Security;
 
 /// <summary>
-/// Fail-closed adapter for SSH.NET 2025.1 HostKeyReceived events. Attach
+/// Fail-closed adapter for SSH.NET HostKeyReceived events. Attach
 /// <see cref="HandleHostKeyReceived"/> before Connect/ConnectAsync on both SshClient and
 /// SftpClient, and keep it attached for each client's full lifetime so rekeys are checked.
 /// </summary>

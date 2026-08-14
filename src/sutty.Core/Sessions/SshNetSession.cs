@@ -42,7 +42,7 @@ public sealed class SshNetSession : ISshSession
     public TerminalState TerminalState { get; private set; } = TerminalState.Closed;
     public string? LastTerminalError { get; private set; }
 
-    // SSH.NET 2025.1 exposes the SSH window-change request through ShellStream.
+    // SSH.NET exposes the SSH window-change request through ShellStream.
     public bool SupportsTerminalResize => true;
 
     public event EventHandler<SessionState>? StateChanged;
@@ -223,7 +223,7 @@ public sealed class SshNetSession : ISshSession
 
             try
             {
-                // CreateShellStream is synchronous in SSH.NET 2025.1. Run the channel
+                // CreateShellStream is synchronous in SSH.NET. Run the channel
                 // allocation off the UI thread; cancellation is checked both before and
                 // immediately after the public API returns.
                 stream = await Task.Run(

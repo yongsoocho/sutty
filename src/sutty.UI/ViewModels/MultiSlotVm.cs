@@ -8,6 +8,10 @@ using sutty.UI.Helpers;
 using sutty.UI.Views;
 using System;
 using System.Linq;
+<<<<<<< HEAD
+using System.Threading;
+=======
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 using System.Threading.Tasks;
 
 namespace sutty.UI.ViewModels;
@@ -93,10 +97,19 @@ public sealed class MultiSlotVm : ObservableObject
 
     public object? SessionKey => (object?)View ?? LocalView;
 
+<<<<<<< HEAD
+    public Task<CommandExecutionResult> ExecuteAsync(
+        string command,
+        CancellationToken cancellationToken = default) => View is not null
+        ? View.RunExternalCommandDetailedAsync(command, cancellationToken)
+        : LocalView is not null
+            ? LocalView.RunExternalCommandDetailedAsync(command, cancellationToken)
+=======
     public Task<CommandExecutionResult> ExecuteAsync(string command) => View is not null
         ? View.RunExternalCommandDetailedAsync(command)
         : LocalView is not null
             ? LocalView.RunExternalCommandDetailedAsync(command)
+>>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
             : Task.FromException<CommandExecutionResult>(
                 new InvalidOperationException("The broadcast slot is empty."));
 
