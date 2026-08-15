@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Input;
 using sutty.Core.Models;
 using sutty.Core.Sessions;
 using sutty.Core.Sftp;
+using sutty.Setting;
 using sutty.UI.Helpers;
 using sutty.UI.ViewModels;
 using System;
@@ -17,6 +18,7 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
+using UiSftpTransferDirection = sutty.UI.ViewModels.SftpTransferDirection;
 
 namespace sutty.UI.Views;
 
@@ -408,28 +410,35 @@ public sealed partial class FileTreePanel : UserControl
             }
         }
 
-        foreach (var file in items.OfType<StorageFile>().Where(file => !string.IsNullOrWhiteSpace(file.Path)))
+        foreach (var item in items.Where(item =>
+                     item is StorageFile or StorageFolder &&
+                     !string.IsNullOrWhiteSpace(item.Path)))
         {
-            var collision = directory.Children.Any(child => child.Name.Equals(file.Name, StringComparison.Ordinal)) ||
-                Transfers.Any(item => item.CanCancel &&
-                    item.DestinationPath.Equals(RemotePath.Combine(directory.FullPath, file.Name), StringComparison.Ordinal));
-            var overwrite = !collision || await ConfirmOverwriteAsync(file.Name);
+            var collision = directory.Children.Any(child => child.Name.Equals(item.Name, StringComparison.Ordinal)) ||
+                Transfers.Any(transferItem => transferItem.CanCancel &&
+                    transferItem.DestinationPath.Equals(
+                        RemotePath.Combine(directory.FullPath, item.Name),
+                        StringComparison.Ordinal));
+            var overwrite = !collision || await ConfirmOverwriteAsync(item.Name);
             if (!_isAvailable || !ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion)
                 return;
             if (collision && !overwrite) continue;
-            _ = UploadAsync(file, directory.FullPath, overwrite, sftp, sessionVersion);
+            _ = UploadAsync(item, directory.FullPath, overwrite, sftp, sessionVersion);
         }
     }
 
     private async Task UploadAsync(
-        StorageFile file, string remoteDirectory, bool overwrite, ISftpService sftp, int sessionVersion)
+        IStorageItem item, string remoteDirectory, bool overwrite, ISftpService sftp, int sessionVersion)
     {
         long size = 0;
-        try { size = (long)(await file.GetBasicPropertiesAsync()).Size; } catch { }
+        if (item is StorageFile file)
+        {
+            try { size = (long)(await file.GetBasicPropertiesAsync()).Size; } catch { }
+        }
         if (!ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion) return;
 
-        var destination = RemotePath.Combine(remoteDirectory, file.Name);
-        var transfer = TryAddTransfer(file.Name, file.Path, destination, size, SftpTransferDirection.Upload);
+        var destination = RemotePath.Combine(remoteDirectory, item.Name);
+        var transfer = TryAddTransfer(item.Name, item.Path, destination, size, UiSftpTransferDirection.Upload);
         if (transfer is null) return;
         var token = transfer.Token;
         var workerAcquired = false;
@@ -441,8 +450,14 @@ public sealed partial class FileTreePanel : UserControl
             if (!ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion)
                 throw new OperationCanceledException(token);
             transfer.Start();
-            var progress = new Progress<double>(transfer.Report);
-            await sftp.UploadFileAsync(file.Path, remoteDirectory, overwrite, progress, token);
+            var progress = new Progress<sutty.Core.Sftp.SftpTransferProgress>(itemProgress =>
+                transfer.Report(itemProgress.Fraction));
+            await sftp.UploadPathAsync(
+                item.Path,
+                destination,
+                CreateTransferOptions(overwrite),
+                progress,
+                token);
             transfer.Complete();
             if (ReferenceEquals(_sftp, sftp) && sessionVersion == _sessionVersion)
                 await NavigateToPathAsync(_currentPath);
@@ -463,7 +478,7 @@ public sealed partial class FileTreePanel : UserControl
 
     private async void Download_Click(object sender, RoutedEventArgs e)
     {
-        if (NodeFrom(sender) is not { IsFile: true } node || !IsNodeCurrent(node) ||
+        if (NodeFrom(sender) is not { CanDownload: true } node || !IsNodeCurrent(node) ||
             _sftp is not { } sftp) return;
         var sessionVersion = _sessionVersion;
         if (OwnerWindowHandle == IntPtr.Zero)
@@ -472,21 +487,37 @@ public sealed partial class FileTreePanel : UserControl
             return;
         }
 
-        StorageFile? target;
+        string? localPath;
         try
         {
-            var extension = Path.GetExtension(node.Name);
-            var picker = new FileSavePicker
+            if (node.IsDirectory)
             {
-                SuggestedStartLocation = PickerLocationId.Downloads,
-                SuggestedFileName = node.Name,
-            };
-            if (!string.IsNullOrEmpty(extension))
-                picker.DefaultFileExtension = extension;
-            picker.FileTypeChoices.Add(Loc.T("파일", "File"),
-                [string.IsNullOrEmpty(extension) ? "*" : extension]);
-            InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
-            target = await picker.PickSaveFileAsync();
+                var folderPicker = new FolderPicker
+                {
+                    SuggestedStartLocation = PickerLocationId.Downloads,
+                };
+                folderPicker.FileTypeFilter.Add("*");
+                InitializeWithWindow.Initialize(folderPicker, OwnerWindowHandle);
+                var selectedFolder = await folderPicker.PickSingleFolderAsync();
+                localPath = selectedFolder is null || string.IsNullOrWhiteSpace(selectedFolder.Path)
+                    ? null
+                    : Path.Combine(selectedFolder.Path, node.Name);
+            }
+            else
+            {
+                var extension = Path.GetExtension(node.Name);
+                var picker = new FileSavePicker
+                {
+                    SuggestedStartLocation = PickerLocationId.Downloads,
+                    SuggestedFileName = node.Name,
+                };
+                if (!string.IsNullOrEmpty(extension))
+                    picker.DefaultFileExtension = extension;
+                picker.FileTypeChoices.Add(Loc.T("파일", "File"),
+                    [string.IsNullOrEmpty(extension) ? "*" : extension]);
+                InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
+                localPath = (await picker.PickSaveFileAsync())?.Path;
+            }
         }
         catch (Exception ex)
         {
@@ -495,21 +526,21 @@ public sealed partial class FileTreePanel : UserControl
             return;
         }
 
-        if (target is null || !_isAvailable || !ReferenceEquals(_sftp, sftp) ||
+        if (localPath is null || !_isAvailable || !ReferenceEquals(_sftp, sftp) ||
             sessionVersion != _sessionVersion) return;
-        if (string.IsNullOrWhiteSpace(target.Path))
+        if (string.IsNullOrWhiteSpace(localPath))
         {
             ShowStatus(Loc.T("이 위치는 직접 파일 경로를 제공하지 않아 다운로드할 수 없습니다.",
                 "This location does not provide a direct file path for downloads."));
             return;
         }
-        _ = DownloadAsync(node, target.Path, sftp, sessionVersion);
+        _ = DownloadAsync(node, localPath, sftp, sessionVersion);
     }
 
     private async Task DownloadAsync(FileNode node, string localPath, ISftpService sftp, int sessionVersion)
     {
         var transfer = TryAddTransfer(
-            node.Name, node.FullPath, localPath, node.Entry.Size, SftpTransferDirection.Download);
+            node.Name, node.FullPath, localPath, node.Entry.Size, UiSftpTransferDirection.Download);
         if (transfer is null) return;
         var token = transfer.Token;
         var workerAcquired = false;
@@ -521,9 +552,15 @@ public sealed partial class FileTreePanel : UserControl
             if (!ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion)
                 throw new OperationCanceledException(token);
             transfer.Start();
-            var progress = new Progress<double>(transfer.Report);
-            // FileSavePicker is the explicit user overwrite confirmation for this path.
-            await sftp.DownloadFileAsync(node.FullPath, localPath, overwrite: true, progress, token);
+            var progress = new Progress<sutty.Core.Sftp.SftpTransferProgress>(itemProgress =>
+                transfer.Report(itemProgress.Fraction));
+            // The picker is the explicit user destination/overwrite confirmation.
+            await sftp.DownloadPathAsync(
+                node.FullPath,
+                localPath,
+                CreateTransferOptions(overwrite: true),
+                progress,
+                token);
             transfer.Complete();
         }
         catch (OperationCanceledException) { transfer.MarkCancelled(); }
@@ -647,7 +684,7 @@ public sealed partial class FileTreePanel : UserControl
     }
 
     private SftpTransferItemVm? TryAddTransfer(
-        string name, string source, string destination, long size, SftpTransferDirection direction)
+        string name, string source, string destination, long size, UiSftpTransferDirection direction)
     {
         while (Transfers.Count >= 8)
         {
@@ -666,6 +703,19 @@ public sealed partial class FileTreePanel : UserControl
         Transfers.Add(transfer);
         TransfersPanel.Visibility = Visibility.Visible;
         return transfer;
+    }
+
+    private static SftpTransferOptions CreateTransferOptions(bool overwrite)
+    {
+        var settings = SettingsService.Current;
+        return new SftpTransferOptions
+        {
+            Overwrite = overwrite,
+            Resume = true,
+            VerifyChecksum = true,
+            RetryEnabled = settings.SftpRetryEnabled,
+            MaxRetries = settings.SftpRetryCount,
+        };
     }
 
     private async Task<bool> ConfirmOverwriteAsync(string name)

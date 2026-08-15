@@ -25,6 +25,10 @@ public sealed class ConnectionRoute
     public int Port { get; set; }
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
+    public SshAuthMethod AuthMethod { get; set; } = SshAuthMethod.Password;
+    public string PrivateKeyPath { get; set; } = "";
+    public string Passphrase { get; set; } = "";
+    public string Command { get; set; } = "";
     public bool ProxyDns { get; set; } = true;
 
     public string DisplayName => Type switch
@@ -57,6 +61,10 @@ public sealed record ResolvedConnectionRoute(
     int Port,
     string Username,
     string Password,
+    SshAuthMethod AuthMethod,
+    string PrivateKeyPath,
+    string Passphrase,
+    string Command,
     bool ProxyDns)
 {
     public string DisplayName => new ConnectionRoute { Type = Type }.DisplayName;
@@ -103,13 +111,21 @@ public static class RouteResolver
                 $"The {requested.Type} route is not allowed by policy.");
         }
 
-        if (requested.Type != ConnectionRouteType.Direct)
+        if (requested.Type is not ConnectionRouteType.Direct and
+            not ConnectionRouteType.ExternalProxyCommand)
         {
             var host = requested.Host?.Trim() ?? "";
             if (host.Length is < 1 or > 255 || host.Any(char.IsControl))
                 throw new RoutePolicyViolationException("A valid proxy or gateway host is required.");
             if (requested.Port is < 1 or > 65_535)
                 throw new RoutePolicyViolationException("A valid proxy or gateway port is required.");
+        }
+
+        if (requested.Type == ConnectionRouteType.ExternalProxyCommand)
+        {
+            var command = requested.Command?.Trim() ?? "";
+            if (command.Length is < 1 or > 4_096 || command.Any(ch => ch is '\0' or '\r' or '\n'))
+                throw new RoutePolicyViolationException("A valid single-line ProxyCommand is required.");
         }
 
         return new ResolvedConnectionRoute(
@@ -119,6 +135,10 @@ public static class RouteResolver
             requested.Port,
             requested.Username?.Trim() ?? "",
             requested.Password ?? "",
+            requested.AuthMethod,
+            requested.PrivateKeyPath?.Trim() ?? "",
+            requested.Passphrase ?? "",
+            requested.Command?.Trim() ?? "",
             requested.ProxyDns);
     }
 }

@@ -36,7 +36,7 @@ public sealed partial class HomePanel : UserControl
         var settings = SettingsService.Current;
         ApplyConnectionDefaults();
         if (Enum.TryParse<SshAuthMethod>(settings.LastAuthMethod, true, out var savedMethod) &&
-            savedMethod is SshAuthMethod.Password or SshAuthMethod.PublicKey)
+            Enum.IsDefined(savedMethod))
         {
             _authMethod = savedMethod;
         }
@@ -73,7 +73,7 @@ public sealed partial class HomePanel : UserControl
         DisplayNameBox.Text = draft.DisplayName?.Trim() ?? "";
         UsernameBox.Text = draft.Username?.Trim() ?? "";
 
-        _authMethod = draft.AuthMethod is SshAuthMethod.Password or SshAuthMethod.PublicKey
+        _authMethod = Enum.IsDefined(draft.AuthMethod)
             ? draft.AuthMethod
             : SshAuthMethod.Password;
         PasswordBox.Password = draft.Password ?? "";
@@ -87,7 +87,30 @@ public sealed partial class HomePanel : UserControl
         ProxyPortBox.Text = draft.Route is { Port: > 0 } ? draft.Route.Port.ToString() : "";
         ProxyUsernameBox.Text = draft.Route?.Username ?? "";
         ProxyPasswordBox.Password = draft.Route?.Password ?? "";
+        if (draft.Route is not null)
+        {
+            JumpAuthCombo.SelectedItem = JumpAuthCombo.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(
+                    item.Tag as string,
+                    draft.Route.AuthMethod.ToString(),
+                    StringComparison.Ordinal))
+                ?? JumpAuthCombo.Items[0];
+            JumpKeyPathBox.Text = draft.Route.PrivateKeyPath ?? "";
+            JumpPassphraseBox.Password = draft.Route.Passphrase ?? "";
+            ProxyCommandBox.Text = draft.Route.Command ?? "";
+        }
         EnterpriseRouteCheck.IsChecked = draft.RoutePolicy?.EnterpriseMode == true;
+
+        var forwarding = draft.PortForwardings?.FirstOrDefault();
+        SelectForwarding(forwarding?.Type);
+        if (forwarding is not null)
+        {
+            ForwardBindHostBox.Text = forwarding.BindHost;
+            ForwardBindPortBox.Text = forwarding.BindPort.ToString();
+            ForwardDestinationHostBox.Text = forwarding.DestinationHost;
+            ForwardDestinationPortBox.Text = forwarding.DestinationPort.ToString();
+        }
 
         _savedHostId = string.IsNullOrWhiteSpace(draft.SavedHostId) ? null : draft.SavedHostId;
         _credentialId = string.IsNullOrWhiteSpace(draft.CredentialId) ? null : draft.CredentialId;
@@ -140,7 +163,7 @@ public sealed partial class HomePanel : UserControl
             return;
 
         var requested = (SshAuthMethod)index;
-        if (requested is not (SshAuthMethod.Password or SshAuthMethod.PublicKey))
+        if (!Enum.IsDefined(requested))
             return;
 
         _authMethod = requested;
@@ -153,6 +176,7 @@ public sealed partial class HomePanel : UserControl
         SettingsService.Current.LastAuthMethod = _authMethod.ToString();
         PersistSettings();
         UpdateAuthUi();
+        UpdateProfileOptions();
     }
 
     private void RouteCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -161,12 +185,28 @@ public sealed partial class HomePanel : UserControl
             return;
 
         var type = SelectedRouteType();
-        ProxyPanel.Visibility = type == ConnectionRouteType.Direct
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        var usesHost = type is ConnectionRouteType.HttpConnect or ConnectionRouteType.Socks4 or
+            ConnectionRouteType.Socks5 or ConnectionRouteType.SshJump;
+        ProxyPanel.Visibility = usesHost ? Visibility.Visible : Visibility.Collapsed;
+        ProxyCommandPanel.Visibility = type == ConnectionRouteType.ExternalProxyCommand
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        JumpOptionsPanel.Visibility = type == ConnectionRouteType.SshJump
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        if (type != ConnectionRouteType.SshJump)
+            ProxyPasswordBox.Visibility = Visibility.Visible;
+        RouteHostLabel.Text = type == ConnectionRouteType.SshJump
+            ? Loc.T("점프 호스트", "JUMP HOST")
+            : Loc.T("프록시 주소", "PROXY HOST");
 
-        if (type != ConnectionRouteType.Direct && string.IsNullOrWhiteSpace(ProxyPortBox.Text))
-            ProxyPortBox.Text = type == ConnectionRouteType.HttpConnect ? "8080" : "1080";
+        if (usesHost && string.IsNullOrWhiteSpace(ProxyPortBox.Text))
+            ProxyPortBox.Text = type switch
+            {
+                ConnectionRouteType.HttpConnect => "8080",
+                ConnectionRouteType.SshJump => "22",
+                _ => "1080",
+            };
     }
 
     private ConnectionRouteType SelectedRouteType()
@@ -188,14 +228,69 @@ public sealed partial class HomePanel : UserControl
             ?? RouteCombo.Items[0];
     }
 
+    private void JumpAuthCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (JumpKeyPanel is null)
+            return;
+        JumpKeyPanel.Visibility = SelectedJumpAuthMethod() == SshAuthMethod.PublicKey
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ProxyPasswordBox.Visibility = SelectedJumpAuthMethod() == SshAuthMethod.Password
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private SshAuthMethod SelectedJumpAuthMethod()
+    {
+        var value = (JumpAuthCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+        return Enum.TryParse<SshAuthMethod>(value, out var method) &&
+               method is SshAuthMethod.Password or SshAuthMethod.PublicKey or SshAuthMethod.Agent
+            ? method
+            : SshAuthMethod.Password;
+    }
+
+    private void ForwardingTypeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ForwardingPanel is null || ForwardDestinationPanel is null)
+            return;
+        var type = SelectedForwardingType();
+        ForwardingPanel.Visibility = type is null ? Visibility.Collapsed : Visibility.Visible;
+        ForwardDestinationPanel.Visibility = type == SshPortForwardingType.Dynamic
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    private SshPortForwardingType? SelectedForwardingType()
+    {
+        var value = (ForwardingTypeCombo.SelectedItem as ComboBoxItem)?.Tag as string;
+        return Enum.TryParse<SshPortForwardingType>(value, out var type) ? type : null;
+    }
+
+    private void SelectForwarding(SshPortForwardingType? type)
+    {
+        var tag = type?.ToString() ?? "None";
+        ForwardingTypeCombo.SelectedItem = ForwardingTypeCombo.Items
+            .OfType<ComboBoxItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag as string, tag, StringComparison.Ordinal))
+            ?? ForwardingTypeCombo.Items[0];
+    }
+
     private void UpdateAuthUi()
     {
         StyleAuthButton(AuthPasswordBtn, _authMethod == SshAuthMethod.Password);
         StyleAuthButton(AuthKeyBtn, _authMethod == SshAuthMethod.PublicKey);
-        PasswordPanel.Visibility = _authMethod == SshAuthMethod.Password
+        StyleAuthButton(AuthAgentBtn, _authMethod == SshAuthMethod.Agent);
+        StyleAuthButton(AuthKeyboardBtn, _authMethod == SshAuthMethod.KeyboardInteractive);
+        PasswordPanel.Visibility = _authMethod is SshAuthMethod.Password or SshAuthMethod.KeyboardInteractive
             ? Visibility.Visible
             : Visibility.Collapsed;
         KeyPanel.Visibility = _authMethod == SshAuthMethod.PublicKey
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        AgentPanel.Visibility = _authMethod == SshAuthMethod.Agent
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        KeyboardInteractiveHint.Visibility = _authMethod == SshAuthMethod.KeyboardInteractive
             ? Visibility.Visible
             : Visibility.Collapsed;
     }
@@ -213,8 +308,8 @@ public sealed partial class HomePanel : UserControl
     {
         var saveProfile = SaveProfileCheck.IsChecked == true;
         ProfileOptionsPanel.Visibility = saveProfile ? Visibility.Visible : Visibility.Collapsed;
-        RememberCredentialCheck.IsEnabled = saveProfile;
-        if (!saveProfile)
+        RememberCredentialCheck.IsEnabled = saveProfile && _authMethod != SshAuthMethod.Agent;
+        if (!RememberCredentialCheck.IsEnabled)
             RememberCredentialCheck.IsChecked = false;
     }
 
@@ -413,7 +508,10 @@ public sealed partial class HomePanel : UserControl
         }
 
         var proxyPort = 0;
-        if (routeType != ConnectionRouteType.Direct &&
+        var routeUsesHost = routeType is ConnectionRouteType.HttpConnect or
+            ConnectionRouteType.Socks4 or ConnectionRouteType.Socks5 or
+            ConnectionRouteType.SshJump;
+        if (routeUsesHost &&
             (string.IsNullOrWhiteSpace(ProxyHostBox.Text) ||
              !int.TryParse(ProxyPortBox.Text, out proxyPort) ||
              proxyPort is < 1 or > 65_535))
@@ -424,6 +522,80 @@ public sealed partial class HomePanel : UserControl
             SettingsSaveStatusText.Visibility = Visibility.Visible;
             ProxyHostBox.Focus(FocusState.Programmatic);
             return;
+        }
+
+        var jumpAuthMethod = SelectedJumpAuthMethod();
+        if (routeType == ConnectionRouteType.SshJump &&
+            string.IsNullOrWhiteSpace(ProxyUsernameBox.Text))
+        {
+            SettingsSaveStatusText.Text = Loc.T(
+                "점프 호스트 사용자를 입력하세요.",
+                "Enter the jump-host username.");
+            SettingsSaveStatusText.Visibility = Visibility.Visible;
+            ProxyUsernameBox.Focus(FocusState.Programmatic);
+            return;
+        }
+        if (routeType == ConnectionRouteType.SshJump &&
+            jumpAuthMethod == SshAuthMethod.PublicKey &&
+            string.IsNullOrWhiteSpace(JumpKeyPathBox.Text))
+        {
+            SettingsSaveStatusText.Text = Loc.T(
+                "점프 호스트 개인 키 경로를 입력하세요.",
+                "Enter the jump-host private-key path.");
+            SettingsSaveStatusText.Visibility = Visibility.Visible;
+            JumpKeyPathBox.Focus(FocusState.Programmatic);
+            return;
+        }
+        if (routeType == ConnectionRouteType.ExternalProxyCommand &&
+            string.IsNullOrWhiteSpace(ProxyCommandBox.Text))
+        {
+            SettingsSaveStatusText.Text = Loc.T(
+                "ProxyCommand를 입력하세요.",
+                "Enter a ProxyCommand.");
+            SettingsSaveStatusText.Visibility = Visibility.Visible;
+            ProxyCommandBox.Focus(FocusState.Programmatic);
+            return;
+        }
+
+        List<SshPortForwardingRule> forwardings = [];
+        if (SelectedForwardingType() is { } forwardingType)
+        {
+            if (!int.TryParse(ForwardBindPortBox.Text, out var bindPort) ||
+                bindPort is < 1 or > 65_535 ||
+                string.IsNullOrWhiteSpace(ForwardBindHostBox.Text))
+            {
+                SettingsSaveStatusText.Text = Loc.T(
+                    "포워딩 바인드 주소와 포트를 확인하세요.",
+                    "Check the forwarding bind host and port.");
+                SettingsSaveStatusText.Visibility = Visibility.Visible;
+                ForwardBindPortBox.Focus(FocusState.Programmatic);
+                return;
+            }
+
+            var destinationPort = 0;
+            if (forwardingType != SshPortForwardingType.Dynamic &&
+                (string.IsNullOrWhiteSpace(ForwardDestinationHostBox.Text) ||
+                 !int.TryParse(ForwardDestinationPortBox.Text, out destinationPort) ||
+                 destinationPort is < 1 or > 65_535))
+            {
+                SettingsSaveStatusText.Text = Loc.T(
+                    "포워딩 대상 주소와 포트를 확인하세요.",
+                    "Check the forwarding destination host and port.");
+                SettingsSaveStatusText.Visibility = Visibility.Visible;
+                ForwardDestinationPortBox.Focus(FocusState.Programmatic);
+                return;
+            }
+
+            forwardings.Add(new SshPortForwardingRule
+            {
+                Type = forwardingType,
+                BindHost = ForwardBindHostBox.Text.Trim(),
+                BindPort = bindPort,
+                DestinationHost = forwardingType == SshPortForwardingType.Dynamic
+                    ? "127.0.0.1"
+                    : ForwardDestinationHostBox.Text.Trim(),
+                DestinationPort = destinationPort,
+            });
         }
 
         SettingsSaveStatusText.Visibility = Visibility.Collapsed;
@@ -440,6 +612,7 @@ public sealed partial class HomePanel : UserControl
             Passphrase = PassphraseBox.Password,
             KeepAliveSeconds = double.IsNaN(KeepAliveBox.Value) ? 0 : (int)KeepAliveBox.Value,
             Tags = [.. Tags],
+            PortForwardings = forwardings,
             SavedHostId = _savedHostId,
             SaveProfile = saveProfile,
             RememberCredential = rememberCredential,
@@ -453,10 +626,24 @@ public sealed partial class HomePanel : UserControl
                     ? "direct"
                     : $"adhoc-{routeType.ToString().ToLowerInvariant()}",
                 Type = routeType,
-                Host = routeType == ConnectionRouteType.Direct ? "" : ProxyHostBox.Text.Trim(),
-                Port = routeType == ConnectionRouteType.Direct ? 0 : proxyPort,
-                Username = routeType == ConnectionRouteType.Direct ? "" : ProxyUsernameBox.Text.Trim(),
-                Password = routeType == ConnectionRouteType.Direct ? "" : ProxyPasswordBox.Password,
+                Host = routeUsesHost ? ProxyHostBox.Text.Trim() : "",
+                Port = routeUsesHost ? proxyPort : 0,
+                Username = routeUsesHost ? ProxyUsernameBox.Text.Trim() : "",
+                Password = routeUsesHost ? ProxyPasswordBox.Password : "",
+                AuthMethod = routeType == ConnectionRouteType.SshJump
+                    ? jumpAuthMethod
+                    : SshAuthMethod.Password,
+                PrivateKeyPath = routeType == ConnectionRouteType.SshJump &&
+                                 jumpAuthMethod == SshAuthMethod.PublicKey
+                    ? JumpKeyPathBox.Text.Trim()
+                    : "",
+                Passphrase = routeType == ConnectionRouteType.SshJump &&
+                             jumpAuthMethod == SshAuthMethod.PublicKey
+                    ? JumpPassphraseBox.Password
+                    : "",
+                Command = routeType == ConnectionRouteType.ExternalProxyCommand
+                    ? ProxyCommandBox.Text.Trim()
+                    : "",
                 ProxyDns = true,
             },
             RoutePolicy = new ConnectionRoutePolicy

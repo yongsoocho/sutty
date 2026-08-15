@@ -59,8 +59,8 @@ namespace sutty.UI.Views
                 {
                     View = sessionView,
                     LocalView = localView,
-                    // 새 로컬/SSH 탭은 기본 선택하고, 기존 탭은 사용자의 체크를 유지한다.
-                    IsSelected = known ? previous[key!].IsSelected : key is not null,
+                    // 운영 안전: 새 로컬/SSH 탭은 사용자가 명시적으로 체크하기 전까지 대상이 아니다.
+                    IsSelected = known && previous[key!].IsSelected,
                     LastOutput = known ? previous[key!].LastOutput : "",
                     ResultText = known ? previous[key!].ResultText : "",
                 });

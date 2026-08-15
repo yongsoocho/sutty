@@ -25,8 +25,9 @@ namespace sutty.UI.Views
         History = 1 << 6,
         Window = 1 << 7,
         TerminalFeatures = 1 << 8,
+        Sftp = 1 << 9,
         All = Language | Theme | TerminalAppearance | TerminalMode | TerminalFeatures |
-              Connection | History | Window,
+              Connection | History | Window | Sftp,
     }
 
     public sealed class SettingsChangedEventArgs : EventArgs
@@ -94,6 +95,9 @@ namespace sutty.UI.Views
             SuggestionTabToggle.IsOn = settings.AcceptSuggestionWithTab;
             DefaultPortBox.Value = settings.DefaultSshPort;
             KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
+            SftpRetryToggle.IsOn = settings.SftpRetryEnabled;
+            SftpRetryCountBox.Value = settings.SftpRetryCount;
+            SftpRetryCountBox.IsEnabled = settings.SftpRetryEnabled;
             HistoryDaysBox.Value = settings.HistoryRetentionDays;
             HistoryTopHostCountBox.Value = settings.HistoryTopHostCount;
 
@@ -219,24 +223,7 @@ namespace sutty.UI.Views
             CommitChangesNow(SettingChangeKind.TerminalMode);
         }
 
-<<<<<<< HEAD
         private void TerminalAppearanceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-=======
-        private void TerminalFeatureToggle_Toggled(object sender, RoutedEventArgs e)
-        {
-            if (_loading)
-                return;
-
-            var settings = SettingsService.Current;
-            settings.EnableStructuredTextHighlighting = StructuredHighlightToggle.IsOn;
-            settings.EnableSeverityHighlighting = SeverityHighlightToggle.IsOn;
-            settings.EnableCommandSuggestions = CommandSuggestionToggle.IsOn;
-            settings.AcceptSuggestionWithTab = SuggestionTabToggle.IsOn;
-            CommitChangesNow(SettingChangeKind.TerminalFeatures);
-        }
-
-        private void FontFamilyBox_TextChanged(object sender, TextChangedEventArgs e)
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         {
             if (_loading)
                 return;
@@ -279,6 +266,16 @@ namespace sutty.UI.Views
             settings.EnableCommandSuggestions = CommandSuggestionToggle.IsOn;
             settings.AcceptSuggestionWithTab = SuggestionTabToggle.IsOn;
             CommitChangesNow(SettingChangeKind.TerminalFeatures);
+        }
+
+        private void SftpRetryToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading)
+                return;
+
+            SettingsService.Current.SftpRetryEnabled = SftpRetryToggle.IsOn;
+            SftpRetryCountBox.IsEnabled = SftpRetryToggle.IsOn;
+            CommitChangesNow(SettingChangeKind.Sftp);
         }
 
         private async Task LoadInstalledFontsAsync()
@@ -383,6 +380,7 @@ namespace sutty.UI.Views
             else if (ReferenceEquals(sender, ScrollbackBox)) settings.TerminalScrollbackLines = value;
             else if (ReferenceEquals(sender, DefaultPortBox)) settings.DefaultSshPort = value;
             else if (ReferenceEquals(sender, KeepAliveBox)) settings.DefaultKeepAliveSeconds = value;
+            else if (ReferenceEquals(sender, SftpRetryCountBox)) settings.SftpRetryCount = value;
             else if (ReferenceEquals(sender, HistoryDaysBox)) settings.HistoryRetentionDays = value;
             else if (ReferenceEquals(sender, HistoryTopHostCountBox)) settings.HistoryTopHostCount = value;
             else if (ReferenceEquals(sender, MainWidthBox)) settings.MainWindowWidth = value;
@@ -397,6 +395,8 @@ namespace sutty.UI.Views
                     ? SettingChangeKind.ConnectionPort
                     : ReferenceEquals(sender, KeepAliveBox)
                         ? SettingChangeKind.ConnectionKeepAlive
+                        : ReferenceEquals(sender, SftpRetryCountBox)
+                            ? SettingChangeKind.Sftp
                         : ReferenceEquals(sender, HistoryDaysBox) ||
                           ReferenceEquals(sender, HistoryTopHostCountBox)
                             ? SettingChangeKind.History

@@ -6,6 +6,8 @@ public sealed class RemoteFileEntry
     public string Name { get; init; } = "";
     public string FullPath { get; init; } = "";
     public bool IsDirectory { get; init; }
+    public bool IsSymbolicLink { get; init; }
+    public bool IsRegularFile { get; init; } = true;
     public long Size { get; init; }
     public DateTime? Modified { get; init; }
 }

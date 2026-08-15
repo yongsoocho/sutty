@@ -10,7 +10,8 @@ same resolved route is used to construct both the SSH terminal client and the SF
 session also creates one credential-free `AuditContext` containing a correlation id, target,
 target identity, route id, and route type.
 
-The Alpha implements real Direct, HTTP CONNECT, SOCKS4, and SOCKS5 routes through SSH.NET. No
+The Alpha implements real Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and external
+ProxyCommand routes through SSH.NET and a loopback process bridge. No
 automatic fallback is attempted. When enterprise mode or a route policy disables Direct, route
 resolution fails before the SSH or SFTP client is created.
 
@@ -19,9 +20,9 @@ saved-host SQLite rows, connection history, or `AuditContext`.
 
 ## Deliberately incomplete
 
-SSH jump, centrally audited gateway, and external proxy-command routes are domain values but do
-not have adapters yet. Selecting one through code fails explicitly. GA also requires managed
-gateway profiles, explicit proxy-DNS behavior and tests, policy distribution, route timeline UI,
-central audit evidence, support bundles, and proof that a failed gateway never opens a direct
-target connection.
+Centrally audited gateways remain a domain value without an adapter. SSH jump and ProxyCommand
+now have Alpha adapters, but still require live compatibility, lifecycle, process-containment,
+and failure-path evidence. GA also requires managed gateway profiles, explicit proxy-DNS behavior
+and tests, policy distribution, route timeline UI, central audit evidence, support bundles, and
+proof that a failed gateway never opens a direct target connection.
 

@@ -28,39 +28,32 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 
 ### Implemented Alpha baseline
 
-- Password and OpenSSH/PEM private-key authentication. Password mode also answers password-like keyboard-interactive prompts through a non-interactive fallback; recent key paths can be suggested without saving the key contents, password, or passphrase.
+- Password, OpenSSH/PEM/PKCS#8/PPK v2-v3 private-key, Windows SSH Agent, and OTP/MFA keyboard-interactive authentication. Keyboard-interactive challenges can contain multiple prompts and can repeat during one connection; secrets remain transient unless the encrypted vault is explicitly enabled.
 - Local PowerShell tabs opened with the top `+` button, backed by a real ConPTY process with runtime resize and process-tree cleanup.
 - A real persistent PTY channel rendered by package-local xterm.js in a hardened WebView2, with ANSI/VT color and style, mouse/input modes, IME/CJK/emoji handling, alternate screen, search, clipboard shortcuts, bounded output backpressure, and runtime server-side resize.
 - Fail-closed SSH host-key verification. Unknown keys offer **Connect once**, **Trust and save**, or **Cancel**; changed saved keys are blocked.
 - Independent SSH, Terminal, and SFTP states, so an unavailable SFTP subsystem does not close a working SSH session.
 - REPL and Multi command execution backed by structured standard output, standard error, exit status/signal, and duration; reusable positional command templates remain available.
-- Remote SFTP navigation and lazy loading; file upload/download; same-directory rename; file or empty-directory deletion; directory creation; Copy path; and Open in Terminal.
-- A compact per-panel transfer queue with queued/running state, an explicit `0%`–`100%` value, progress bar, speed, ETA, cancellation, and an eight-job cap. SSH.NET SFTP calls are serialized per client.
-- Safe file-transfer staging. Uploads use a remote temporary name and preserve an existing destination during promotion; downloads use an adjacent local temporary file.
+- Remote SFTP navigation and lazy loading; bounded recursive tree enumeration; file/folder upload and download (including empty directories); same-directory rename; file or empty-directory deletion; directory creation; Copy path; and Open in Terminal. Symbolic links are listed but never followed recursively.
+- A compact per-panel transfer queue with queued/running state, an explicit `0%`–`100%` value, progress bar, speed, ETA, cancellation, and an eight-job cap. Transfers support resumable deterministic partial files, persisted non-secret checkpoints, configurable transient-failure retries, and SHA-256 verification.
+- Safe file-transfer staging. Uploads use a remote temporary name and preserve an existing destination during promotion; downloads use an adjacent local temporary file. Multi can upload one file or folder to explicitly checked SFTP sessions with per-server progress/result and failed-server-only retry.
 - Append-only connection-attempt history plus explicit Saved Host profiles, groups, environments, favorites, and search in SQLite.
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
 - Up to 16 mixed local/SSH tabs, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged SSH sessions.
-<<<<<<< HEAD
 - Immediately applied Korean/English settings, atomic settings persistence, dark/light themes, terminal palettes (including Ubuntu, Atom One Dark, Dracula, GitHub, and Solarized), cursor/scrollback/accessibility controls, and optional PowerShell profile loading for prompt customizers.
-=======
-- Immediately applied Korean/English settings, atomic settings persistence, and dark/light themes.
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
-- Direct, HTTP CONNECT, SOCKS4, and SOCKS5 connection routes shared by SSH and SFTP. Enterprise mode rejects direct routes instead of silently falling back.
+- Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and external ProxyCommand routes shared by SSH and SFTP. Enterprise mode rejects direct routes instead of silently falling back.
+- Session-scoped local, remote, and dynamic forwarding rules that start after SSH authentication and stop with the owning session.
 - REPL JSON/YAML syntax highlighting, red critical/error and amber warning marking, and history/saved-command suggestions accepted with Right Arrow or Tab.
 - Keyboard-first navigation: `Ctrl+1`–`Ctrl+9` tabs, `Ctrl+T` local tab, `Alt+1`–`Alt+6` work surfaces/settings, `Ctrl+,` settings, and Insert-style copy/paste.
 
 ### Why this is not GA
 
-<<<<<<< HEAD
 - The package-local xterm.js/WebView2 renderer is integrated for both SSH and local ConPTY, but the required shell/TUI/Unicode/input/security/latency/soak acceptance matrix is not complete. Terminal compatibility therefore remains **Alpha, not GA**. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
-=======
-- The SSH PTY and local ConPTY are real and support runtime resize, but the current WinUI text renderer is an **Alpha-only bridge**. It consumes SGR without rendering color/style and lacks mouse protocols and complete wide/combining-cell behavior. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
-- SSH agent, OTP/multi-prompt keyboard-interactive UI, legacy `.ppk` import, jump hosts, audited gateway adapters, external proxy commands, and automatic reconnect are unavailable. Direct HTTP/SOCKS proxy routes are an Alpha baseline without the complete enterprise route matrix. Password mode's non-interactive fallback handles password-like prompts only.
+- Windows Agent, repeated OTP/multi-prompt keyboard-interactive authentication, PPK v2/v3, SSH jump, and external ProxyCommand routes are integrated, but their live-server/agent/route compatibility matrix is incomplete. Managed audited gateways, route policy distribution, and safe command replay after a full SSH reconnect remain unavailable.
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
-- SFTP currently transfers files, not directory trees. It has no pause/retry/resume, final size/checksum verification, `chmod`, synchronized browsing, or a complete collision-policy matrix.
+- SFTP recursive transfer, restart checkpoints, retry/resume, checksum verification, and failed-target-only Multi retry are implemented, but pause, `chmod`, synchronized browsing, recursive delete, a complete collision-policy matrix, and large/deep-path multi-host acceptance remain incomplete.
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent audit/export, timeout, or streaming workflow.
-- Port forwarding, managed gateway profiles, central audit transport, import/export, full enterprise policy, support bundles, signed release automation, and the GA compatibility/accessibility matrices remain planned.
+- Local/remote/dynamic forwarding has session lifecycle support, but external-bind warnings, a post-connect tunnel manager, and the live forwarding matrix remain incomplete. Managed gateway profiles, central audit transport, import/export, full enterprise policy, support bundles, signed release automation, and the GA compatibility/accessibility matrices remain planned.
 
 The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Enterprise implementation status](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md). Product gates and explicit non-goals are in [Product Direction](docs/PRODUCT_DIRECTION.md), and the current source plan is [Windows Multi SSH/SFTP Product Plan v2.0](docs/Sutty_Windows_Multi_SSH_SFTP_Product_Plan_v2.0_KO.docx).
 
@@ -77,6 +70,7 @@ Local files under `%LOCALAPPDATA%\sutty` include:
 - `settings.json` — preferences, recent tags, and recent private-key **paths**.
 - `sutty.db` — command templates and usage plus connection history, pins, host/user/port/auth metadata, private-key paths, and tags.
 - `known-hosts.json` — public trusted SSH host keys and fingerprints.
+- `sftp-transfer-checkpoints.json` — non-secret source/destination paths, sizes, timestamps, and offsets used to resume explicitly restarted transfers.
 - `vault.key` and `vault.json` — the DPAPI-protected master key and authenticated encrypted credential records, created only when the local vault is used.
 - `crash.log` — local unhandled-exception details; it is not yet guaranteed to be redacted, so inspect it before sharing.
 
@@ -143,39 +137,32 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 
 ### 구현된 Alpha 기준선
 
-- 비밀번호와 OpenSSH/PEM 개인키 인증. 비밀번호 방식은 password 형태의 keyboard-interactive prompt에 비대화형 fallback으로 답하며, 키 내용·비밀번호·passphrase를 저장하지 않고 최근 키 경로만 제안할 수 있습니다.
+- 비밀번호, OpenSSH/PEM/PKCS#8/PPK v2-v3 개인키, Windows SSH Agent, OTP/MFA keyboard-interactive 인증을 지원합니다. 한 연결에서 여러 질문이 반복되어도 처리하며, 암호화 Vault를 명시적으로 켜지 않으면 비밀값은 저장하지 않습니다.
 - 상단 `+` 버튼으로 여는 로컬 PowerShell 탭. 실제 ConPTY 프로세스, 실행 중 크기 변경, 프로세스 트리 정리를 사용합니다.
 - 패키지 내부 xterm.js와 보안 설정한 WebView2로 표시하는 실제 지속 PTY 채널. ANSI/VT 색·스타일, 마우스·입력 모드, IME·한글·이모지, 대체 화면, 검색, 클립보드 단축키, 제한된 출력 백프레셔, 실행 중 서버 측 크기 변경을 지원합니다.
 - 기본 차단 방식의 SSH 호스트키 검증. 알 수 없는 키는 **이번만 연결**, **신뢰하고 저장**, **취소**를 제공하며 저장된 키가 바뀌면 연결을 차단합니다.
 - SFTP subsystem을 사용할 수 없어도 작동 중인 SSH 세션을 닫지 않는 SSH·Terminal·SFTP 독립 상태
 - 표준 출력·표준 오류·종료 상태/signal·소요 시간을 구조화하는 REPL·Multi 명령 실행과 재사용 가능한 위치형 명령 템플릿
-- 원격 SFTP 탐색과 지연 로딩, 파일 업로드·다운로드, 같은 디렉터리 내 이름 변경, 파일 또는 빈 디렉터리 삭제, 디렉터리 생성, 경로 복사, Terminal에서 열기
-- 대기·실행 상태, 명시적인 `0%`–`100%` 숫자, 진행 막대, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. SSH.NET SFTP 호출은 클라이언트별로 직렬화합니다.
-- 안전한 파일 전송 준비 단계. 업로드는 원격 임시 이름을 사용하고 기존 대상을 보존한 채 승격하며, 다운로드는 같은 로컬 디렉터리의 임시 파일을 사용합니다.
+- 원격 SFTP 탐색과 지연 로딩, 제한된 재귀 트리 열거, 파일·폴더 업로드/다운로드(빈 폴더 포함), 같은 디렉터리 내 이름 변경, 파일 또는 빈 디렉터리 삭제, 디렉터리 생성, 경로 복사, Terminal에서 열기. 심볼릭 링크는 표시하지만 재귀적으로 따라가지 않습니다.
+- 대기·실행 상태, 명시적인 `0%`–`100%` 숫자, 진행 막대, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. 결정적인 partial 파일, 비밀정보 없는 영속 체크포인트, 설정 가능한 일시 오류 재시도, SHA-256 검증으로 전송을 재개할 수 있습니다.
+- 안전한 파일 전송 준비 단계. 업로드는 원격 임시 이름을 사용하고 기존 대상을 보존한 채 승격하며, 다운로드는 같은 로컬 디렉터리의 임시 파일을 사용합니다. Multi에서는 명시적으로 체크한 SFTP 세션에 파일·폴더를 보내고 서버별 진행률·결과를 보며 실패 서버만 다시 시도할 수 있습니다.
 - SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·그룹·환경·즐겨찾기·검색
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
 - 로컬/SSH 혼합 최대 16개 탭, 기본 선택 0개의 Multi 대상, PROD 태그 SSH 세션이 포함된 브로드캐스트의 추가 확인
-<<<<<<< HEAD
 - 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마, Ubuntu·Atom One Dark·Dracula·GitHub·Solarized 터미널 팔레트, 커서·스크롤백·접근성 설정, 프롬프트 꾸미기를 위한 선택형 PowerShell 프로필 로딩
-=======
-- 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
-- SSH와 SFTP가 함께 사용하는 Direct·HTTP CONNECT·SOCKS4·SOCKS5 연결 경로. 기업 모드에서는 Direct 경로와 조용한 우회를 차단합니다.
+- SSH와 SFTP가 함께 사용하는 Direct·HTTP CONNECT·SOCKS4·SOCKS5·SSH Jump·외부 ProxyCommand 연결 경로. 기업 모드에서는 Direct 경로와 조용한 우회를 차단합니다.
+- SSH 인증 후 시작하고 해당 세션과 함께 종료하는 Local·Remote·Dynamic 포워딩 규칙
 - REPL JSON/YAML 문법 강조, critical/error 빨간색·warning 노란색 표시, 최근/저장 명령 제안과 오른쪽 화살표·Tab 적용
 - `Ctrl+1`–`Ctrl+9` 탭, `Ctrl+T` 로컬 탭, `Alt+1`–`Alt+6` 작업 화면/설정, `Ctrl+,` 설정, Insert 방식 복사·붙여넣기 단축키
 
 ### GA가 아닌 이유
 
-<<<<<<< HEAD
 - 패키지 내부 xterm.js/WebView2 렌더러를 SSH와 로컬 ConPTY에 연결했지만 필수 셸·TUI·Unicode·입력·보안·지연·장시간 실행 인수 매트릭스는 아직 완성되지 않았습니다. 따라서 터미널 호환성은 계속 **Alpha이며 GA가 아닙니다**. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
-=======
-- SSH PTY와 로컬 ConPTY는 실제이고 실행 중 크기 변경을 지원하지만 현재 WinUI 텍스트 렌더러는 **Alpha 전용 연결 단계**입니다. SGR을 소비하지만 색·스타일을 표시하지 않고, 마우스 프로토콜과 넓은 문자·결합 문자의 완전한 셀 처리가 없습니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
-- SSH agent, OTP·다중 prompt keyboard-interactive UI, 레거시 `.ppk` 가져오기, 점프 호스트, 감사 게이트웨이 어댑터, 외부 프록시 명령, 자동 재연결은 지원하지 않습니다. Direct HTTP/SOCKS 프록시는 Alpha 기준선이며 기업용 전체 경로 매트릭스는 아직 검증되지 않았습니다. 비밀번호 방식의 비대화형 fallback은 password 형태 prompt만 처리합니다.
+- Windows Agent, 반복 OTP·다중 prompt keyboard-interactive 인증, PPK v2/v3, SSH Jump, 외부 ProxyCommand 경로를 통합했지만 실제 서버·Agent·경로 호환성 매트릭스는 아직 미완성입니다. 관리형 감사 게이트웨이, 경로 정책 배포, 전체 SSH 재연결 뒤 안전한 명령 재실행은 지원하지 않습니다.
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
-- 현재 SFTP는 파일만 전송하며 디렉터리 트리는 전송하지 않습니다. 일시정지·재시도·재개, 최종 크기/checksum 검증, `chmod`, 동기 탐색, 완전한 충돌 정책 매트릭스가 없습니다.
+- SFTP 재귀 전송, 재시작 체크포인트, 재시도·재개, checksum 검증, 실패 대상만 Multi 재시도는 구현했습니다. 일시정지, `chmod`, 동기 탐색, 재귀 삭제, 완전한 충돌 정책, 대용량·깊은 경로·다중 Host 인수는 미완성입니다.
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 audit/export, timeout, streaming 흐름이 없습니다.
-- 포트 포워딩, 관리형 게이트웨이 프로필, 중앙 감사 전송, 가져오기·내보내기, 전체 기업 정책, 지원 번들, 서명 릴리스 자동화, GA 호환성·접근성 매트릭스는 계획 상태입니다.
+- Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했지만 외부 bind 경고, 연결 후 tunnel 관리자, 실제 포워딩 매트릭스는 미완성입니다. 관리형 게이트웨이 프로필, 중앙 감사 전송, 가져오기·내보내기, 전체 기업 정책, 지원 번들, 서명 릴리스 자동화, GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
 현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Enterprise 구현 상태](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md), 제품 게이트와 명시적 비목표는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 있습니다.
 
@@ -192,6 +179,7 @@ Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정
 - `settings.json` — 환경설정, 최근 태그, 최근 개인키 **경로**
 - `sutty.db` — 명령 템플릿·사용 정보와 접속 기록, pin, 호스트·사용자·포트·인증 메타데이터, 개인키 경로, 태그
 - `known-hosts.json` — 신뢰한 공개 SSH 호스트키와 지문
+- `sftp-transfer-checkpoints.json` — 사용자가 같은 전송을 다시 시작할 때 이어받기 위한 비밀정보 없는 출발·도착 경로, 크기, 시각, offset
 - `vault.key`, `vault.json` — 로컬 보관소 사용 시에만 생성되는 DPAPI 보호 master key와 인증 암호화된 자격 증명 기록
 - `crash.log` — 로컬 미처리 예외 상세. 아직 redaction을 보장하지 않으므로 공유 전에 반드시 확인해야 합니다.
 

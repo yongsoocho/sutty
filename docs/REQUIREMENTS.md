@@ -46,7 +46,7 @@ The evidence baseline is the source tree, not disabled UI or future-looking comm
 | HOST-001 | P0 | Partial | Explicit Saved Hosts support create/update, delete, group, environment, tags, favorites, and opaque credential references; duplicate and bulk-management UX remain planned.<br>명시적 저장 호스트는 생성·수정·삭제·그룹·환경·태그·즐겨찾기·불투명 자격증명 참조를 지원하며 복제·일괄 관리 UX는 계획 상태입니다. |
 | HOST-002 | P1 | Partial | Saved Hosts and append-only history are searched together; responsive cards, groups, environments, and favorites exist, while 1,000-host performance evidence is incomplete.<br>저장 호스트와 append-only 히스토리를 함께 검색하며 반응형 카드·그룹·환경·즐겨찾기가 있지만 1,000 Host 성능 증거는 미완성입니다. |
 | HOST-003 | P0 | Implemented | Every completed connection attempt appends success, failure, or cancellation, a bounded diagnostic code, and duration without storing secrets.<br>완료된 모든 연결 시도는 비밀정보 없이 성공·실패·취소, 제한된 진단 코드, 소요 시간을 새 행으로 추가합니다. |
-| HOST-004 | P0 | Partial | SSH, Terminal, and SFTP state are independent and SFTP failure preserves SSH; tunnel state is not implemented.<br>SSH·Terminal·SFTP 상태는 분리되고 SFTP 실패 시 SSH를 유지하지만 tunnel 상태는 없습니다. |
+| HOST-004 | P0 | Partial | SSH, Terminal, and SFTP state are independent and SFTP failure preserves SSH; configured forwarding has session-bound lifecycle, but dedicated tunnel state/management UI is incomplete.<br>SSH·Terminal·SFTP 상태는 분리되고 SFTP 실패 시 SSH를 유지하며 설정된 forwarding은 세션 수명주기를 따르지만 전용 tunnel 상태·관리 UI는 미완성입니다. |
 | HOST-005 | P1 | Planned | Workspace/tab restore is not implemented.<br>Workspace·탭 복원을 구현하지 않았습니다. |
 | HOST-006 | P1 | Partial | Host canonicalization covers DNS, IPv4, IPv6, and nonstandard ports; the required connection matrix is unverified.<br>DNS·IPv4·IPv6·비표준 port를 정규화하지만 필수 연결 매트릭스를 검증하지 않았습니다. |
 | HOST-007 | P1 | Planned | No command-line Saved Host opener exists.<br>명령줄 Saved Host 열기 기능이 없습니다. |
@@ -56,12 +56,12 @@ The evidence baseline is the source tree, not disabled UI or future-looking comm
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
 | SSH-001 | P0 | Partial | SSH-2 connect, cancellation, and gate-drained disconnect exist; timeout/fault compatibility acceptance is incomplete.<br>SSH-2 연결·취소·gate-drain 종료는 있지만 timeout·fault 호환성 인수가 미완성입니다. |
-| SSH-002 | P0 | Partial | Password and private key work; password mode has a non-interactive fallback that answers password-like keyboard-interactive prompts, but OTP/multi-prompt UI is unavailable.<br>비밀번호·개인키는 동작하고 비밀번호 방식은 password 형태의 keyboard-interactive prompt에 비대화형 fallback으로 답하지만 OTP·다중 prompt UI는 없습니다. |
-| SSH-003 | P1 | Planned | Windows OpenSSH Agent authentication is unavailable.<br>Windows OpenSSH Agent 인증을 지원하지 않습니다. |
-| SSH-004 | P1 | Partial | SSH.NET loads supported OpenSSH/PEM keys; PPK v2/v3 import and a complete key-format matrix are missing.<br>SSH.NET 지원 OpenSSH/PEM 키는 읽지만 PPK v2/v3 가져오기와 전체 key-format 매트릭스가 없습니다. |
+| SSH-002 | P0 | Partial | Password, private key, and repeated multi-prompt keyboard-interactive OTP/MFA flows are implemented; the representative server/provider compatibility matrix is incomplete.<br>비밀번호·개인키와 반복 가능한 다중 prompt keyboard-interactive OTP/MFA 흐름을 구현했지만 대표 서버·인증 제공자 호환성 매트릭스는 미완성입니다. |
+| SSH-003 | P1 | Partial | Windows OpenSSH Agent/Pageant identities are exposed through the SSH.NET key-source contract with a friendly unavailable-service failure; live Agent/key acceptance remains.<br>Windows OpenSSH Agent/Pageant identity를 SSH.NET key-source 계약으로 사용하고 서비스 미실행 안내를 제공하지만 실제 Agent·키 인수는 남아 있습니다. |
+| SSH-004 | P1 | Partial | SSH.NET loads OpenSSH, PEM, PKCS#8, and PuTTY PPK v2/v3 keys; encrypted/algorithm format acceptance is incomplete.<br>SSH.NET으로 OpenSSH·PEM·PKCS#8·PuTTY PPK v2/v3 키를 읽지만 암호화·알고리즘별 형식 인수는 미완성입니다. |
 | SSH-005 | P0 | Implemented | Unknown/trusted/changed states fail closed, both SSH and SFTP verify, changed keys block, and focused security self-tests cover persistence and concurrency.<br>Unknown/trusted/changed 상태를 기본 차단으로 처리하고 SSH·SFTP 모두 검증하며 변경 키 차단과 저장·동시성 self-test가 있습니다. |
-| SSH-006 | P1 | Planned | Jump Host is disabled and has no backend.<br>Jump Host는 비활성이고 backend가 없습니다. |
-| SSH-007 | P1 | Partial | Direct, HTTP CONNECT, SOCKS4, and SOCKS5 routes create real SSH.NET connections and the same route is used for SFTP. Managed profiles, explicit proxy-DNS evidence, jump/audited adapters, and the enterprise matrix are incomplete.<br>Direct·HTTP CONNECT·SOCKS4·SOCKS5 경로가 실제 SSH.NET 연결을 만들고 SFTP도 같은 경로를 사용합니다. 관리형 프로필·명시적 proxy-DNS 증거·jump/감사 어댑터·기업용 매트릭스는 미완성입니다. |
+| SSH-006 | P1 | Partial | SSH Jump creates a separately host-key-verified jump connection and loopback forwarding shared by target SSH/SFTP; live topology and failure lifecycle tests remain.<br>SSH Jump는 별도 host-key 검증을 거친 jump 연결과 대상 SSH/SFTP가 공유하는 loopback forwarding을 만들지만 실제 topology·실패 수명주기 검증은 남아 있습니다. |
+| SSH-007 | P1 | Partial | Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH Jump, and external ProxyCommand routes create real connections and the same resolved route is used for SFTP. Managed profiles, explicit proxy-DNS evidence, audited adapters, and the enterprise matrix are incomplete.<br>Direct·HTTP CONNECT·SOCKS4·SOCKS5·SSH Jump·외부 ProxyCommand 경로가 실제 연결을 만들고 SFTP도 같은 resolved route를 사용합니다. 관리형 프로필·명시적 proxy-DNS 증거·감사 어댑터·기업용 매트릭스는 미완성입니다. |
 | SSH-008 | P1 | Partial | Keepalive is applied per connection; automatic reconnect and replay safety UX are missing.<br>연결별 keepalive는 적용하지만 자동 재연결과 replay 안전 UX가 없습니다. |
 | SSH-009 | P1 | Planned | Negotiated KEX/cipher/MAC/host-key information is not surfaced.<br>협상된 KEX/cipher/MAC/host-key 정보를 표시하지 않습니다. |
 | SSH-010 | P0 | Planned | There is no explicit product policy or tested override model for legacy algorithms.<br>Legacy 알고리즘을 위한 명시적 제품 정책과 검증된 override 모델이 없습니다. |
@@ -81,21 +81,12 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
-<<<<<<< HEAD
 | TERM-001 | P0 | Partial | Persistent SSH `ShellStream` PTY and local ConPTY both use the package-local xterm.js renderer; the required vim/tmux/htop/sudo compatibility matrix has not passed.<br>지속 SSH `ShellStream` PTY와 로컬 ConPTY가 모두 패키지 내부 xterm.js 렌더러를 사용하지만 필수 vim/tmux/htop/sudo 호환 매트릭스를 통과하지 않았습니다. |
 | TERM-002 | P0 | Partial | xterm.js provides ANSI/VT SGR color/style, cursor/erase/scrolling, alternate screen, device responses, and mouse modes. The representative shell/TUI and malicious-sequence matrix is incomplete.<br>xterm.js가 ANSI/VT SGR 색·스타일, 커서·지우기·스크롤, 대체 화면, 장치 응답, 마우스 모드를 제공하지만 대표 셸·TUI 및 악성 sequence 매트릭스는 미완성입니다. |
 | TERM-003 | P0 | Partial | xterm.js owns control, navigation, function-key, application-mode, and IME input. Global tab/navigation/settings shortcuts and Ctrl/Shift+Insert are implemented; the exhaustive Windows keyboard-layout matrix is missing.<br>xterm.js가 제어·탐색·기능키·application mode·IME 입력을 처리하며 전역 탭·내비게이션·설정 단축키와 Ctrl/Shift+Insert를 구현했습니다. 전체 Windows 키보드 배열 매트릭스는 남아 있습니다. |
 | TERM-004 | P0 | Partial | Runtime server-side resize uses SSH.NET's public `ChangeWindowSize` API; shell/TUI and resize-stress integration evidence remains incomplete.<br>실행 중 서버 측 크기 변경은 SSH.NET 공개 `ChangeWindowSize` API를 사용하지만 셸/TUI·resize stress 통합 증거는 아직 완성되지 않았습니다. |
 | TERM-005 | P1 | Partial | xterm.js provides incremental UTF-8 rendering, IME composition, wide/emoji/combining cells, and a screen-reader mode. Korean IME and Unicode edge-case acceptance evidence is incomplete.<br>xterm.js가 점진적 UTF-8 표시, IME 조합, 넓은 문자·이모지·결합 문자 셀, 화면 읽기 모드를 제공하지만 한글 IME와 Unicode 경계 사례 인수 증거는 미완성입니다. |
 | TERM-006 | P1 | Partial | Bounded configurable scrollback, selection, Ctrl+Insert copy, Shift+Insert paste, bracketed-paste-aware xterm input, and Ctrl+F search exist; 100,000-line, latency, and long-session evidence is missing.<br>제한·설정 가능한 scrollback, 선택, Ctrl+Insert 복사, Shift+Insert 붙여넣기, bracketed paste를 인식하는 xterm 입력, Ctrl+F 검색이 있지만 100,000줄·지연·장시간 세션 증거는 남아 있습니다. |
-=======
-| TERM-001 | P0 | Partial | A persistent real `ShellStream` PTY exists; the required vim/tmux/htop/sudo compatibility matrix has not passed.<br>실제 지속 `ShellStream` PTY가 있지만 필수 vim/tmux/htop/sudo 호환 매트릭스를 통과하지 않았습니다. |
-| TERM-002 | P0 | Partial | Cursor, erase, scroll region, alternate screen, and device responses exist; SGR style/color, mouse, and broad VT compatibility do not.<br>커서·지우기·스크롤 영역·대체 화면·장치 응답은 있지만 SGR 색·스타일·마우스·폭넓은 VT 호환성이 없습니다. |
-| TERM-003 | P0 | Partial | Control letters, Tab, arrows, navigation keys, DECCKM, and F1–F12 are sent. Global tab/navigation/settings shortcuts and Ctrl/Shift+Insert are implemented; exhaustive input validation is missing.<br>Control 문자·Tab·방향키·탐색키·DECCKM·F1–F12를 전송하며 전역 탭·내비게이션·설정 단축키와 Ctrl/Shift+Insert를 구현했습니다. 전체 입력 검증은 남아 있습니다. |
-| TERM-004 | P0 | Partial | Runtime server-side resize uses SSH.NET's public `ChangeWindowSize` API; shell/TUI and resize-stress integration evidence remains incomplete.<br>실행 중 서버 측 크기 변경은 SSH.NET 공개 `ChangeWindowSize` API를 사용하지만 셸/TUI·resize stress 통합 증거는 아직 완성되지 않았습니다. |
-| TERM-005 | P1 | Partial | Incremental UTF-8 input/output exists; Korean IME and wide/combining cell behavior are not acceptance-tested or complete.<br>점진적 UTF-8 입력·출력은 있지만 한글 IME와 넓은 문자·결합 문자 셀 동작이 완전하지 않고 인수 테스트가 없습니다. |
-| TERM-006 | P1 | Partial | Bounded scrollback, selectable text, Ctrl+Insert copy, and Shift+Insert paste exist; terminal search, bracketed-paste mode detection, and 100,000-line evidence are missing.<br>제한된 scrollback·텍스트 선택·Ctrl+Insert 복사·Shift+Insert 붙여넣기가 있지만 터미널 검색·bracketed-paste 모드 감지·100,000줄 검증은 남아 있습니다. |
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 | TERM-007 | P1 | Planned | Opt-in transcript storage and retention are not implemented.<br>선택형 transcript 저장과 보존 정책을 구현하지 않았습니다. |
 | TERM-008 | P1 | Implemented | REPL cells classify JSON/YAML syntax plus critical/error and warning text with bounded parsing. Recent and saved commands are suggested without execution and accepted with Right Arrow or optional Tab.<br>REPL 셀은 제한된 파싱으로 JSON/YAML 문법과 critical/error·warning 텍스트를 분류합니다. 최근·저장 명령은 실행 없이 제안되며 오른쪽 화살표 또는 선택형 Tab으로 적용합니다. |
 
@@ -103,8 +94,8 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
-| SFTP-001 | P0 | Partial | Remote path navigation, refresh, and lazy loading exist; symlink-loop and broad permission/error testing are missing.<br>원격 경로 이동·새로고침·지연 로딩은 있지만 symlink loop와 폭넓은 권한·오류 테스트가 없습니다. |
-| SFTP-002 | P0 | Partial | Single-file upload/download works; directory trees, empty-folder transfer, 100GB, and full Unicode/deep-path acceptance are missing.<br>단일 파일 업로드·다운로드는 동작하지만 디렉터리 트리·빈 폴더 전송·100GB·전체 Unicode/깊은 경로 인수가 없습니다. |
+| SFTP-001 | P0 | Partial | Remote path navigation, refresh, lazy loading, and bounded flattened tree enumeration exist; symlinks are listed but not traversed. Broad permission/error testing is missing.<br>원격 경로 이동·새로고침·지연 로딩·제한된 평면 tree enumeration이 있고 symlink는 표시하되 따라가지 않습니다. 폭넓은 권한·오류 검증은 남아 있습니다. |
+| SFTP-002 | P0 | Partial | File and recursive directory upload/download, including empty folders, work; 100GB and full Unicode/deep-path/live-server acceptance are missing.<br>파일과 빈 폴더를 포함한 재귀 디렉터리 업로드·다운로드가 동작하지만 100GB·전체 Unicode/깊은 경로·실서버 인수는 남아 있습니다. |
 | SFTP-003 | P0 | Partial | Same-parent rename, file delete, empty-directory delete, and mkdir exist; cross-directory move, recursive delete, and complete conflict/error UX do not.<br>같은 상위 디렉터리 내 이름 변경·파일 삭제·빈 디렉터리 삭제·mkdir은 있지만 디렉터리 간 이동·재귀 삭제·전체 충돌·오류 UX가 없습니다. |
 | SFTP-004 | P1 | Planned | Unix permission changes are unavailable.<br>Unix permission 변경을 지원하지 않습니다. |
 | SFTP-005 | P0 | Partial | Ask/overwrite/skip and no-silent-overwrite safety exist for current file paths; rename/newer-only and folder policy do not.<br>현재 파일 경로에는 Ask/overwrite/skip과 조용한 덮어쓰기 방지가 있지만 rename/newer-only·폴더 정책은 없습니다. |
@@ -117,20 +108,21 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 | --- | --- | --- | --- |
 | XFER-001 | P0 | Partial | A per-panel eight-job queue and a serialized transfer worker exist; global/per-host configurable concurrency and durable FIFO jobs do not.<br>패널별 최대 8개 queue와 직렬 transfer worker는 있지만 전역·Host별 설정 가능 동시성과 영속 FIFO job이 없습니다. |
 | XFER-002 | P0 | Partial | Progress, speed, ETA, direction, and state are visible; refresh throttling and large-file evidence are missing.<br>진행률·속도·ETA·방향·상태는 표시하지만 갱신 제한과 대용량 파일 증거가 없습니다. |
-| XFER-003 | P0 | Partial | Queued/running cancellation and temporary-file cleanup exist; pause and retry do not, and stalled synchronous network calls may wait for transport timeout.<br>대기·실행 취소와 임시 파일 정리는 있지만 일시정지·재시도가 없고 멈춘 동기 네트워크 호출은 transport timeout까지 기다릴 수 있습니다. |
-| XFER-004 | P0 | Partial | Upload uses remote temp, backup/promotion, rollback, and no pre-delete; final size verification is missing.<br>업로드는 원격 temp·backup/promotion·rollback을 사용하고 선삭제하지 않지만 최종 크기 검증이 없습니다. |
-| XFER-005 | P1 | Planned | Resume is unavailable.<br>Resume을 지원하지 않습니다. |
-| XFER-006 | P1 | Planned | Transfer jobs are not restored after restart.<br>재시작 후 전송 job을 복원하지 않습니다. |
-| XFER-007 | P1 | Planned | Final remote size and optional checksum verification are unavailable.<br>최종 원격 크기와 선택 checksum 검증을 지원하지 않습니다. |
+| XFER-003 | P0 | Partial | Queued/running cancellation, temporary-file retention/cleanup, and configurable transient retry exist; pause and stalled-call interruption beyond transport cancellation remain incomplete.<br>대기·실행 취소, 임시 파일 유지·정리, 설정 가능한 일시 오류 재시도가 있지만 일시정지와 transport 취소를 넘는 stalled-call 중단은 미완성입니다. |
+| XFER-004 | P0 | Partial | Upload uses deterministic remote partials, checkpointed resume, checksum-before-promotion, backup/promotion, rollback, and no pre-delete; large fault-injection evidence remains.<br>업로드는 결정적인 원격 partial, checkpoint resume, 승격 전 checksum, backup/promotion, rollback, 선삭제 방지를 사용하지만 대용량 fault-injection 증거는 남아 있습니다. |
+| XFER-005 | P1 | Partial | Upload/download resume from validated partial offsets and source metadata; interrupted live-server acceptance is incomplete.<br>검증된 partial offset과 원본 metadata에서 업로드·다운로드를 이어받지만 실서버 중단 인수는 미완성입니다. |
+| XFER-006 | P1 | Partial | Non-secret checkpoints survive restart and are reused when the user restarts the same transfer; automatic job discovery/restoration UI is unavailable.<br>비밀정보 없는 checkpoint가 재시작 뒤 유지되고 사용자가 같은 전송을 다시 시작하면 재사용하지만 자동 job 검색·복원 UI는 없습니다. |
+| XFER-007 | P1 | Partial | SHA-256 compares local and remote content before final promotion; large-file performance and incompatible-server evidence remain.<br>최종 승격 전에 SHA-256으로 로컬·원격 내용을 비교하지만 대용량 성능·비호환 서버 증거는 남아 있습니다. |
+| XFER-008 | P1 | Partial | Multi uploads to explicitly checked SFTP sessions with independent per-server progress/success/failure and failed-only retry; live 16-target and cancellation evidence remains.<br>명시적으로 체크한 SFTP 세션에 Multi 업로드하며 서버별 진행률·성공·실패를 분리하고 실패 서버만 재시도하지만 실제 16대·취소 검증은 남아 있습니다. |
 
 ## Port forwarding / 포트 포워딩
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
-| TUN-001 | P1 | Planned | Local, remote, and dynamic forwarding are unavailable.<br>Local·Remote·Dynamic forwarding을 지원하지 않습니다. |
+| TUN-001 | P1 | Partial | Local, remote, and dynamic forwarding rules are implemented and owned by the SSH session; the live interoperability matrix is incomplete.<br>Local·Remote·Dynamic forwarding 규칙을 구현하고 SSH 세션 수명주기에 연결했지만 실제 상호운용 매트릭스는 미완성입니다. |
 | TUN-002 | P1 | Planned | Host auto-start forwarding rules are unavailable.<br>Host auto-start forwarding rule이 없습니다. |
-| TUN-003 | P1 | Planned | External-bind warnings are unavailable because forwarding is not implemented.<br>Forwarding이 없으므로 외부 bind 경고도 없습니다. |
-| TUN-004 | P2 | Planned | Temporary session-scoped tunnels are unavailable.<br>세션 범위 임시 tunnel이 없습니다. |
+| TUN-003 | P1 | Planned | External-bind warnings and policy are unavailable.<br>외부 bind 경고와 정책은 없습니다. |
+| TUN-004 | P2 | Partial | Pre-connect rules create temporary session-scoped tunnels; a post-connect tunnel manager is unavailable.<br>연결 전 규칙으로 세션 범위 임시 tunnel을 만들지만 연결 후 tunnel 관리자는 없습니다. |
 
 ## REPL, snippets, and Multi / REPL, snippet, Multi
 

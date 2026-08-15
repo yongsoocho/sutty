@@ -309,71 +309,9 @@ public sealed partial class LocalTerminalView : UserControl
     /// shell may be local PowerShell or a manually opened SSH shell. Portable echo markers
     /// delimit the response without replacing that foreground process.
     /// </summary>
-<<<<<<< HEAD
     public async Task<CommandExecutionResult> RunExternalCommandDetailedAsync(
         string command,
         CancellationToken cancellationToken = default)
-=======
-    public async Task<CommandExecutionResult> RunExternalCommandDetailedAsync(string command)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(command);
-        await _broadcastCommandGate.WaitAsync(_lifetimeCancellation.Token);
-        try
-        {
-            if (Terminal.TerminalState != TerminalState.Open)
-                throw new InvalidOperationException("Local terminal is not open.");
-
-            var startedAt = DateTimeOffset.UtcNow;
-            var started = Stopwatch.GetTimestamp();
-            var token = Guid.NewGuid().ToString("N");
-            var beginMarker = $"__SUTTY_BROADCAST_BEGIN_{token}__";
-            var endMarker = $"__SUTTY_BROADCAST_END_{token}__";
-            var capture = new TerminalBroadcastCapture(beginMarker, endMarker);
-            lock (_broadcastCaptureGate)
-                _broadcastCapture = capture;
-
-            var normalizedCommand = ClipboardHelper.NormalizeTerminalPaste(command).TrimEnd('\r');
-            var wireInput = $"echo {beginMarker}\r{normalizedCommand}\recho {endMarker}\r";
-
-            try
-            {
-                await SendTerminalTextAsync(wireInput);
-                var output = await capture.Completion
-                    .WaitAsync(TimeSpan.FromMinutes(10), _lifetimeCancellation.Token);
-                return new CommandExecutionResult(
-                    command,
-                    output,
-                    "",
-                    null,
-                    null,
-                    startedAt,
-                    Stopwatch.GetElapsedTime(started));
-            }
-            finally
-            {
-                lock (_broadcastCaptureGate)
-                {
-                    if (ReferenceEquals(_broadcastCapture, capture))
-                        _broadcastCapture = null;
-                }
-            }
-        }
-        finally
-        {
-            _broadcastCommandGate.Release();
-        }
-    }
-
-    private void CaptureBroadcastOutput(byte[] data)
-    {
-        TerminalBroadcastCapture? capture;
-        lock (_broadcastCaptureGate)
-            capture = _broadcastCapture;
-        capture?.Feed(data);
-    }
-
-    private async void TerminalSurface_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(command);
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -437,45 +375,7 @@ public sealed partial class LocalTerminalView : UserControl
                 }
             }
         }
-<<<<<<< HEAD
         finally
-=======
-
-        if (sequence is null)
-            return;
-
-        args.Handled = true;
-        await SendTerminalTextAsync(sequence);
-    }
-
-    private async void LocalTerminalView_PreviewKeyDown(object sender, KeyRoutedEventArgs args)
-    {
-        var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
-        var shiftDown = IsKeyDown(Windows.System.VirtualKey.Shift);
-        if (args.Key != Windows.System.VirtualKey.Insert || (!controlDown && !shiftDown))
-            return;
-
-        args.Handled = true;
-        if (controlDown)
-        {
-            ClipboardHelper.CopyText(TerminalText.SelectedText);
-            return;
-        }
-
-        var clipboardText = await ClipboardHelper.GetTextAsync();
-        if (!string.IsNullOrEmpty(clipboardText))
-            await SendTerminalTextAsync(ClipboardHelper.NormalizeTerminalPaste(clipboardText));
-    }
-
-    private async void TerminalSurface_CharacterReceived(
-        UIElement sender,
-        CharacterReceivedRoutedEventArgs args)
-    {
-        if (Terminal.TerminalState != TerminalState.Open ||
-            IsKeyDown(Windows.System.VirtualKey.Control) ||
-            IsKeyDown(Windows.System.VirtualKey.Menu) ||
-            args.Character is < ' ' or '\x7f')
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         {
             _broadcastCommandGate.Release();
         }
@@ -627,17 +527,4 @@ public sealed partial class LocalTerminalView : UserControl
                 : null);
     }
 
-<<<<<<< HEAD
-=======
-    private static bool IsKeyDown(Windows.System.VirtualKey key)
-        => Microsoft.UI.Input.InputKeyboardSource
-            .GetKeyStateForCurrentThread(key)
-            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-
-    private string CursorKeySequence(char final)
-        => _terminalBuffer.ApplicationCursorKeys
-            ? $"\x1bO{final}"
-            : $"\x1b[{final}";
-
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 }

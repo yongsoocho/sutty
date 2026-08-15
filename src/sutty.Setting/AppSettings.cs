@@ -12,7 +12,6 @@ public sealed class AppSettings
     public string TerminalFontFamily { get; set; } = "Cascadia Mono";
     public int TerminalFontSize { get; set; } = 13;
 
-<<<<<<< HEAD
     /// <summary>Terminal palette id, or FollowApplication to follow the app light/dark mode.</summary>
     public string TerminalTheme { get; set; } = "FollowApplication";
 
@@ -30,8 +29,6 @@ public sealed class AppSettings
     /// <summary>Load the user's PowerShell profile in newly opened local terminal tabs.</summary>
     public bool LoadLocalShellProfile { get; set; } = true;
 
-=======
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
     /// <summary>Color JSON/YAML keys, strings, numbers, literals, and comments in REPL cells.</summary>
     public bool EnableStructuredTextHighlighting { get; set; } = true;
 
@@ -46,6 +43,12 @@ public sealed class AppSettings
 
     public int DefaultSshPort { get; set; } = 22;
     public int DefaultKeepAliveSeconds { get; set; } = 30;
+
+    /// <summary>Retry transient SFTP failures such as disconnects and checksum mismatches.</summary>
+    public bool SftpRetryEnabled { get; set; } = true;
+
+    /// <summary>Number of retries after the initial SFTP attempt.</summary>
+    public int SftpRetryCount { get; set; } = 3;
 
     /// <summary>Home 화면에서 마지막으로 선택한 SSH 인증 방식.</summary>
     public string LastAuthMethod { get; set; } = "Password";
