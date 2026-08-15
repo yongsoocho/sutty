@@ -1,0 +1,231 @@
+name: Signed MSIX release
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_version:
+        description: Package version in four-part form (for example 1.2.3.0)
+        required: true
+        type: string
+      appinstaller_version:
+        description: Monotonically increasing App Installer metadata version
+        required: true
+        type: string
+      release_base_url:
+        description: HTTPS directory that will host Sutty.appinstaller and the MSIX
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signed-msix-release
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  ContinuousIntegrationBuild: true
+
+jobs:
+  package:
+    name: Build, sign, and verify x64 MSIX
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Validate release inputs and certificate
+        id: release
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+          APPINSTALLER_VERSION: ${{ inputs.appinstaller_version }}
+          RELEASE_BASE_URL: ${{ inputs.release_base_url }}
+          CERTIFICATE_BASE64: ${{ secrets.SUTTY_MSIX_CERT_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.SUTTY_MSIX_CERT_PASSWORD }}
+        run: |
+          $versionPattern = '^[1-9][0-9]{0,4}(\.[0-9]{1,5}){3}$'
+          if ($env:PACKAGE_VERSION -notmatch $versionPattern) {
+            throw 'package_version must be a four-part non-zero version.'
+          }
+          if ($env:APPINSTALLER_VERSION -notmatch $versionPattern) {
+            throw 'appinstaller_version must be a four-part non-zero version.'
+          }
+          $packageParts = $env:PACKAGE_VERSION.Split('.') | ForEach-Object { [int]$_ }
+          $installerParts = $env:APPINSTALLER_VERSION.Split('.') | ForEach-Object { [int]$_ }
+          if ((($packageParts + $installerParts) | Measure-Object -Maximum).Maximum -gt 65535) {
+            throw 'Every version component must be at most 65535.'
+          }
+          $releaseUri = [Uri]$env:RELEASE_BASE_URL
+          if (-not $releaseUri.IsAbsoluteUri -or $releaseUri.Scheme -ne 'https') {
+            throw 'release_base_url must be an absolute HTTPS URL.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:CERTIFICATE_PASSWORD)) {
+            throw 'SUTTY_MSIX_CERT_BASE64 and SUTTY_MSIX_CERT_PASSWORD are required.'
+          }
+
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'sutty-release-signing.pfx'
+          [System.IO.File]::WriteAllBytes(
+            $certificatePath,
+            [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          $securePassword = ConvertTo-SecureString $env:CERTIFICATE_PASSWORD -AsPlainText -Force
+          $pfxData = Get-PfxData -FilePath $certificatePath -Password $securePassword
+          $certificate = @($pfxData.EndEntityCertificates)[0]
+          if ($null -eq $certificate -or -not $certificate.HasPrivateKey) {
+            throw 'The configured PFX does not contain an end-entity private key.'
+          }
+          if ($certificate.NotAfter -le [DateTime]::UtcNow) {
+            throw 'The configured MSIX signing certificate has expired.'
+          }
+          if ($certificate.NotBefore -gt [DateTime]::UtcNow) {
+            throw 'The configured MSIX signing certificate is not valid yet.'
+          }
+
+          $manifestPath = Resolve-Path .\src\sutty.UI\Package.appxmanifest
+          [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
+          $manifest.Package.Identity.Version = $env:PACKAGE_VERSION
+          $manifest.Package.Identity.Publisher = $certificate.Subject
+          $manifest.Save($manifestPath)
+
+          $packageFileName = "Sutty-$($env:PACKAGE_VERSION)-x64.msix"
+          "certificate_path=$certificatePath" >> $env:GITHUB_OUTPUT
+          "publisher=$($certificate.Subject)" >> $env:GITHUB_OUTPUT
+          "package_file_name=$packageFileName" >> $env:GITHUB_OUTPUT
+          "release_base_url=$($env:RELEASE_BASE_URL.TrimEnd('/'))" >> $env:GITHUB_OUTPUT
+
+      - name: Restore locked dependencies
+        env:
+          RuntimeIdentifiers: win-x64;win-arm64
+        run: >-
+          dotnet restore .\sutty.slnx
+          --locked-mode
+          -p:Platform=x64
+          -p:Configuration=Release
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Validate release payload policy
+        run: >-
+          dotnet publish .\src\sutty.UI\sutty.UI.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          --output .\artifacts\release-policy-check
+          -p:Platform=x64
+          -p:GenerateAppxPackageOnBuild=false
+          -p:AppxPackageSigningEnabled=false
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+          -p:DebugSymbols=false
+          -p:DebugType=None
+
+      - name: Reject development data from signed release payload
+        shell: pwsh
+        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\release-policy-check
+
+      - name: Build unsigned MSIX
+        run: >-
+          dotnet build .\src\sutty.UI\sutty.UI.csproj
+          --configuration Release
+          --no-restore
+          -p:Platform=x64
+          -p:RuntimeIdentifier=win-x64
+          -p:GenerateAppxPackageOnBuild=true
+          -p:AppxPackageSigningEnabled=false
+          -p:AppxBundle=Never
+          -p:UapAppxPackageBuildMode=SideloadOnly
+          -p:AppxPackageDir=${{ github.workspace }}\artifacts\msix\
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+          -p:DebugSymbols=false
+          -p:DebugType=None
+
+      - name: Sign package and create update descriptor
+        shell: pwsh
+        env:
+          CERTIFICATE_PATH: ${{ steps.release.outputs.certificate_path }}
+          CERTIFICATE_PASSWORD: ${{ secrets.SUTTY_MSIX_CERT_PASSWORD }}
+          PUBLISHER: ${{ steps.release.outputs.publisher }}
+          PACKAGE_FILE_NAME: ${{ steps.release.outputs.package_file_name }}
+          RELEASE_BASE_URL: ${{ steps.release.outputs.release_base_url }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+          APPINSTALLER_VERSION: ${{ inputs.appinstaller_version }}
+        run: |
+          $outputDirectory = New-Item -ItemType Directory -Force -Path .\artifacts\signed
+          $packages = @(Get-ChildItem .\artifacts\msix -Recurse -File -Filter *.msix)
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one x64 MSIX, found $($packages.Count)."
+          }
+          $signedPackage = Join-Path $outputDirectory.FullName $env:PACKAGE_FILE_NAME
+          Copy-Item -LiteralPath $packages[0].FullName -Destination $signedPackage
+
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+              -Recurse -File -Filter signtool.exe |
+            Where-Object { $_.DirectoryName -match '\\x64$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $signTool) {
+            throw 'signtool.exe (x64) was not found on the runner.'
+          }
+          & $signTool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
+            /f $env:CERTIFICATE_PATH /p $env:CERTIFICATE_PASSWORD $signedPackage
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX signing failed.' }
+          & $signTool.FullName verify /pa /all /v $signedPackage
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX signature verification failed.' }
+
+          $appInstallerUri = "$($env:RELEASE_BASE_URL)/Sutty.appinstaller"
+          $packageUri = "$($env:RELEASE_BASE_URL)/$($env:PACKAGE_FILE_NAME)"
+          $descriptor = @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2021"
+                        Version="$([System.Security.SecurityElement]::Escape($env:APPINSTALLER_VERSION))"
+                        Uri="$([System.Security.SecurityElement]::Escape($appInstallerUri))">
+            <MainPackage Name="7f1b349a-3ed4-42cc-a98d-f68091d3cacf"
+                         Publisher="$([System.Security.SecurityElement]::Escape($env:PUBLISHER))"
+                         Version="$([System.Security.SecurityElement]::Escape($env:PACKAGE_VERSION))"
+                         ProcessorArchitecture="x64"
+                         Uri="$([System.Security.SecurityElement]::Escape($packageUri))" />
+            <UpdateSettings>
+              <OnLaunch HoursBetweenUpdateChecks="0"
+                        ShowPrompt="true"
+                        UpdateBlocksActivation="false" />
+              <AutomaticBackgroundTask />
+              <ForceUpdateFromAnyVersion>true</ForceUpdateFromAnyVersion>
+            </UpdateSettings>
+          </AppInstaller>
+          "@
+          [System.IO.File]::WriteAllText(
+            (Join-Path $outputDirectory.FullName 'Sutty.appinstaller'),
+            $descriptor.Trim(),
+            [System.Text.UTF8Encoding]::new($false))
+          $packageHash = (Get-FileHash -LiteralPath $signedPackage -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText(
+            (Join-Path $outputDirectory.FullName 'SHA256SUMS.txt'),
+            "$packageHash  $($env:PACKAGE_FILE_NAME)$([Environment]::NewLine)",
+            [System.Text.UTF8Encoding]::new($false))
+
+      - name: Upload signed release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sutty-${{ inputs.package_version }}-signed-msix
+          path: artifacts/signed
+          if-no-files-found: error
+
+      - name: Remove signing certificate
+        if: always()
+        shell: pwsh
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'sutty-release-signing.pfx'
+          if (Test-Path -LiteralPath $certificatePath) {
+            Remove-Item -LiteralPath $certificatePath -Force
+          }

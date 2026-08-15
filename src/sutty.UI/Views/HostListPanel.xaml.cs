@@ -90,6 +90,8 @@ public sealed partial class HostListPanel : UserControl
                 PrivateKeyPath = host.PrivateKeyPath,
                 Tags = host.Tags,
                 IsFavorite = true,
+                Route = host.Route,
+                Tunnels = host.Tunnels,
             });
             RefreshFromStore();
         }
@@ -217,6 +219,8 @@ public sealed partial class HostListPanel : UserControl
         Tags = [.. profile.Tags],
         GroupName = profile.GroupName,
         Environment = profile.Environment,
+        Route = profile.Route,
+        Tunnels = [.. profile.Tunnels],
     };
 
     private static HostInfoModel FromHistory(HostHistoryEntry entry, HostProfile? profile) => new()
@@ -238,6 +242,8 @@ public sealed partial class HostListPanel : UserControl
         Environment = profile?.Environment ?? HostEnvironments.Unclassified,
         Outcome = entry.Outcome,
         ErrorCode = entry.ErrorCode,
+        Route = profile?.Route ?? new HostRouteProfile(),
+        Tunnels = profile is null ? [] : [.. profile.Tunnels],
     };
 
     private static HostProfile? FindProfile(

@@ -101,12 +101,22 @@ public sealed class MultiSlotVm : ObservableObject
         SftpState: SftpConnectionState.Ready,
     };
 
+    public string SftpPersistenceId => View is null
+        ? ""
+        : !string.IsNullOrWhiteSpace(View.Session.Info.SavedHostId)
+            ? $"profile:{View.Session.Info.SavedHostId}"
+            : $"endpoint:{View.Session.Info.Username.Trim().ToLowerInvariant()}@" +
+              $"{View.Session.Info.Host.Trim().ToLowerInvariant()}:{View.Session.Info.Port}";
+
     public MultiSftpTarget? CreateSftpTarget(string remoteDirectory) => CanUseSftp
         ? new MultiSftpTarget(
             View!.Session.Id.ToString("N"),
             Title,
             View.Session.Sftp,
             remoteDirectory)
+        {
+            PersistenceId = SftpPersistenceId,
+        }
         : null;
 
     public Task<CommandExecutionResult> ExecuteAsync(

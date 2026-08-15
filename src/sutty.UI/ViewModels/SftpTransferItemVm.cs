@@ -31,19 +31,22 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     private double _progress;
     private SftpTransferState _state = SftpTransferState.Queued;
     private string? _error;
+    private bool _userCancellationRequested;
 
     public SftpTransferItemVm(
         string name,
         string sourcePath,
         string destinationPath,
         long totalBytes,
-        SftpTransferDirection direction)
+        SftpTransferDirection direction,
+        string? queueJobId = null)
     {
         Name = name;
         SourcePath = sourcePath;
         DestinationPath = destinationPath;
         TotalBytes = Math.Max(0, totalBytes);
         Direction = direction;
+        QueueJobId = queueJobId;
         _token = _cancellation.Token;
     }
 
@@ -52,6 +55,8 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     public string DestinationPath { get; }
     public long TotalBytes { get; }
     public SftpTransferDirection Direction { get; }
+    public string? QueueJobId { get; }
+    public bool UserCancellationRequested => _userCancellationRequested;
     public CancellationToken Token => _token;
     public string DirectionGlyph => Direction == SftpTransferDirection.Upload ? "\uE898" : "\uE896";
     public string DirectionText => Direction == SftpTransferDirection.Upload
@@ -153,9 +158,10 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
         State = SftpTransferState.Failed;
     }
 
-    public void Cancel()
+    public void Cancel(bool userInitiated = false)
     {
         if (!CanCancel) return;
+        _userCancellationRequested |= userInitiated;
         State = SftpTransferState.Cancelling;
         _cancellation.Cancel();
     }

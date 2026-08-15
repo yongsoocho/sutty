@@ -267,11 +267,27 @@
             CornerRadius="7"
             Visibility="Collapsed">
             <StackPanel Spacing="5">
-                <TextBlock
-                    FontSize="10.5"
-                    FontWeight="SemiBold"
-                    Foreground="{ThemeResource TextMuted}"
-                    Text="{x:Bind h:Loc.T('전송', 'TRANSFERS')}" />
+                <Grid ColumnSpacing="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="10.5"
+                        FontWeight="SemiBold"
+                        Foreground="{ThemeResource TextMuted}"
+                        Text="{x:Bind h:Loc.T('전송', 'TRANSFERS')}" />
+                    <Button
+                        x:Name="ResumeRestoredButton"
+                        Grid.Column="1"
+                        MinHeight="24"
+                        Padding="7,2"
+                        Click="ResumeRestoredTransfers_Click"
+                        Content="{x:Bind h:Loc.T('복원 작업 재개', 'Resume restored')}"
+                        FontSize="10"
+                        Visibility="Collapsed" />
+                </Grid>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{x:Bind Transfers}">
                         <ItemsControl.ItemTemplate>

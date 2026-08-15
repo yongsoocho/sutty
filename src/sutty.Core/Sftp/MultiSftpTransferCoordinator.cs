@@ -1,11 +1,18 @@
 namespace sutty.Core.Sftp;
 
+using System.Security.Cryptography;
+using System.Text;
+
 /// <summary>One connected SFTP target selected in the Multi screen.</summary>
 public sealed record MultiSftpTarget(
     string Id,
     string DisplayName,
     ISftpService Service,
-    string RemoteDirectory);
+    string RemoteDirectory)
+{
+    /// <summary>Stable saved-host or endpoint identity used by the durable queue.</summary>
+    public string PersistenceId { get; init; } = Id;
+}
 
 public enum MultiSftpTargetState
 {
@@ -65,6 +72,29 @@ public sealed class MultiSftpTransferCoordinator
         return UploadCoreAsync(localPath, targets, options, progress, ct);
     }
 
+    /// <summary>
+    /// Downloads the same remote file or directory from many servers into one local
+    /// aggregation directory. Every server receives a deterministic child directory,
+    /// so equal remote names can never overwrite another server's result.
+    /// </summary>
+    public Task<MultiSftpBatchResult> DownloadAsync(
+        string remotePath,
+        string localDirectory,
+        IReadOnlyCollection<MultiSftpTarget> sources,
+        SftpTransferOptions? options = null,
+        IProgress<MultiSftpTargetStatus>? progress = null,
+        CancellationToken ct = default)
+    {
+        ValidateTargets(sources);
+        ArgumentException.ThrowIfNullOrWhiteSpace(remotePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(localDirectory);
+        if (!Path.IsPathFullyQualified(localDirectory))
+            throw new ArgumentException("The local aggregation directory must be absolute.", nameof(localDirectory));
+
+        return DownloadCoreAsync(RemotePath.Normalize(remotePath), localDirectory, sources,
+            options, progress, ct);
+    }
+
     /// <summary>Retries only the failed targets from a completed batch.</summary>
     public Task<MultiSftpBatchResult> RetryFailedAsync(
         string localPath,
@@ -78,6 +108,22 @@ public sealed class MultiSftpTransferCoordinator
         if (failedTargets.Length == 0)
             return Task.FromResult(new MultiSftpBatchResult([]));
         return UploadCoreAsync(localPath, failedTargets, options, progress, ct);
+    }
+
+    /// <summary>Retries only failed servers from a completed N-to-one download.</summary>
+    public Task<MultiSftpBatchResult> RetryFailedDownloadAsync(
+        string remotePath,
+        string localDirectory,
+        MultiSftpBatchResult previous,
+        SftpTransferOptions? options = null,
+        IProgress<MultiSftpTargetStatus>? progress = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        var failedTargets = previous.Failed.Select(status => status.Target).ToArray();
+        if (failedTargets.Length == 0)
+            return Task.FromResult(new MultiSftpBatchResult([]));
+        return DownloadAsync(remotePath, localDirectory, failedTargets, options, progress, ct);
     }
 
     private async Task<MultiSftpBatchResult> UploadCoreAsync(
@@ -163,6 +209,116 @@ public sealed class MultiSftpTransferCoordinator
         })).ConfigureAwait(false);
 
         return new MultiSftpBatchResult(results);
+    }
+
+    private async Task<MultiSftpBatchResult> DownloadCoreAsync(
+        string remotePath,
+        string localDirectory,
+        IReadOnlyCollection<MultiSftpTarget> sources,
+        SftpTransferOptions? options,
+        IProgress<MultiSftpTargetStatus>? progress,
+        CancellationToken ct)
+    {
+        Directory.CreateDirectory(localDirectory);
+        var remoteName = RemotePath.GetName(remotePath);
+        if (string.IsNullOrWhiteSpace(remoteName))
+            remoteName = "root";
+
+        var results = new MultiSftpTargetStatus[sources.Count];
+        using var concurrency = new SemaphoreSlim(_maximumParallelism, _maximumParallelism);
+        var indexedSources = sources.Select((target, index) => (target, index)).ToArray();
+
+        foreach (var (target, index) in indexedSources)
+        {
+            results[index] = new MultiSftpTargetStatus(target, MultiSftpTargetState.Pending);
+            progress?.Report(results[index]);
+        }
+
+        await Task.WhenAll(indexedSources.Select(async indexed =>
+        {
+            var (target, index) = indexed;
+            try
+            {
+                await concurrency.WaitAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                results[index] = new MultiSftpTargetStatus(target, MultiSftpTargetState.Cancelled);
+                progress?.Report(results[index]);
+                return;
+            }
+
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                results[index] = new MultiSftpTargetStatus(target, MultiSftpTargetState.Transferring);
+                progress?.Report(results[index]);
+
+                var targetProgress = new CallbackProgress<SftpTransferProgress>(item =>
+                {
+                    results[index] = new MultiSftpTargetStatus(
+                        target,
+                        MultiSftpTargetState.Transferring,
+                        item);
+                    progress?.Report(results[index]);
+                });
+                var serverDirectory = Path.Combine(
+                    localDirectory,
+                    CreateServerDirectoryName(target));
+                Directory.CreateDirectory(serverDirectory);
+                var destination = Path.Combine(serverDirectory, MakeSafeLocalName(remoteName));
+                var result = await target.Service.DownloadPathAsync(
+                    remotePath,
+                    destination,
+                    options,
+                    targetProgress,
+                    ct).ConfigureAwait(false);
+                results[index] = new MultiSftpTargetStatus(
+                    target,
+                    MultiSftpTargetState.Succeeded,
+                    Result: result);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                results[index] = new MultiSftpTargetStatus(target, MultiSftpTargetState.Cancelled);
+            }
+            catch (Exception error)
+            {
+                results[index] = new MultiSftpTargetStatus(
+                    target,
+                    MultiSftpTargetState.Failed,
+                    Error: error.Message);
+            }
+            finally
+            {
+                concurrency.Release();
+                progress?.Report(results[index]);
+            }
+        })).ConfigureAwait(false);
+
+        return new MultiSftpBatchResult(results);
+    }
+
+    private static string CreateServerDirectoryName(MultiSftpTarget target)
+    {
+        var display = MakeSafeLocalName(target.DisplayName);
+        var stableIdentity = string.IsNullOrWhiteSpace(target.PersistenceId)
+            ? target.Id
+            : target.PersistenceId;
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(stableIdentity)))
+            .ToLowerInvariant()[..10];
+        return $"{display}-{digest}";
+    }
+
+    private static string MakeSafeLocalName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
+        var safe = new string(value.Trim().Select(character =>
+            invalid.Contains(character) || char.IsControl(character) ? '_' : character).ToArray())
+            .TrimEnd(' ', '.');
+        if (safe is "" or "." or "..")
+            safe = "server";
+        return safe.Length <= 96 ? safe : safe[..96];
     }
 
     private static void ValidateTargets(IReadOnlyCollection<MultiSftpTarget> targets)

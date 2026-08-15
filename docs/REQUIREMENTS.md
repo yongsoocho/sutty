@@ -106,21 +106,21 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
-| XFER-001 | P0 | Partial | A per-panel eight-job queue and a serialized transfer worker exist; global/per-host configurable concurrency and durable FIFO jobs do not.<br>패널별 최대 8개 queue와 직렬 transfer worker는 있지만 전역·Host별 설정 가능 동시성과 영속 FIFO job이 없습니다. |
+| XFER-001 | P0 | Partial | A credential-free atomic job store and per-panel bounded workers exist. Jobs and target states survive restart, while configurable global/per-host concurrency and a unified manager remain incomplete.<br>자격증명 없는 atomic job 저장소와 패널별 제한 worker가 있습니다. Job·대상 상태는 재시작 후 복원되지만 설정 가능한 전역·Host별 동시성과 통합 관리자는 미완성입니다. |
 | XFER-002 | P0 | Partial | Progress, speed, ETA, direction, and state are visible; refresh throttling and large-file evidence are missing.<br>진행률·속도·ETA·방향·상태는 표시하지만 갱신 제한과 대용량 파일 증거가 없습니다. |
 | XFER-003 | P0 | Partial | Queued/running cancellation, temporary-file retention/cleanup, and configurable transient retry exist; pause and stalled-call interruption beyond transport cancellation remain incomplete.<br>대기·실행 취소, 임시 파일 유지·정리, 설정 가능한 일시 오류 재시도가 있지만 일시정지와 transport 취소를 넘는 stalled-call 중단은 미완성입니다. |
 | XFER-004 | P0 | Partial | Upload uses deterministic remote partials, checkpointed resume, checksum-before-promotion, backup/promotion, rollback, and no pre-delete; large fault-injection evidence remains.<br>업로드는 결정적인 원격 partial, checkpoint resume, 승격 전 checksum, backup/promotion, rollback, 선삭제 방지를 사용하지만 대용량 fault-injection 증거는 남아 있습니다. |
 | XFER-005 | P1 | Partial | Upload/download resume from validated partial offsets and source metadata; interrupted live-server acceptance is incomplete.<br>검증된 partial offset과 원본 metadata에서 업로드·다운로드를 이어받지만 실서버 중단 인수는 미완성입니다. |
-| XFER-006 | P1 | Partial | Non-secret checkpoints survive restart and are reused when the user restarts the same transfer; automatic job discovery/restoration UI is unavailable.<br>비밀정보 없는 checkpoint가 재시작 뒤 유지되고 사용자가 같은 전송을 다시 시작하면 재사용하지만 자동 job 검색·복원 UI는 없습니다. |
+| XFER-006 | P1 | Implemented | Non-secret checkpoints and job/target state survive restart. Files and Multi discover matching incomplete work and require an explicit resume action; abandoned running work becomes interrupted and successful targets stay complete.<br>비밀정보 없는 checkpoint와 job·대상 상태가 재시작 뒤 유지됩니다. Files·Multi가 일치하는 미완료 작업을 찾아 명시적 재개를 요구하며 중단된 실행 작업은 interrupted로 바뀌고 성공 대상은 완료 상태를 유지합니다. |
 | XFER-007 | P1 | Partial | SHA-256 compares local and remote content before final promotion; large-file performance and incompatible-server evidence remain.<br>최종 승격 전에 SHA-256으로 로컬·원격 내용을 비교하지만 대용량 성능·비호환 서버 증거는 남아 있습니다. |
-| XFER-008 | P1 | Partial | Multi uploads to explicitly checked SFTP sessions with independent per-server progress/success/failure and failed-only retry; live 16-target and cancellation evidence remains.<br>명시적으로 체크한 SFTP 세션에 Multi 업로드하며 서버별 진행률·성공·실패를 분리하고 실패 서버만 재시도하지만 실제 16대·취소 검증은 남아 있습니다. |
+| XFER-008 | P1 | Partial | Explicitly checked sessions support 1→N upload and N→1 download with independent progress/result state, deterministic destination isolation, and failed/incomplete-only retry. Live 16-target and cancellation evidence remains.<br>명시적으로 체크한 세션은 1→N 업로드와 N→1 다운로드, 독립 진행률·결과, 결정적 목적지 분리, 실패·미완료 대상만 재시도를 지원하지만 실제 16대·취소 검증은 남아 있습니다. |
 
 ## Port forwarding / 포트 포워딩
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
 | TUN-001 | P1 | Partial | Local, remote, and dynamic forwarding rules are implemented and owned by the SSH session; the live interoperability matrix is incomplete.<br>Local·Remote·Dynamic forwarding 규칙을 구현하고 SSH 세션 수명주기에 연결했지만 실제 상호운용 매트릭스는 미완성입니다. |
-| TUN-002 | P1 | Planned | Host auto-start forwarding rules are unavailable.<br>Host auto-start forwarding rule이 없습니다. |
+| TUN-002 | P1 | Partial | Saved hosts persist credential-free local/remote/dynamic forwarding rules and restore them into the connection path automatically. Live bind, reconnect, and migration evidence remains.<br>저장 Host가 자격증명 없는 Local·Remote·Dynamic forwarding 규칙을 저장하고 연결 경로에 자동 복원하지만 실제 bind·재접속·migration 증거는 남아 있습니다. |
 | TUN-003 | P1 | Planned | External-bind warnings and policy are unavailable.<br>외부 bind 경고와 정책은 없습니다. |
 | TUN-004 | P2 | Partial | Pre-connect rules create temporary session-scoped tunnels; a post-connect tunnel manager is unavailable.<br>연결 전 규칙으로 세션 범위 임시 tunnel을 만들지만 연결 후 tunnel 관리자는 없습니다. |
 
@@ -140,9 +140,9 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
-| IMP-001 | P1 | Planned | OpenSSH config import is unavailable.<br>OpenSSH config 가져오기를 지원하지 않습니다. |
-| IMP-002 | P1 | Planned | Legacy SSH saved-session import is unavailable.<br>레거시 SSH 저장 세션 가져오기를 지원하지 않습니다. |
-| IMP-003 | P1 | Planned | Legacy SFTP site-profile import is unavailable.<br>레거시 SFTP 사이트 프로필 가져오기를 지원하지 않습니다. |
+| IMP-001 | P1 | Implemented | OpenSSH config import handles concrete hosts, identity files, jump/proxy routes, and forwarding rules; wildcard entries are skipped with warnings and secrets are never imported.<br>OpenSSH config 가져오기는 구체 Host·identity file·jump/proxy route·forwarding 규칙을 처리하며 wildcard는 경고와 함께 건너뛰고 비밀정보를 가져오지 않습니다. |
+| IMP-002 | P1 | Partial | Windows saved-session registry profiles are imported without credentials, including proxy and forwarding metadata. Real-machine format/version acceptance remains.<br>Windows 저장 세션 registry profile을 자격증명 없이 proxy·forwarding metadata와 함께 가져오지만 실제 PC의 형식·버전 인수 검증은 남아 있습니다. |
+| IMP-003 | P1 | Partial | Legacy INI host profiles are parsed without credentials and deduplicated before saving. Broader product/version fixtures remain.<br>레거시 INI Host profile을 자격증명 없이 분석하고 저장 전 중복 제거하지만 더 넓은 제품·버전 fixture 검증은 남아 있습니다. |
 | IMP-004 | P1 | Planned | Encrypted Sutty bundle export/import is unavailable.<br>암호화 Sutty bundle 내보내기·가져오기를 지원하지 않습니다. |
 | POL-001 | P1 | Planned | HKLM policy precedence and locked-settings UI are unavailable.<br>HKLM 정책 우선순위와 잠긴 설정 UI가 없습니다. |
 | POL-002 | P1 | Planned | Managed credential-free Host catalog is unavailable.<br>자격 증명 없는 관리형 Host catalog를 지원하지 않습니다. |

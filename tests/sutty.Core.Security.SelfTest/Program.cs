@@ -243,13 +243,18 @@ try
     var vaultDirectory = Path.Combine(scratch, "credential-vault");
     var password = CreateTestSecret("vault-password");
     var passphrase = CreateTestSecret("vault-passphrase");
+    var routePassword = CreateTestSecret("vault-route-password");
+    var routePassphrase = CreateTestSecret("vault-route-passphrase");
     string credentialId;
     using (var vault = new LocalCredentialVault(vaultDirectory))
     {
-        credentialId = vault.Store(new CredentialSecret(password, passphrase));
+        credentialId = vault.Store(new CredentialSecret(
+            password, passphrase, routePassword, routePassphrase));
         Assert(vault.TryRead(credentialId, out var restored), "credential can be read");
         Assert(restored?.Password == password &&
-               restored.PrivateKeyPassphrase == passphrase,
+               restored.PrivateKeyPassphrase == passphrase &&
+               restored.RoutePassword == routePassword &&
+               restored.RoutePrivateKeyPassphrase == routePassphrase,
             "credential round trip");
         Assert(vault.GetMetadata().Single().Id == credentialId, "credential metadata");
     }
@@ -262,6 +267,10 @@ try
         "vault document excludes password plaintext");
     Assert(!vaultDocumentText.Contains(passphrase, StringComparison.Ordinal),
         "vault document excludes passphrase plaintext");
+    Assert(!vaultDocumentText.Contains(routePassword, StringComparison.Ordinal),
+        "vault document excludes route password plaintext");
+    Assert(!vaultDocumentText.Contains(routePassphrase, StringComparison.Ordinal),
+        "vault document excludes route passphrase plaintext");
     Assert(!vaultKeyText.Contains(password, StringComparison.Ordinal),
         "protected key file excludes credential plaintext");
 

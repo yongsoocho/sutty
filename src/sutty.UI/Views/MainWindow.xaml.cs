@@ -13,6 +13,7 @@ using sutty.Core.Sftp;
 using sutty.Core.Terminal;
 using sutty.Setting;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -38,9 +39,20 @@ namespace sutty.UI.Views
         private bool _isMultiView;
         private int _broadcastInProgress;
         private readonly MultiSftpTransferCoordinator _multiSftpCoordinator = new();
+        private readonly SftpTransferQueueStore _sftpTransferQueue = SftpTransferQueueStore.Default;
         private MultiSftpBatchResult? _lastMultiSftpBatch;
-        private string? _lastMultiSftpLocalPath;
+        private MultiSftpOperation _lastMultiSftpOperation;
+        private string? _lastMultiSftpSourcePath;
+        private string? _lastMultiSftpDestinationPath;
+        private string? _lastMultiSftpQueueJobId;
         private int _multiSftpInProgress;
+
+        private enum MultiSftpOperation
+        {
+            None,
+            Upload,
+            Download,
+        }
 
         public MainWindow()
         {
@@ -235,6 +247,8 @@ namespace sutty.UI.Views
             var groupName = host.GroupName;
             var environment = host.Environment;
             var favorite = host.IsPinned;
+            var routeProfile = host.Route;
+            var tunnelProfiles = host.Tunnels;
             CredentialSecret? credential = null;
 
             if (!string.IsNullOrWhiteSpace(profileId))
@@ -254,6 +268,8 @@ namespace sutty.UI.Views
                         groupName = profile.GroupName;
                         environment = profile.Environment;
                         favorite = profile.IsFavorite;
+                        routeProfile = profile.Route;
+                        tunnelProfiles = profile.Tunnels;
                     }
 
                     if (!string.IsNullOrWhiteSpace(credentialId))
@@ -307,6 +323,13 @@ namespace sutty.UI.Views
                 GroupName = groupName,
                 Environment = environment,
                 IsFavorite = favorite,
+                Route = RestoreRoute(routeProfile, credential),
+                RoutePolicy = new ConnectionRoutePolicy
+                {
+                    EnterpriseMode = routeProfile.EnterpriseMode,
+                    DisableDirect = routeProfile.EnterpriseMode,
+                },
+                PortForwardings = tunnelProfiles.Select(RestoreTunnel).ToList(),
             };
 
             // History cards execute a connection instead of returning to the editor.
@@ -497,8 +520,13 @@ namespace sutty.UI.Views
                 await BroadcastFromPanelAsync(panel, command);
             panel.SftpUploadRequested += async (_, request) =>
                 await UploadToSelectedSessionsAsync(panel, request);
+            panel.SftpDownloadRequested += async (_, request) =>
+                await DownloadFromSelectedSessionsAsync(panel, request);
             panel.SftpRetryFailedRequested += async (_, _) =>
                 await RetryFailedSftpTargetsAsync(panel);
+            panel.SftpResumePendingRequested += async (_, _) =>
+                await ResumePendingSftpTransferAsync(panel);
+            RefreshRecoveredSftpCount(panel);
             return panel;
         }
 
@@ -520,11 +548,7 @@ namespace sutty.UI.Views
                 "Preparing the upload for each selected server…"));
             try
             {
-                var selectedSlots = MultiGrid.GetTargetSlots();
-                var targets = selectedSlots
-                    .Select(slot => slot.CreateSftpTarget(request.RemoteDirectory))
-                    .OfType<MultiSftpTarget>()
-                    .ToArray();
+                var (targets, selectedCount) = GetSelectedSftpTargets(request.RemoteDirectory);
                 if (targets.Length == 0)
                 {
                     panel.ShowSftpStatus(
@@ -533,7 +557,7 @@ namespace sutty.UI.Views
                     return;
                 }
 
-                var skipped = selectedSlots.Count - targets.Length;
+                var skipped = selectedCount - targets.Length;
                 if (skipped > 0)
                 {
                     panel.ShowSftpStatus(
@@ -541,13 +565,26 @@ namespace sutty.UI.Views
                         $"Uploading after excluding {skipped} local or SFTP-unavailable target(s).");
                 }
 
-                _lastMultiSftpLocalPath = request.LocalPath;
-                var progress = new Progress<MultiSftpTargetStatus>(panel.UpdateSftpTarget);
+                var options = CreateSftpTransferOptions();
+                var queueJob = CreateQueuedJob(
+                    SftpQueueMode.FanOut,
+                    sutty.Core.Sftp.SftpTransferDirection.Upload,
+                    request.LocalPath,
+                    request.RemoteDirectory,
+                    targets,
+                    options);
+                _sftpTransferQueue.Upsert(queueJob);
+                _lastMultiSftpOperation = MultiSftpOperation.Upload;
+                _lastMultiSftpSourcePath = request.LocalPath;
+                _lastMultiSftpDestinationPath = request.RemoteDirectory;
+                _lastMultiSftpQueueJobId = queueJob.Id;
+                var progress = CreateMultiSftpProgress(panel, queueJob.Id);
                 _lastMultiSftpBatch = await _multiSftpCoordinator.UploadAsync(
                     request.LocalPath,
                     targets,
-                    CreateSftpTransferOptions(),
+                    options,
                     progress);
+                PersistMultiSftpBatch(queueJob.Id, _lastMultiSftpBatch);
                 panel.CompleteSftpBatch(_lastMultiSftpBatch);
             }
             catch (Exception error)
@@ -561,12 +598,89 @@ namespace sutty.UI.Views
             {
                 Interlocked.Exchange(ref _multiSftpInProgress, 0);
                 panel.SetSftpRunning(false);
+                RefreshRecoveredSftpCount(panel);
+            }
+        }
+
+        private async Task DownloadFromSelectedSessionsAsync(
+            MultiCommandPanel panel,
+            MultiSftpDownloadRequest request)
+        {
+            if (Interlocked.CompareExchange(ref _multiSftpInProgress, 1, 0) != 0)
+            {
+                panel.ShowSftpStatus(
+                    "이미 다중 SFTP 전송이 실행 중입니다.",
+                    "A multi-server SFTP transfer is already running.");
+                return;
+            }
+
+            panel.ResetSftpTargets();
+            panel.SetSftpRunning(true, Helpers.Loc.T(
+                "선택한 서버들의 다운로드를 준비합니다…",
+                "Preparing downloads from the selected servers…"));
+            try
+            {
+                var (sources, selectedCount) = GetSelectedSftpTargets(request.RemotePath);
+                if (sources.Length == 0)
+                {
+                    panel.ShowSftpStatus(
+                        "SFTP를 사용할 수 있는 체크된 SSH 세션이 없습니다.",
+                        "No checked SSH session has an available SFTP subsystem.");
+                    return;
+                }
+
+                var skipped = selectedCount - sources.Length;
+                if (skipped > 0)
+                {
+                    panel.ShowSftpStatus(
+                        $"SFTP 사용 불가·로컬·중복 대상 {skipped}개를 제외합니다.",
+                        $"Excluding {skipped} local, duplicate, or SFTP-unavailable target(s).");
+                }
+
+                var options = CreateSftpTransferOptions();
+                var queueJob = CreateQueuedJob(
+                    SftpQueueMode.FanIn,
+                    sutty.Core.Sftp.SftpTransferDirection.Download,
+                    request.RemotePath,
+                    request.LocalDirectory,
+                    sources,
+                    options);
+                _sftpTransferQueue.Upsert(queueJob);
+                _lastMultiSftpOperation = MultiSftpOperation.Download;
+                _lastMultiSftpSourcePath = request.RemotePath;
+                _lastMultiSftpDestinationPath = request.LocalDirectory;
+                _lastMultiSftpQueueJobId = queueJob.Id;
+                var progress = CreateMultiSftpProgress(panel, queueJob.Id);
+                _lastMultiSftpBatch = await _multiSftpCoordinator.DownloadAsync(
+                    request.RemotePath,
+                    request.LocalDirectory,
+                    sources,
+                    options,
+                    progress);
+                PersistMultiSftpBatch(queueJob.Id, _lastMultiSftpBatch);
+                panel.CompleteSftpBatch(_lastMultiSftpBatch);
+            }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Multi-server SFTP download failed: {error}");
+                panel.ShowSftpStatus(
+                    $"다중 SFTP 다운로드를 시작하지 못했습니다: {error.Message}",
+                    $"Could not start the multi-server SFTP download: {error.Message}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _multiSftpInProgress, 0);
+                panel.SetSftpRunning(false);
+                RefreshRecoveredSftpCount(panel);
             }
         }
 
         private async Task RetryFailedSftpTargetsAsync(MultiCommandPanel panel)
         {
-            if (_lastMultiSftpBatch is null || string.IsNullOrWhiteSpace(_lastMultiSftpLocalPath))
+            if (_lastMultiSftpBatch is null ||
+                _lastMultiSftpOperation == MultiSftpOperation.None ||
+                string.IsNullOrWhiteSpace(_lastMultiSftpSourcePath) ||
+                string.IsNullOrWhiteSpace(_lastMultiSftpDestinationPath))
             {
                 panel.ShowSftpStatus(
                     "재시도할 이전 실패 기록이 없습니다.",
@@ -586,12 +700,20 @@ namespace sutty.UI.Views
                 "Retrying failed servers only…"));
             try
             {
-                var progress = new Progress<MultiSftpTargetStatus>(panel.UpdateSftpTarget);
-                _lastMultiSftpBatch = await _multiSftpCoordinator.RetryFailedAsync(
-                    _lastMultiSftpLocalPath,
-                    _lastMultiSftpBatch,
-                    CreateSftpTransferOptions(),
-                    progress);
+                var progress = CreateMultiSftpProgress(panel, _lastMultiSftpQueueJobId);
+                _lastMultiSftpBatch = _lastMultiSftpOperation == MultiSftpOperation.Upload
+                    ? await _multiSftpCoordinator.RetryFailedAsync(
+                        _lastMultiSftpSourcePath,
+                        _lastMultiSftpBatch,
+                        CreateSftpTransferOptions(),
+                        progress)
+                    : await _multiSftpCoordinator.RetryFailedDownloadAsync(
+                        _lastMultiSftpSourcePath,
+                        _lastMultiSftpDestinationPath,
+                        _lastMultiSftpBatch,
+                        CreateSftpTransferOptions(),
+                        progress);
+                PersistMultiSftpBatch(_lastMultiSftpQueueJobId, _lastMultiSftpBatch);
                 panel.CompleteSftpBatch(_lastMultiSftpBatch);
             }
             catch (Exception error)
@@ -605,6 +727,221 @@ namespace sutty.UI.Views
             {
                 Interlocked.Exchange(ref _multiSftpInProgress, 0);
                 panel.SetSftpRunning(false);
+                RefreshRecoveredSftpCount(panel);
+            }
+        }
+
+        private async Task ResumePendingSftpTransferAsync(MultiCommandPanel panel)
+        {
+            if (Interlocked.CompareExchange(ref _multiSftpInProgress, 1, 0) != 0)
+            {
+                panel.ShowSftpStatus(
+                    "이미 다중 SFTP 전송이 실행 중입니다.",
+                    "A multi-server SFTP transfer is already running.");
+                return;
+            }
+
+            panel.ResetSftpTargets();
+            panel.SetSftpRunning(true, Helpers.Loc.T(
+                "복원된 전송 대상을 확인합니다…",
+                "Matching targets for the restored transfer…"));
+            try
+            {
+                var job = _sftpTransferQueue.RecoverIncomplete().FirstOrDefault(item =>
+                    item.Mode is SftpQueueMode.FanOut or SftpQueueMode.FanIn);
+                if (job is null)
+                {
+                    panel.ShowSftpStatus(
+                        "복원할 다중 전송이 없습니다.",
+                        "There is no multi-server transfer to restore.");
+                    return;
+                }
+                if (job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload &&
+                    !File.Exists(job.SourcePath) && !Directory.Exists(job.SourcePath))
+                {
+                    panel.ShowSftpStatus(
+                        "원본 로컬 파일 또는 폴더가 없어 재개할 수 없습니다.",
+                        "The local source no longer exists, so the transfer cannot resume.");
+                    return;
+                }
+
+                var retryIds = SftpTransferQueueStore.GetRetryTargetIds(job);
+                var remotePath = job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                    ? job.DestinationPath
+                    : job.SourcePath;
+                var (available, _) = GetSelectedSftpTargets(remotePath);
+                var targets = available
+                    .Where(target => retryIds.Contains(target.PersistenceId))
+                    .ToArray();
+                if (targets.Length == 0)
+                {
+                    panel.ShowSftpStatus(
+                        "원래 대상과 일치하는 SSH 세션을 체크한 뒤 다시 재개하세요.",
+                        "Check SSH sessions matching the original targets, then resume again.");
+                    return;
+                }
+
+                var missing = retryIds.Count - targets.Length;
+                _lastMultiSftpQueueJobId = job.Id;
+                _lastMultiSftpSourcePath = job.SourcePath;
+                _lastMultiSftpDestinationPath = job.DestinationPath;
+                _lastMultiSftpOperation = job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                    ? MultiSftpOperation.Upload
+                    : MultiSftpOperation.Download;
+                var progress = CreateMultiSftpProgress(panel, job.Id);
+                _lastMultiSftpBatch = _lastMultiSftpOperation == MultiSftpOperation.Upload
+                    ? await _multiSftpCoordinator.UploadAsync(
+                        job.SourcePath,
+                        targets,
+                        job.Options,
+                        progress)
+                    : await _multiSftpCoordinator.DownloadAsync(
+                        job.SourcePath,
+                        job.DestinationPath,
+                        targets,
+                        job.Options,
+                        progress);
+                PersistMultiSftpBatch(job.Id, _lastMultiSftpBatch);
+                panel.CompleteSftpBatch(_lastMultiSftpBatch);
+                if (missing > 0)
+                {
+                    panel.ShowSftpStatus(
+                        $"현재 일치한 서버 전송 완료 · 나머지 {missing}개 대상은 복원 대기 중입니다.",
+                        $"Matched servers completed · {missing} target(s) remain pending restore.");
+                }
+            }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Restored SFTP transfer failed: {error}");
+                panel.ShowSftpStatus(
+                    $"복원된 전송을 재개하지 못했습니다: {error.Message}",
+                    $"Could not resume the restored transfer: {error.Message}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _multiSftpInProgress, 0);
+                panel.SetSftpRunning(false);
+                RefreshRecoveredSftpCount(panel);
+            }
+        }
+
+        private (MultiSftpTarget[] Targets, int SelectedCount) GetSelectedSftpTargets(
+            string remotePath)
+        {
+            var selected = MultiGrid.GetTargetSlots();
+            var targets = selected
+                .Select(slot => slot.CreateSftpTarget(remotePath))
+                .OfType<MultiSftpTarget>()
+                .GroupBy(target => target.PersistenceId, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToArray();
+            return (targets, selected.Count);
+        }
+
+        private static SftpQueuedJob CreateQueuedJob(
+            SftpQueueMode mode,
+            sutty.Core.Sftp.SftpTransferDirection direction,
+            string sourcePath,
+            string destinationPath,
+            IReadOnlyCollection<MultiSftpTarget> targets,
+            SftpTransferOptions options) => new()
+        {
+            Mode = mode,
+            Direction = direction,
+            SourcePath = sourcePath,
+            DestinationPath = destinationPath,
+            Options = options,
+            State = SftpQueueJobState.Running,
+            Targets = targets.Select(target => new SftpQueuedTarget
+            {
+                Id = target.PersistenceId,
+                DisplayName = target.DisplayName,
+                SourcePath = sourcePath,
+                DestinationPath = destinationPath,
+                State = SftpQueueTargetState.Pending,
+            }).ToList(),
+        };
+
+        private IProgress<MultiSftpTargetStatus> CreateMultiSftpProgress(
+            MultiCommandPanel panel,
+            string? queueJobId) => new Progress<MultiSftpTargetStatus>(status =>
+        {
+            panel.UpdateSftpTarget(status);
+            if (string.IsNullOrWhiteSpace(queueJobId) ||
+                status.State == MultiSftpTargetState.Transferring &&
+                status.TransferProgress is not null)
+            {
+                return;
+            }
+
+            var state = status.State switch
+            {
+                MultiSftpTargetState.Transferring => SftpQueueTargetState.Running,
+                MultiSftpTargetState.Succeeded => SftpQueueTargetState.Succeeded,
+                MultiSftpTargetState.Failed => SftpQueueTargetState.Failed,
+                MultiSftpTargetState.Cancelled => SftpQueueTargetState.Cancelled,
+                _ => SftpQueueTargetState.Pending,
+            };
+            try
+            {
+                _sftpTransferQueue.UpdateTarget(
+                    queueJobId,
+                    status.Target.PersistenceId,
+                    state,
+                    status.Result?.BytesTransferred ?? status.TransferProgress?.BytesTransferred ?? 0,
+                    status.TransferProgress?.TotalBytes ?? 0,
+                    status.Error);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                                          ArgumentException or InvalidOperationException)
+            {
+                Debug.WriteLine($"SFTP queue status persistence failed: {error.GetType().Name}");
+            }
+        });
+
+        private void PersistMultiSftpBatch(string? queueJobId, MultiSftpBatchResult batch)
+        {
+            if (string.IsNullOrWhiteSpace(queueJobId))
+                return;
+            foreach (var status in batch.Targets)
+            {
+                var state = status.State switch
+                {
+                    MultiSftpTargetState.Succeeded => SftpQueueTargetState.Succeeded,
+                    MultiSftpTargetState.Failed => SftpQueueTargetState.Failed,
+                    MultiSftpTargetState.Cancelled => SftpQueueTargetState.Cancelled,
+                    MultiSftpTargetState.Transferring => SftpQueueTargetState.Interrupted,
+                    _ => SftpQueueTargetState.Pending,
+                };
+                try
+                {
+                    _sftpTransferQueue.UpdateTarget(
+                        queueJobId,
+                        status.Target.PersistenceId,
+                        state,
+                        status.Result?.BytesTransferred ?? status.TransferProgress?.BytesTransferred ?? 0,
+                        status.TransferProgress?.TotalBytes ?? 0,
+                        status.Error);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                                              ArgumentException or InvalidOperationException)
+                {
+                    Debug.WriteLine($"SFTP final queue persistence failed: {error.GetType().Name}");
+                }
+            }
+        }
+
+        private void RefreshRecoveredSftpCount(MultiCommandPanel panel)
+        {
+            try
+            {
+                panel.SetRecoveredJobCount(_sftpTransferQueue.RecoverIncomplete().Count(item =>
+                    item.Mode is SftpQueueMode.FanOut or SftpQueueMode.FanIn));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                Debug.WriteLine($"SFTP queue recovery failed: {error.GetType().Name}");
+                panel.SetRecoveredJobCount(0);
             }
         }
 
@@ -1235,10 +1572,20 @@ namespace sutty.UI.Views
             {
                 if (info.RememberCredential)
                 {
-                    var secret = info.AuthMethod is SshAuthMethod.Password or
-                        SshAuthMethod.KeyboardInteractive
-                        ? new CredentialSecret(Password: info.Password)
-                        : new CredentialSecret(PrivateKeyPassphrase: info.Passphrase);
+                    var secret = new CredentialSecret(
+                        Password: info.AuthMethod is SshAuthMethod.Password or
+                            SshAuthMethod.KeyboardInteractive ? info.Password : "",
+                        PrivateKeyPassphrase: info.AuthMethod == SshAuthMethod.PublicKey
+                            ? info.Passphrase
+                            : "",
+                        RoutePassword: info.Route.Type is not ConnectionRouteType.Direct and
+                            not ConnectionRouteType.ExternalProxyCommand
+                            ? info.Route.Password
+                            : "",
+                        RoutePrivateKeyPassphrase: info.Route.Type == ConnectionRouteType.SshJump &&
+                                                   info.Route.AuthMethod == SshAuthMethod.PublicKey
+                            ? info.Route.Passphrase
+                            : "");
 
                     if (secret.IsEmpty)
                     {
@@ -1267,6 +1614,8 @@ namespace sutty.UI.Views
                     Environment = info.Environment,
                     IsFavorite = info.IsFavorite,
                     CredentialId = credentialId,
+                    Route = PersistRoute(info),
+                    Tunnels = info.PortForwardings.Select(PersistTunnel).ToArray(),
                 }, info.SavedHostId);
 
                 info.SavedHostId = profile.Id;
@@ -1322,6 +1671,75 @@ namespace sutty.UI.Views
                 await warning.ShowAsync();
                 return null;
             }
+        }
+
+        private static sutty.Command.HostRouteProfile PersistRoute(SshConnectionInfo info) => new()
+        {
+            Id = info.Route.Id,
+            Type = info.Route.Type.ToString(),
+            Host = info.Route.Host,
+            Port = info.Route.Port,
+            Username = info.Route.Username,
+            AuthMethod = info.Route.AuthMethod.ToString(),
+            PrivateKeyPath = info.Route.PrivateKeyPath,
+            Command = info.Route.Command,
+            ProxyDns = info.Route.ProxyDns,
+            EnterpriseMode = info.RoutePolicy.EnterpriseMode,
+        };
+
+        private static sutty.Command.HostTunnelProfile PersistTunnel(
+            SshPortForwardingRule tunnel) => new()
+        {
+            Type = tunnel.Type.ToString(),
+            BindHost = tunnel.BindHost,
+            BindPort = tunnel.BindPort,
+            DestinationHost = tunnel.DestinationHost,
+            DestinationPort = tunnel.DestinationPort,
+        };
+
+        private static ConnectionRoute RestoreRoute(
+            sutty.Command.HostRouteProfile profile,
+            CredentialSecret? credential)
+        {
+            var type = Enum.TryParse<ConnectionRouteType>(profile.Type, out var parsedType) &&
+                       Enum.IsDefined(parsedType)
+                ? parsedType
+                : ConnectionRouteType.Direct;
+            var auth = Enum.TryParse<SshAuthMethod>(profile.AuthMethod, out var parsedAuth) &&
+                       Enum.IsDefined(parsedAuth)
+                ? parsedAuth
+                : SshAuthMethod.Password;
+            return new ConnectionRoute
+            {
+                Id = profile.Id,
+                Type = type,
+                Host = profile.Host,
+                Port = profile.Port,
+                Username = profile.Username,
+                Password = credential?.RoutePassword ?? "",
+                AuthMethod = auth,
+                PrivateKeyPath = profile.PrivateKeyPath,
+                Passphrase = credential?.RoutePrivateKeyPassphrase ?? "",
+                Command = profile.Command,
+                ProxyDns = profile.ProxyDns,
+            };
+        }
+
+        private static SshPortForwardingRule RestoreTunnel(
+            sutty.Command.HostTunnelProfile profile)
+        {
+            var type = Enum.TryParse<SshPortForwardingType>(profile.Type, out var parsed) &&
+                       Enum.IsDefined(parsed)
+                ? parsed
+                : SshPortForwardingType.Local;
+            return new SshPortForwardingRule
+            {
+                Type = type,
+                BindHost = profile.BindHost,
+                BindPort = profile.BindPort,
+                DestinationHost = profile.DestinationHost,
+                DestinationPort = profile.DestinationPort,
+            };
         }
 
         private Task<System.Collections.Generic.IReadOnlyList<string>?>
@@ -1560,6 +1978,9 @@ namespace sutty.UI.Views
             TabView sender,
             TabViewTabCloseRequestedEventArgs args)
         {
+            if (args.Tab.DataContext is SessionView closingSession)
+                _fileTreePanel?.CancelTransfersForSession(closingSession.Session, userInitiated: true);
+
             sender.TabItems.Remove(args.Tab);
             UpdateSessionArea();
 
@@ -1591,6 +2012,7 @@ namespace sutty.UI.Views
                     ExtendsContentIntoTitleBar = true,
                     Content = panel,
                 };
+                panel.OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(_settingWindow);
                 _settingWindow.AppWindow.SetIcon(_appIconPath); // 설정 창에도 앱 아이콘
                 panel.RequestedTheme = Root.RequestedTheme;
                 ApplyTitleBarColors(_settingWindow, Helpers.ThemeManager.Find(SettingsService.Current.Theme));
@@ -1659,6 +2081,12 @@ namespace sutty.UI.Views
                 RightPanel.Content is HostListPanel historyPanel)
             {
                 historyPanel.RefreshFromStore();
+            }
+
+            if (changes.HasFlag(SettingChangeKind.HostProfiles) &&
+                RightPanel.Content is HostListPanel importedHostsPanel)
+            {
+                importedHostsPanel.RefreshFromStore();
             }
 
             if (changes.HasFlag(SettingChangeKind.Window))

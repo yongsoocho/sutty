@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using sutty.Command;
 
 namespace sutty.UI.ViewModels;
 
@@ -29,6 +30,8 @@ public class HostInfoModel
     public string Environment { get; set; } = "Unclassified";
     public string Outcome { get; set; } = "Unknown";
     public string? ErrorCode { get; set; }
+    public HostRouteProfile Route { get; set; } = new();
+    public List<HostTunnelProfile> Tunnels { get; set; } = [];
 
     /// <summary>상단 고정(TOP) 카드일 때만 채워지는 총 접속 횟수.</summary>
     public int ConnectionCount { get; set; }

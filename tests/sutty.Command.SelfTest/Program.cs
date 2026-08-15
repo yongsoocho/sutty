@@ -41,11 +41,37 @@ try
         Environment = HostEnvironments.Production,
         IsFavorite = true,
         CredentialId = "opaque-reference",
+        Route = new HostRouteProfile
+        {
+            Id = "corp-jump",
+            Type = "SshJump",
+            Host = "jump.example",
+            Port = 22,
+            Username = "gateway",
+            AuthMethod = "Agent",
+            ProxyDns = true,
+            EnterpriseMode = true,
+        },
+        Tunnels =
+        [
+            new HostTunnelProfile
+            {
+                Type = "Local",
+                BindHost = "127.0.0.1",
+                BindPort = 15432,
+                DestinationHost = "db.internal",
+                DestinationPort = 5432,
+            },
+        ],
     });
     Assert(created.Id.Length == 32, "saved profile id");
     Assert(created.CredentialId == "opaque-reference", "opaque credential reference");
     Assert(HostProfileStore.GetById(created.Id)?.DisplayName == "Production API",
         "saved profile reload");
+    Assert(created.Route.Type == "SshJump" && created.Route.Host == "jump.example",
+        "saved profile route reload");
+    Assert(created.Tunnels.Single().DestinationPort == 5432,
+        "saved profile tunnel reload");
 
     var updated = HostProfileStore.Save(new HostProfileDraft
     {
@@ -59,12 +85,82 @@ try
         GroupName = "Platform",
         Environment = HostEnvironments.Production,
         CredentialId = "opaque-reference-2",
+        Route = created.Route,
+        Tunnels = created.Tunnels,
     }, created.Id);
     Assert(updated.Port == 2202 && updated.AuthMethod == "PublicKey", "saved profile update");
     HostProfileStore.SetFavorite(created.Id, true);
     HostProfileStore.MarkConnected(created.Id);
     var marked = HostProfileStore.GetById(created.Id)!;
     Assert(marked.IsFavorite && marked.LastConnectedAtUtc is not null, "favorite and last connected");
+
+    var openSsh = HostProfileImportService.ParseOpenSsh("""
+        Host app-prod
+          HostName 10.10.0.12
+          User deploy
+          Port 2222
+          IdentityFile ~/.ssh/id_ed25519
+          ProxyJump gateway@jump.example:2200
+          LocalForward 127.0.0.1:15432 db.internal:5432
+          DynamicForward 1080
+
+        Host *.internal
+          User ignored
+        """);
+    var importedOpenSsh = openSsh.Profiles.Single();
+    Assert(importedOpenSsh.Host == "10.10.0.12" && importedOpenSsh.Port == 2222,
+        "OpenSSH host import");
+    Assert(importedOpenSsh.Route.Type == "SshJump" && importedOpenSsh.Route.Port == 2200,
+        "OpenSSH ProxyJump import");
+    Assert(importedOpenSsh.Tunnels?.Count() == 2,
+        "OpenSSH local and dynamic forwarding import");
+    Assert(openSsh.Warnings.Any(item => item.Contains("Wildcard", StringComparison.Ordinal)),
+        "OpenSSH wildcard hosts are reported and skipped");
+
+    var openSshDefaults = HostProfileImportService.ParseOpenSsh("""
+        Host *
+          User shared-user
+          Port 2200
+        Host * !blocked
+          IdentityFile C:\Keys\shared.ppk
+        Host prod-api
+          HostName prod.example
+        Host blocked
+          HostName blocked.example
+          PreferredAuthentications password
+        """);
+    var defaultedProfile = openSshDefaults.Profiles.Single(item => item.DisplayName == "prod-api");
+    var negatedProfile = openSshDefaults.Profiles.Single(item => item.DisplayName == "blocked");
+    Assert(defaultedProfile.Username == "shared-user" && defaultedProfile.Port == 2200 &&
+           defaultedProfile.PrivateKeyPath == @"C:\Keys\shared.ppk",
+        "OpenSSH wildcard defaults and Windows key paths are preserved");
+    Assert(negatedProfile.AuthMethod == "Password" && negatedProfile.PrivateKeyPath.Length == 0,
+        "OpenSSH negated wildcard blocks are respected");
+
+    var putty = HostProfileImportService.ParsePuttySession("Legacy API",
+        new Dictionary<string, object?>
+        {
+            ["HostName"] = "legacy.example",
+            ["PortNumber"] = 2201,
+            ["UserName"] = "operator",
+            ["PublicKeyFile"] = @"C:\keys\legacy.ppk",
+            ["ProxyMethod"] = 2,
+            ["ProxyHost"] = "proxy.example",
+            ["ProxyPort"] = 1080,
+            ["PortForwardings"] = "L15432=db.internal:5432,D1080=",
+        });
+    Assert(putty?.Route.Type == "Socks5" && putty.Tunnels?.Count() == 2,
+        "Windows saved-session route and forwarding import");
+
+    var secureCrt = HostProfileImportService.ParseSecureCrtSession("Database", """
+        S:"Hostname"=db.example
+        D:"[SSH2] Port"=00000016
+        S:"Username"=dba
+        S:"Identity Filename V2"=C:\keys\db.pem
+        """);
+    Assert(secureCrt?.Host == "db.example" && secureCrt.Port == 22 &&
+           secureCrt.AuthMethod == "PublicKey",
+        "INI saved-session host and key import");
 
     HostHistoryStore.Append(
         "Production API", "api.example", "admin", 2202, "PublicKey", @"C:\keys\api.key",

@@ -5,6 +5,17 @@ on:
     branches: [master, main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_live_integration:
+        description: Run the credentialed SSH/SFTP acceptance harness
+        required: false
+        default: false
+        type: boolean
+      live_modes:
+        description: Comma-separated modes (smoke,fault,scale,soak)
+        required: false
+        default: smoke
+        type: string
 
 permissions:
   contents: read
@@ -75,6 +86,46 @@ jobs:
       - name: Run SFTP self-tests
         if: matrix.configuration == 'Debug'
         run: dotnet run --project .\tests\sutty.Sftp.SelfTest\sutty.Sftp.SelfTest.csproj --configuration Debug --no-restore
+
+      - name: Run live SSH/SFTP acceptance
+        if: matrix.configuration == 'Debug' && github.event_name == 'workflow_dispatch' && inputs.run_live_integration
+        shell: pwsh
+        env:
+          SUTTY_TEST_MODES: ${{ inputs.live_modes }}
+          SUTTY_TEST_SSH_HOST: ${{ secrets.SUTTY_TEST_SSH_HOST }}
+          SUTTY_TEST_SSH_PORT: ${{ secrets.SUTTY_TEST_SSH_PORT }}
+          SUTTY_TEST_SSH_USER: ${{ secrets.SUTTY_TEST_SSH_USER }}
+          SUTTY_TEST_SSH_AUTH: ${{ secrets.SUTTY_TEST_SSH_AUTH }}
+          SUTTY_TEST_SSH_PASSWORD: ${{ secrets.SUTTY_TEST_SSH_PASSWORD }}
+          SUTTY_TEST_SSH_PRIVATE_KEY: ${{ secrets.SUTTY_TEST_SSH_PRIVATE_KEY }}
+          SUTTY_TEST_SSH_KEY_PASSPHRASE: ${{ secrets.SUTTY_TEST_SSH_KEY_PASSPHRASE }}
+          SUTTY_TEST_HOST_KEY_SHA256: ${{ secrets.SUTTY_TEST_HOST_KEY_SHA256 }}
+          SUTTY_TEST_REMOTE_ROOT: ${{ secrets.SUTTY_TEST_REMOTE_ROOT }}
+          SUTTY_TEST_KBI_ANSWERS: ${{ secrets.SUTTY_TEST_KBI_ANSWERS }}
+          SUTTY_TEST_SESSION_COUNT: ${{ vars.SUTTY_TEST_SESSION_COUNT }}
+          SUTTY_TEST_SOAK_MINUTES: ${{ vars.SUTTY_TEST_SOAK_MINUTES }}
+          SUTTY_TEST_LARGE_GB: ${{ vars.SUTTY_TEST_LARGE_GB }}
+          SUTTY_TEST_FILE_COUNT: ${{ vars.SUTTY_TEST_FILE_COUNT }}
+          SUTTY_TEST_FAULT_MB: ${{ vars.SUTTY_TEST_FAULT_MB }}
+        run: |
+          $keyPath = Join-Path $env:RUNNER_TEMP 'sutty-live-test-key'
+          try {
+            if (-not [string]::IsNullOrWhiteSpace($env:SUTTY_TEST_SSH_PRIVATE_KEY)) {
+              [System.IO.File]::WriteAllText($keyPath, $env:SUTTY_TEST_SSH_PRIVATE_KEY)
+              $env:SUTTY_TEST_SSH_KEY_PATH = $keyPath
+            }
+
+            dotnet run `
+              --project .\tests\sutty.LiveServer.SelfTest\sutty.LiveServer.SelfTest.csproj `
+              --configuration Debug `
+              --no-build `
+              --no-restore
+          }
+          finally {
+            if (Test-Path -LiteralPath $keyPath) {
+              Remove-Item -LiteralPath $keyPath -Force
+            }
+          }
 
   arm64:
     name: ARM64 compile

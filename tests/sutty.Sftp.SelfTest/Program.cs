@@ -162,6 +162,88 @@ try
     Assert(goodTarget.UploadCalls == 1 && retryTarget.UploadCalls == 2,
         "retry invokes failed servers only");
 
+    var fanInRemote = Path.Combine(remote, "fan-in.txt");
+    await File.WriteAllTextAsync(fanInRemote, "aggregate");
+    var downloadOne = new RecordingSftpService(fanInRemote);
+    var downloadTwo = new RecordingSftpService(fanInRemote);
+    var fanInDirectory = Path.Combine(downloads, "fan-in");
+    var fanIn = await coordinator.DownloadAsync(
+        "/var/export/fan-in.txt",
+        fanInDirectory,
+        [
+            new MultiSftpTarget("alpha", "same-name", downloadOne, "/var/export/fan-in.txt"),
+            new MultiSftpTarget("beta", "same-name", downloadTwo, "/var/export/fan-in.txt"),
+        ]);
+    Assert(fanIn.IsSuccessful && downloadOne.DownloadCalls == 1 && downloadTwo.DownloadCalls == 1,
+        "multi-server N-to-one download invokes every source");
+    Assert(Directory.GetFiles(fanInDirectory, "fan-in.txt", SearchOption.AllDirectories).Length == 2,
+        "N-to-one download isolates equal names by server");
+
+    var stableFanInDirectory = Path.Combine(downloads, "fan-in-stable");
+    await coordinator.DownloadAsync(
+        "/var/export/fan-in.txt",
+        stableFanInDirectory,
+        [new MultiSftpTarget("session-old", "stable-server", downloadOne, "/var/export")
+            { PersistenceId = "saved-host-42" }]);
+    await coordinator.DownloadAsync(
+        "/var/export/fan-in.txt",
+        stableFanInDirectory,
+        [new MultiSftpTarget("session-new", "stable-server", downloadOne, "/var/export")
+            { PersistenceId = "saved-host-42" }]);
+    Assert(Directory.GetFiles(stableFanInDirectory, "fan-in.txt", SearchOption.AllDirectories).Length == 1,
+        "N-to-one destination remains stable when a session is recreated");
+
+    var queuePath = Path.Combine(scratch, "transfer-queue.json");
+    var queue = new SftpTransferQueueStore(queuePath);
+    var queuedJob = new SftpQueuedJob
+    {
+        Id = "restart-safe-job",
+        Mode = SftpQueueMode.FanOut,
+        Direction = sutty.Core.Sftp.SftpTransferDirection.Upload,
+        SourcePath = source,
+        DestinationPath = "/deploy/source.txt",
+        State = SftpQueueJobState.Running,
+        Targets =
+        [
+            new SftpQueuedTarget
+            {
+                Id = "saved-alpha",
+                DisplayName = "alpha",
+                SourcePath = source,
+                DestinationPath = "/deploy/source.txt",
+                State = SftpQueueTargetState.Succeeded,
+            },
+            new SftpQueuedTarget
+            {
+                Id = "saved-beta",
+                DisplayName = "beta",
+                SourcePath = source,
+                DestinationPath = "/deploy/source.txt",
+                State = SftpQueueTargetState.Running,
+            },
+        ],
+    };
+    queue.Upsert(queuedJob);
+    Assert(queue.RecoverIncomplete().Single().State == SftpQueueJobState.Running,
+        "reading the queue in the same app does not interrupt active work");
+    Assert(new SftpTransferQueueStore(queuePath).RecoverIncomplete().Single().State ==
+           SftpQueueJobState.Running,
+        "multiple queue readers in the same app share the active runtime owner");
+    var activeOwner = queue.Get(queuedJob.Id)!.RuntimeOwnerId;
+    File.WriteAllText(
+        queuePath,
+        File.ReadAllText(queuePath).Replace(activeOwner, "previousruntime", StringComparison.Ordinal));
+    var recovered = new SftpTransferQueueStore(queuePath).RecoverIncomplete().Single();
+    Assert(recovered.State == SftpQueueJobState.Interrupted,
+        "running transfer job becomes interrupted after restart");
+    Assert(recovered.Targets.Single(item => item.Id == "saved-alpha").State ==
+           SftpQueueTargetState.Succeeded,
+        "restart recovery preserves successful servers");
+    Assert(SftpTransferQueueStore.GetRetryTargetIds(recovered).SetEquals(["saved-beta"]),
+        "restart recovery selects interrupted servers only");
+    Assert(!File.ReadAllText(queuePath).Contains("password", StringComparison.OrdinalIgnoreCase),
+        "durable transfer queue contains no credentials");
+
     var cancelledPath = Path.Combine(downloads, "cancelled.txt");
     using var cancelled = new CancellationTokenSource();
     cancelled.Cancel();
@@ -204,9 +286,10 @@ sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
     public void Report(T value) => report(value);
 }
 
-sealed class RecordingSftpService(bool failFirstUpload = false) : ISftpService
+sealed class RecordingSftpService(string? downloadSource = null, bool failFirstUpload = false) : ISftpService
 {
     public int UploadCalls { get; private set; }
+    public int DownloadCalls { get; private set; }
 
     public Task<SftpTransferResult> UploadPathAsync(
         string localPath,
@@ -249,7 +332,33 @@ sealed class RecordingSftpService(bool failFirstUpload = false) : ISftpService
         string localPath,
         SftpTransferOptions? options = null,
         IProgress<SftpTransferProgress>? progress = null,
-        CancellationToken ct = default) => throw new NotSupportedException();
+        CancellationToken ct = default)
+    {
+        DownloadCalls++;
+        ct.ThrowIfCancellationRequested();
+        var sourcePath = downloadSource ?? remotePath;
+        Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+        File.Copy(sourcePath, localPath, overwrite: true);
+        var bytes = new FileInfo(localPath).Length;
+        progress?.Report(new SftpTransferProgress(
+            sutty.Core.Sftp.SftpTransferDirection.Download,
+            SftpTransferPhase.Completed,
+            Path.GetFileName(remotePath),
+            bytes,
+            bytes,
+            1,
+            1,
+            1));
+        return Task.FromResult(new SftpTransferResult(
+            sutty.Core.Sftp.SftpTransferDirection.Download,
+            remotePath,
+            localPath,
+            1,
+            bytes,
+            0,
+            null,
+            TimeSpan.Zero));
+    }
 
     public Task<IReadOnlyList<sutty.Core.Models.RemoteFileEntry>> ListDirectoryAsync(
         string path,

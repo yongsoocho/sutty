@@ -35,6 +35,10 @@
     <Platform Solution="*|ARM64" Project="Any CPU" />
     <Platform Solution="*|x64" Project="Any CPU" />
   </Project>
+  <Project Path="tests/sutty.LiveServer.SelfTest/sutty.LiveServer.SelfTest.csproj">
+    <Platform Solution="*|ARM64" Project="Any CPU" />
+    <Platform Solution="*|x64" Project="Any CPU" />
+  </Project>
   <Project Path="src/sutty.UI/sutty.UI.csproj">
     <Platform Solution="*|ARM64" Project="ARM64" />
     <Platform Solution="*|x64" Project="x64" />

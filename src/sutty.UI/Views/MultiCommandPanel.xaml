@@ -97,7 +97,7 @@
             Grid.Row="1"
             MaxHeight="300"
             HorizontalAlignment="Stretch"
-            Header="{x:Bind h:Loc.T('다중 SFTP 업로드', 'Multi-server SFTP upload')}">
+                    Header="{x:Bind h:Loc.T('다중 SFTP 전송', 'Multi-server SFTP transfer')}">
             <StackPanel Padding="0,8,0,2" Spacing="7">
                 <TextBox
                     x:Name="SftpRemoteDirectoryBox"
@@ -105,7 +105,7 @@
                     CornerRadius="7"
                     FontFamily="Cascadia Mono, Consolas"
                     FontSize="11.5"
-                    Header="{x:Bind h:Loc.T('모든 대상의 원격 폴더', 'Remote folder on every target')}"
+                    Header="{x:Bind h:Loc.T('원격 경로 / 업로드 대상 폴더', 'Remote path / upload destination')}"
                     PlaceholderText="/tmp"
                     Text="/tmp" />
                 <Grid ColumnSpacing="7">
@@ -138,11 +138,30 @@
                     </Button>
                 </Grid>
                 <Button
+                    x:Name="DownloadPathButton"
+                    Height="32"
+                    HorizontalAlignment="Stretch"
+                    Click="DownloadPath_Click"
+                    CornerRadius="7">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="11" Glyph="&#xE896;" />
+                        <TextBlock Text="{x:Bind h:Loc.T('선택 서버들에서 이 경로 다운로드…', 'Download this path from selected servers…')}" />
+                    </StackPanel>
+                </Button>
+                <Button
                     x:Name="RetryFailedButton"
                     Height="30"
                     HorizontalAlignment="Stretch"
                     Click="RetryFailed_Click"
                     Content="{x:Bind h:Loc.T('실패한 서버만 재시도', 'Retry failed servers only')}"
+                    CornerRadius="7"
+                    Visibility="Collapsed" />
+                <Button
+                    x:Name="ResumePendingButton"
+                    Height="30"
+                    HorizontalAlignment="Stretch"
+                    Click="ResumePending_Click"
+                    Content="{x:Bind h:Loc.T('복원된 전송 재개', 'Resume restored transfer')}"
                     CornerRadius="7"
                     Visibility="Collapsed" />
                 <TextBlock
