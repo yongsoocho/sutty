@@ -27,6 +27,8 @@ try
           "DefaultKeepAliveSeconds": 30,
           "SftpRetryEnabled": false,
           "SftpRetryCount": 99,
+          "SftpVerificationMode": "unsupported",
+          "SftpConflictPolicy": "unexpected",
           "LastAuthMethod": "PublicKey",
           "RecentPrivateKeyPaths": [],
           "RecentConnectionTags": ["prod", "prod"],
@@ -47,6 +49,8 @@ try
     Assert(loaded.DefaultSshPort == 65_535, "port range normalization");
     Assert(!loaded.SftpRetryEnabled, "SFTP retry toggle load");
     Assert(loaded.SftpRetryCount == 10, "SFTP retry-count upper bound");
+    Assert(loaded.SftpVerificationMode == "Sha256", "SFTP verification-mode normalization");
+    Assert(loaded.SftpConflictPolicy == "Ask", "SFTP conflict-policy normalization");
     Assert(loaded.HistoryTopHostCount == 16, "frequent-host setting normalization");
     Assert(loaded.RecentConnectionTags.SequenceEqual(["prod"]), "recent-tag deduplication");
     Assert(loaded.EnableStructuredTextHighlighting, "structured highlighting setting load");
@@ -66,6 +70,8 @@ try
     loaded.TerminalScrollbackLines = 12_000;
     loaded.SftpRetryEnabled = true;
     loaded.SftpRetryCount = 3;
+    loaded.SftpVerificationMode = "SizeOnly";
+    loaded.SftpConflictPolicy = "Rename";
     var saved = SettingsService.Save(loaded);
     Assert(saved.Succeeded, "atomic setting save");
     Assert(!Directory.EnumerateFiles(scratch, "*.tmp").Any(), "setting temp cleanup");
@@ -78,12 +84,18 @@ try
     Assert(json["TerminalScrollbackLines"]?.GetValue<int>() == 12_000, "terminal-scrollback persistence");
     Assert(json["SftpRetryEnabled"]?.GetValue<bool>() == true, "SFTP retry toggle persistence");
     Assert(json["SftpRetryCount"]?.GetValue<int>() == 3, "SFTP retry count persistence");
+    Assert(json["SftpVerificationMode"]?.GetValue<string>() == "SizeOnly",
+        "SFTP verification mode persistence");
+    Assert(json["SftpConflictPolicy"]?.GetValue<string>() == "Rename",
+        "SFTP conflict policy persistence");
 
     File.WriteAllText(SettingsService.SettingsPath, "{broken");
     SettingsService.ResetForTests();
     var recovered = SettingsService.Load();
     Assert(recovered.HistoryRetentionDays == 60, "corrupt setting fallback");
-    Assert(recovered.SftpRetryEnabled && recovered.SftpRetryCount == 3,
+    Assert(recovered.SftpRetryEnabled && recovered.SftpRetryCount == 3 &&
+           recovered.SftpVerificationMode == "Sha256" &&
+           recovered.SftpConflictPolicy == "Ask",
         "corrupt setting fallback keeps SFTP retry defaults");
 
     Console.WriteLine("Settings load, normalization, and persistence self-tests passed.");

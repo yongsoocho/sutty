@@ -24,11 +24,7 @@ internal sealed class ProxyCommandBridge : IAsyncDisposable
     public ProxyCommandBridge(string command, string targetHost, int targetPort, string username)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(command);
-        _command = command
-            .Replace("%h", targetHost, StringComparison.Ordinal)
-            .Replace("%p", targetPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                StringComparison.Ordinal)
-            .Replace("%r", username, StringComparison.Ordinal);
+        _command = ProxyCommandTemplate.Expand(command, targetHost, targetPort, username);
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start(backlog: 8);
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;

@@ -75,6 +75,7 @@
                         x:Name="HostBox"
                         AutomationProperties.Name="{x:Bind h:Loc.T('서버 주소', 'Server address')}"
                         FontFamily="Cascadia Mono, Consolas"
+                        TextChanged="ProxyCommandInput_TextChanged"
                         PlaceholderText="hostname or IP"
                         Style="{StaticResource FormInput}" />
                 </StackPanel>
@@ -90,6 +91,7 @@
                             x:Name="UsernameBox"
                             AutomationProperties.Name="{x:Bind h:Loc.T('사용자 이름', 'User name')}"
                             FontFamily="Cascadia Mono, Consolas"
+                            TextChanged="ProxyCommandInput_TextChanged"
                             PlaceholderText="root"
                             Style="{StaticResource FormInput}" />
                     </StackPanel>
@@ -100,6 +102,7 @@
                             AutomationProperties.Name="{x:Bind h:Loc.T('SSH 포트', 'SSH port')}"
                             BeforeTextChanging="PortBox_BeforeTextChanging"
                             FontFamily="Cascadia Mono, Consolas"
+                            TextChanged="ProxyCommandInput_TextChanged"
                             InputScope="Number"
                             MaxLength="5"
                             Style="{StaticResource FormInput}"
@@ -401,7 +404,14 @@
                                 x:Name="ProxyCommandBox"
                                 Header="ProxyCommand"
                                 PlaceholderText="ssh -W %h:%p jump-user@jump-host"
+                                TextChanged="ProxyCommandInput_TextChanged"
                                 Style="{StaticResource FormInput}" />
+                            <TextBlock
+                                x:Name="ProxyCommandPreviewText"
+                                FontFamily="Cascadia Mono, Consolas"
+                                FontSize="10.5"
+                                Foreground="{ThemeResource TextMuted}"
+                                TextWrapping="Wrap" />
                             <TextBlock
                                 FontSize="10.5"
                                 Foreground="{ThemeResource TextMuted}"

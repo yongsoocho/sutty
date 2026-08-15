@@ -3,6 +3,8 @@ using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace sutty.Command;
 
@@ -11,6 +13,7 @@ public enum HostProfileImportSource
     OpenSsh,
     Putty,
     SecureCrt,
+    SiteManagerXml,
 }
 
 public sealed record HostProfileImportBatch(
@@ -259,6 +262,127 @@ public static class HostProfileImportService
             Tags = ["imported"],
         };
     }
+
+    /// <summary>
+    /// Imports SFTP entries from a supported Site Manager XML file. FTP/FTPS entries are
+    /// deliberately skipped: Sutty never guesses an SSH configuration from another protocol.
+    /// Password values are not read, even when they are present in a legacy export.
+    /// </summary>
+    public static HostProfileImportBatch ImportSftpSiteManagerXml(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var fullPath = Path.GetFullPath(path);
+        using var input = File.OpenRead(fullPath);
+        using var reader = XmlReader.Create(input, CreateSafeXmlReaderSettings());
+        return ParseSiteManagerDocument(XDocument.Load(reader, LoadOptions.None));
+    }
+
+    /// <summary>Parses a supported SFTP Site Manager XML document without reading credentials.</summary>
+    public static HostProfileImportBatch ParseSftpSiteManagerXml(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        using var input = new StringReader(text);
+        using var reader = XmlReader.Create(input, CreateSafeXmlReaderSettings());
+        return ParseSiteManagerDocument(XDocument.Load(reader, LoadOptions.None));
+    }
+
+    private static HostProfileImportBatch ParseSiteManagerDocument(XDocument document)
+    {
+        var profiles = new List<HostProfileDraft>();
+        var warnings = new List<string>();
+        var roots = document.Descendants()
+            .Where(element => element.Name.LocalName.Equals("Servers", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (roots.Length == 0)
+        {
+            warnings.Add("No SFTP Site Manager Servers element was found in the selected XML file.");
+            return new HostProfileImportBatch(HostProfileImportSource.SiteManagerXml, profiles, warnings);
+        }
+
+        foreach (var root in roots)
+            ParseSiteManagerContainer(root, "SFTP Site Manager import", profiles, warnings);
+        return new HostProfileImportBatch(HostProfileImportSource.SiteManagerXml, profiles, warnings);
+    }
+
+    private static void ParseSiteManagerContainer(
+        XElement container,
+        string groupName,
+        ICollection<HostProfileDraft> profiles,
+        ICollection<string> warnings)
+    {
+        foreach (var element in container.Elements())
+        {
+            if (element.Name.LocalName.Equals("Folder", StringComparison.OrdinalIgnoreCase))
+            {
+                var folderName = SiteManagerValue(element, "Name");
+                var childGroup = string.IsNullOrWhiteSpace(folderName)
+                    ? groupName
+                    : $"{groupName} / {folderName.Trim()}";
+                ParseSiteManagerContainer(element, childGroup, profiles, warnings);
+                continue;
+            }
+            if (!element.Name.LocalName.Equals("Server", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var profile = ParseSiteManagerServer(element, groupName, warnings);
+            if (profile is not null)
+                profiles.Add(profile);
+        }
+    }
+
+    private static HostProfileDraft? ParseSiteManagerServer(
+        XElement server,
+        string groupName,
+        ICollection<string> warnings)
+    {
+        var displayName = SiteManagerValue(server, "Name");
+        var host = SiteManagerValue(server, "Host").Trim();
+        var protocol = SiteManagerValue(server, "Protocol");
+        var identifier = string.IsNullOrWhiteSpace(displayName) ? host : displayName;
+        if (host.Length == 0)
+        {
+            warnings.Add("An SFTP Site Manager entry without a host was skipped.");
+            return null;
+        }
+        if (!IsSiteManagerSftpProtocol(protocol))
+        {
+            warnings.Add($"{identifier}: non-SFTP protocol '{protocol}' was skipped.");
+            return null;
+        }
+
+        var keyPath = SiteManagerValue(server, "Keyfile").Trim();
+        if (keyPath.Length == 0)
+            keyPath = SiteManagerValue(server, "KeyFile").Trim();
+        return new HostProfileDraft
+        {
+            DisplayName = string.IsNullOrWhiteSpace(displayName) ? host : displayName.Trim(),
+            Host = host,
+            Port = NormalizePort(ParseInteger(SiteManagerValue(server, "Port"), 22)),
+            Username = SiteManagerValue(server, "User").Trim(),
+            AuthMethod = keyPath.Length > 0 ? "PublicKey" : "Password",
+            PrivateKeyPath = keyPath,
+            GroupName = groupName,
+            Tags = ["imported", "site-manager"],
+        };
+    }
+
+    private static XmlReaderSettings CreateSafeXmlReaderSettings() => new()
+    {
+        DtdProcessing = DtdProcessing.Prohibit,
+        XmlResolver = null,
+        MaxCharactersInDocument = 4 * 1024 * 1024,
+    };
+
+    private static string SiteManagerValue(XElement element, string name) =>
+        element.Elements()
+            .FirstOrDefault(child => child.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))
+            ?.Value
+            .Trim() ?? "";
+
+    private static bool IsSiteManagerSftpProtocol(string value) =>
+        value.Trim().Equals("1", StringComparison.Ordinal) ||
+        value.Contains("sftp", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("ssh", StringComparison.OrdinalIgnoreCase);
 
     public static HostProfileImportSaveResult SaveUnique(HostProfileImportBatch batch)
     {

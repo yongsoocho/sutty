@@ -12,7 +12,7 @@ This checklist separates implemented code from release evidence. A checked sourc
 | Multi SFTP N→1 | Implemented | Same-name files from multiple servers remain isolated in deterministic server folders |
 | Recursive directories | Implemented | Empty folders, Unicode paths, deep paths, and 100,000-file live run |
 | Retry, resume, checkpoint | Implemented | Transport loss during transfer resumes from a non-zero offset |
-| Final size and SHA-256 | Implemented | Upload and download both reject mismatches before final promotion |
+| Final verification | Implemented | Safe mode rejects size/SHA-256 mismatches before final promotion; fast mode verifies final size only and must be selected explicitly |
 | Queue restoration | Implemented | Kill and restart the app; completed targets remain completed and only incomplete targets are offered |
 | Multi default selection | Implemented | Opening Multi selects zero sessions; restored jobs also require explicit session checks |
 
@@ -64,7 +64,7 @@ The manual `Signed MSIX release` workflow requires these GitHub secrets:
 - `SUTTY_MSIX_CERT_BASE64`: Base64-encoded production code-signing PFX.
 - `SUTTY_MSIX_CERT_PASSWORD`: PFX password.
 
-It patches the package publisher to the certificate subject, builds one x64 MSIX, signs and verifies it, and emits `Sutty.appinstaller`. `package_version` controls the installed package. `appinstaller_version` is deployment metadata and must always increase, including rollback releases. Publish the generated MSIX and descriptor together at the HTTPS directory supplied to the workflow.
+It patches the package publisher to the certificate subject, builds separate x64 and ARM64 MSIX packages, signs and verifies each package, and emits `Sutty-x64.appinstaller` and `Sutty-arm64.appinstaller`. `package_version` controls the installed package. `appinstaller_version` is deployment metadata and must always increase, including rollback releases. Publish each generated MSIX with its matching descriptor at the HTTPS directory supplied to the workflow.
 
 Rollback procedure:
 

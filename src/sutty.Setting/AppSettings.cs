@@ -50,6 +50,15 @@ public sealed class AppSettings
     /// <summary>Number of retries after the initial SFTP attempt.</summary>
     public int SftpRetryCount { get; set; } = 3;
 
+    /// <summary>SFTP verification policy: SizeOnly or Sha256.</summary>
+    public string SftpVerificationMode { get; set; } = "Sha256";
+
+    /// <summary>
+    /// Default SFTP collision policy retained with each queued transfer: Ask, Overwrite,
+    /// Skip, Rename, or NewerOnly.
+    /// </summary>
+    public string SftpConflictPolicy { get; set; } = "Ask";
+
     /// <summary>Home 화면에서 마지막으로 선택한 SSH 인증 방식.</summary>
     public string LastAuthMethod { get; set; } = "Password";
 

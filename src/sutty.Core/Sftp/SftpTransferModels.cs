@@ -19,6 +19,19 @@ public enum SftpTransferPhase
 }
 
 /// <summary>
+/// Conflict behavior retained with a durable transfer job. <see cref="Ask"/> is a
+/// UI-facing policy: callers must resolve it before starting an unattended transfer.
+/// </summary>
+public enum SftpConflictPolicy
+{
+    Ask,
+    Overwrite,
+    Skip,
+    Rename,
+    NewerOnly,
+}
+
+/// <summary>
 /// Transfer behavior shared by single-session and multi-session SFTP operations.
 /// MaxRetries is the number of retries after the initial attempt.
 /// </summary>
@@ -27,20 +40,45 @@ public sealed record SftpTransferOptions
     public static SftpTransferOptions Default { get; } = new();
 
     public bool Overwrite { get; init; } = true;
+    /// <summary>
+    /// A durable per-job conflict policy. Null preserves the legacy <see cref="Overwrite"/>
+    /// flag when reading queue files created by earlier Sutty versions.
+    /// </summary>
+    public SftpConflictPolicy? ConflictPolicy { get; init; }
     public bool Resume { get; init; } = true;
     public bool VerifyChecksum { get; init; } = true;
     public bool RetryEnabled { get; init; } = true;
     public int MaxRetries { get; init; } = 3;
     public TimeSpan InitialRetryDelay { get; init; } = TimeSpan.FromMilliseconds(500);
 
-    internal SftpTransferOptions Normalize() => this with
+    public static SftpConflictPolicy ParseConflictPolicy(string? value) =>
+        value?.Trim().ToLowerInvariant() switch
+        {
+            "overwrite" => SftpConflictPolicy.Overwrite,
+            "skip" => SftpConflictPolicy.Skip,
+            "rename" => SftpConflictPolicy.Rename,
+            "neweronly" => SftpConflictPolicy.NewerOnly,
+            _ => SftpConflictPolicy.Ask,
+        };
+
+    internal SftpConflictPolicy EffectiveConflictPolicy =>
+        ConflictPolicy ?? (Overwrite ? SftpConflictPolicy.Overwrite : SftpConflictPolicy.Ask);
+
+    internal SftpTransferOptions Normalize()
     {
-        MaxRetries = Math.Clamp(MaxRetries, 0, 10),
-        InitialRetryDelay = TimeSpan.FromMilliseconds(Math.Clamp(
-            InitialRetryDelay.TotalMilliseconds,
-            100,
-            30_000)),
-    };
+        SftpConflictPolicy? conflictPolicy = ConflictPolicy is { } policy && Enum.IsDefined(policy)
+            ? policy
+            : null;
+        return this with
+        {
+            ConflictPolicy = conflictPolicy,
+            MaxRetries = Math.Clamp(MaxRetries, 0, 10),
+            InitialRetryDelay = TimeSpan.FromMilliseconds(Math.Clamp(
+                InitialRetryDelay.TotalMilliseconds,
+                100,
+                30_000)),
+        };
+    }
 }
 
 /// <summary>Byte-accurate progress for one path, including recursive directory transfers.</summary>
@@ -69,7 +107,19 @@ public sealed record SftpTransferResult(
     long BytesTransferred,
     long ResumedBytes,
     string? Sha256,
-    TimeSpan Duration);
+    TimeSpan Duration,
+    int FilesSkipped = 0);
+
+/// <summary>
+/// A bounded, non-destructive preview shown before a remote directory is removed.
+/// Symbolic links are counted as leaf entries and are never traversed.
+/// </summary>
+public sealed record SftpDeletePreview(
+    string RootPath,
+    int FileCount,
+    int DirectoryCount,
+    long TotalBytes,
+    IReadOnlyList<string> PreviewPaths);
 
 /// <summary>One flattened entry produced while enumerating a remote folder tree.</summary>
 public sealed record RemoteTreeEntry(

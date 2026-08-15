@@ -1,0 +1,120 @@
+using System;
+using System.IO;
+using System.IO.MemoryMappedFiles;
+using System.Runtime.InteropServices;
+
+namespace SshNet.Agent
+{
+    internal class PageantSocketStream : Stream
+    {
+        internal const int AgentMaxMsglen = 8192;
+        private const long AgentCopydataId = 0x804e50ba;
+        private const int WmCopydata = 0x004A;
+
+        private readonly string _mapName;
+        private readonly MemoryMappedFile _memoryMappedFile;
+        private readonly Stream _stream;
+        private readonly Copydatastruct _copyData;
+        private readonly IntPtr _copyDataPtr;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Copydatastruct {
+            public IntPtr DwData;
+            public int CbData;
+            public IntPtr LpData;
+        }
+
+        [DllImport ("user32.dll")]
+        private static extern IntPtr SendMessage (IntPtr hWnd, uint dwMsg, IntPtr wParam, IntPtr lParam);
+
+        [DllImportAttribute ("user32.dll", EntryPoint = "FindWindowA", CallingConvention = CallingConvention.Winapi, ExactSpelling = true)]
+        private static extern IntPtr FindWindow ([MarshalAsAttribute (UnmanagedType.LPStr)] string lpClassName, [MarshalAsAttribute (UnmanagedType.LPStr)] string lpWindowName);
+
+        public override void Flush()
+        {
+            _stream.Flush();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return _stream.Read(buffer, offset, count);
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            return _stream.Seek(offset, origin);
+        }
+
+        public override void SetLength(long value)
+        {
+            _stream.SetLength(value);
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            _stream.Write(buffer, offset, count);
+        }
+
+        public override bool CanRead => _stream.CanRead;
+        public override bool CanSeek => _stream.CanSeek;
+        public override bool CanWrite => _stream.CanWrite;
+        public override long Length => _stream.Length;
+        public override long Position
+        {
+            get => _stream.Position;
+            set => _stream.Position = value;
+        }
+
+        public PageantSocketStream()
+        {
+            _mapName = Path.GetRandomFileName();
+            _memoryMappedFile = MemoryMappedFile.CreateNew(_mapName, AgentMaxMsglen);
+            _stream = _memoryMappedFile.CreateViewStream();
+
+            _copyData = new Copydatastruct
+            {
+                DwData = IntPtr.Size == 4
+                    ? new IntPtr(unchecked((int) AgentCopydataId))
+                    : new IntPtr(AgentCopydataId),
+                CbData = _mapName.Length + 1,
+                LpData = Marshal.StringToHGlobalAnsi(_mapName)
+            };
+
+            _copyDataPtr = Marshal.AllocHGlobal(Marshal.SizeOf(_copyData));
+            Marshal.StructureToPtr(_copyData, _copyDataPtr, false);
+        }
+
+        public void Send()
+        {
+            var hWnd = PageantWindow();
+            if (hWnd == IntPtr.Zero)
+                throw new SshAgentException("Pageant window not found, is Pageant running?");
+
+            var resultPtr = SendMessage(hWnd, WmCopydata, IntPtr.Zero, _copyDataPtr);
+            if (resultPtr == IntPtr.Zero)
+                throw new SshAgentException("Pageant did not accept the request");
+            Position = 0; // pageant overwrites, so reset the stream to zero
+        }
+
+        private static IntPtr PageantWindow()
+        {
+            return FindWindow("Pageant", "Pageant");
+        }
+
+        private bool _disposed;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
+            {
+                _stream.Dispose();
+                _memoryMappedFile.Dispose();
+                Marshal.FreeHGlobal(_copyData.LpData);
+                Marshal.FreeHGlobal(_copyDataPtr);
+            }
+
+            _disposed = true;
+            base.Dispose(disposing);
+        }
+    }
+}

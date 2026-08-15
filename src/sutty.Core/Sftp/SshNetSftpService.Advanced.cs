@@ -21,6 +21,40 @@ public sealed partial class SshNetSftpService
         () => EnumerateRemoteTreeCore(Client, path, ct),
         ct);
 
+    public Task<SftpDeletePreview> PreviewDeleteAsync(
+        string path,
+        CancellationToken ct = default) => SerializedAsync(
+        () => CreateDeletePreview(Client, path, ct),
+        ct);
+
+    public Task DeletePathRecursiveAsync(string path, CancellationToken ct = default)
+        => SerializedAsync(() => DeletePathRecursively(Client, path, ct), ct);
+
+    public Task ChangePermissionsAsync(
+        string path,
+        int unixMode,
+        bool recursive = false,
+        CancellationToken ct = default) => SerializedAsync(() =>
+    {
+        if (unixMode is < 0 or > 0x0FFF)
+            throw new ArgumentOutOfRangeException(nameof(unixMode), "Unix permissions must be between 0000 and 7777.");
+
+        var root = RemotePath.Normalize(path);
+        if (!Client.Exists(root))
+            throw new FileNotFoundException($"Remote path does not exist: {root}", root);
+
+        var entries = recursive && IsDirectoryNotLink(Client, root)
+            ? EnumerateRemoteTreeCore(Client, root, ct)
+            : [];
+        ApplyPermissions(Client, root, unixMode, ct);
+        foreach (var entry in entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!entry.Entry.IsSymbolicLink)
+                ApplyPermissions(Client, entry.Entry.FullPath, unixMode, ct);
+        }
+    }, ct);
+
     public async Task<SftpTransferResult> UploadPathAsync(
         string localPath,
         string remotePath,
@@ -62,11 +96,12 @@ public sealed partial class SshNetSftpService
                     SftpTransferDirection.Upload,
                     info.FullName,
                     destination,
-                    1,
-                    info.Length,
+                    file.Skipped ? 0 : 1,
+                    file.Bytes,
                     file.ResumedBytes,
                     file.Sha256,
-                    Stopwatch.GetElapsedTime(started));
+                    Stopwatch.GetElapsedTime(started),
+                    file.Skipped ? 1 : 0);
             }
 
             if (!Directory.Exists(localPath))
@@ -85,8 +120,10 @@ public sealed partial class SshNetSftpService
             var tree = EnumerateLocalTree(root, ct);
             var totalBytes = tree.Files.Sum(file => file.Info.Length);
             var transferredBytes = 0L;
+            var copiedBytes = 0L;
             var resumedBytes = 0L;
             var filesCompleted = 0;
+            var filesSkipped = 0;
 
             await RunWithRetryAsync(
                 SftpTransferDirection.Upload,
@@ -134,8 +171,10 @@ public sealed partial class SshNetSftpService
                     tree.Files.Count,
                     ct).ConfigureAwait(false);
                 transferredBytes += localFile.Info.Length;
+                copiedBytes += result.Bytes;
                 resumedBytes += result.ResumedBytes;
                 filesCompleted++;
+                filesSkipped += result.Skipped ? 1 : 0;
                 singleChecksum = tree.Files.Count == 1 ? result.Sha256 : null;
             }
 
@@ -150,11 +189,12 @@ public sealed partial class SshNetSftpService
                 SftpTransferDirection.Upload,
                 root.FullName,
                 destination,
-                filesCompleted,
-                totalBytes,
+                filesCompleted - filesSkipped,
+                copiedBytes,
                 resumedBytes,
                 singleChecksum,
-                Stopwatch.GetElapsedTime(started));
+                Stopwatch.GetElapsedTime(started),
+                filesSkipped);
         }
         finally
         {
@@ -215,11 +255,12 @@ public sealed partial class SshNetSftpService
                     SftpTransferDirection.Download,
                     source,
                     destination,
-                    1,
-                    attributes.Size,
+                    file.Skipped ? 0 : 1,
+                    file.Bytes,
                     file.ResumedBytes,
                     file.Sha256,
-                    Stopwatch.GetElapsedTime(started));
+                    Stopwatch.GetElapsedTime(started),
+                    file.Skipped ? 1 : 0);
             }
 
             progress?.Report(new SftpTransferProgress(
@@ -243,8 +284,10 @@ public sealed partial class SshNetSftpService
                 .ToList();
             var totalBytes = files.Sum(item => item.Entry.Size);
             var transferredBytes = 0L;
+            var copiedBytes = 0L;
             var resumedBytes = 0L;
             var filesCompleted = 0;
+            var filesSkipped = 0;
 
             Directory.CreateDirectory(destination);
             foreach (var directory in directories)
@@ -270,8 +313,10 @@ public sealed partial class SshNetSftpService
                     files.Count,
                     ct).ConfigureAwait(false);
                 transferredBytes += remoteFile.Entry.Size;
+                copiedBytes += result.Bytes;
                 resumedBytes += result.ResumedBytes;
                 filesCompleted++;
+                filesSkipped += result.Skipped ? 1 : 0;
                 singleChecksum = files.Count == 1 ? result.Sha256 : null;
             }
 
@@ -286,11 +331,12 @@ public sealed partial class SshNetSftpService
                 SftpTransferDirection.Download,
                 source,
                 destination,
-                filesCompleted,
-                totalBytes,
+                filesCompleted - filesSkipped,
+                copiedBytes,
                 resumedBytes,
                 singleChecksum,
-                Stopwatch.GetElapsedTime(started));
+                Stopwatch.GetElapsedTime(started),
+                filesSkipped);
         }
         finally
         {
@@ -380,13 +426,12 @@ public sealed partial class SshNetSftpService
         var sourceTicks = source.LastWriteTimeUtc.Ticks;
         var offset = 0L;
 
+        var replaceExistingDestination = false;
         if (client.Exists(remotePath))
         {
             var destinationAttributes = client.GetAttributes(remotePath);
             if (destinationAttributes.IsDirectory)
                 throw new IOException($"A remote directory already exists: {remotePath}");
-            if (!options.Overwrite)
-                throw new IOException($"Remote file already exists: {remotePath}");
 
             if (options.VerifyChecksum && destinationAttributes.Size == source.Length)
             {
@@ -399,6 +444,40 @@ public sealed partial class SshNetSftpService
                     reportBytes(source.Length);
                     return new FileTransferResult(source.Length, source.Length, Convert.ToHexString(localHash));
                 }
+            }
+
+            switch (options.EffectiveConflictPolicy)
+            {
+                case SftpConflictPolicy.Overwrite:
+                    replaceExistingDestination = true;
+                    break;
+                case SftpConflictPolicy.Skip:
+                    reportBytes(source.Length);
+                    return new FileTransferResult(0, 0, null, Skipped: true);
+                case SftpConflictPolicy.Rename:
+                    // The old deterministic partial belongs to the colliding destination,
+                    // not to the newly generated name. Never resume it under a new file.
+                    DeleteRemoteIfExists(client, partialPath);
+                    _checkpointStore.Delete(id);
+                    remotePath = CreateAvailableRemotePath(client, remotePath);
+                    id = SftpTransferCheckpointStore.CreateId(
+                        _checkpointScope,
+                        SftpTransferDirection.Upload,
+                        source.FullName,
+                        remotePath);
+                    partialPath = remotePath + $".sutty-{id[..12]}.part";
+                    checkpoint = _checkpointStore.Load(id);
+                    break;
+                case SftpConflictPolicy.NewerOnly:
+                    if (source.LastWriteTimeUtc <= destinationAttributes.LastWriteTimeUtc)
+                    {
+                        reportBytes(source.Length);
+                        return new FileTransferResult(0, 0, null, Skipped: true);
+                    }
+                    replaceExistingDestination = true;
+                    break;
+                default:
+                    throw new SftpTransferConflictException(source.FullName, remotePath);
             }
         }
 
@@ -458,7 +537,7 @@ public sealed partial class SshNetSftpService
                 checksum = Convert.ToHexString(localHash);
             }
 
-            PromoteRemoteFile(client, partialPath, remotePath, options.Overwrite);
+            PromoteRemoteFile(client, partialPath, remotePath, replaceExistingDestination);
             _checkpointStore.Delete(id);
             reportBytes(source.Length);
             return new FileTransferResult(source.Length, offset, checksum);
@@ -499,9 +578,7 @@ public sealed partial class SshNetSftpService
 
         var destination = Path.GetFullPath(localPath);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        if (File.Exists(destination) && !options.Overwrite)
-            throw new IOException($"Local file already exists: {destination}");
-
+        var replaceExistingDestination = false;
         if (File.Exists(destination) && options.VerifyChecksum)
         {
             var existing = new FileInfo(destination);
@@ -515,6 +592,32 @@ public sealed partial class SshNetSftpService
                     return new FileTransferResult(attributes.Size, attributes.Size,
                         Convert.ToHexString(localHash));
                 }
+            }
+        }
+
+        if (File.Exists(destination))
+        {
+            switch (options.EffectiveConflictPolicy)
+            {
+                case SftpConflictPolicy.Overwrite:
+                    replaceExistingDestination = true;
+                    break;
+                case SftpConflictPolicy.Skip:
+                    reportBytes(attributes.Size);
+                    return new FileTransferResult(0, 0, null, Skipped: true);
+                case SftpConflictPolicy.Rename:
+                    destination = CreateAvailableLocalPath(destination);
+                    break;
+                case SftpConflictPolicy.NewerOnly:
+                    if (new FileInfo(destination).LastWriteTimeUtc >= attributes.LastWriteTimeUtc)
+                    {
+                        reportBytes(attributes.Size);
+                        return new FileTransferResult(0, 0, null, Skipped: true);
+                    }
+                    replaceExistingDestination = true;
+                    break;
+                default:
+                    throw new SftpTransferConflictException(remotePath, destination);
             }
         }
 
@@ -585,7 +688,7 @@ public sealed partial class SshNetSftpService
                 checksum = Convert.ToHexString(localHash);
             }
 
-            File.Move(partialPath, destination, options.Overwrite);
+            File.Move(partialPath, destination, replaceExistingDestination);
             _checkpointStore.Delete(id);
             reportBytes(attributes.Size);
             return new FileTransferResult(attributes.Size, offset, checksum);
@@ -791,6 +894,86 @@ public sealed partial class SshNetSftpService
         }
     }
 
+    private static SftpDeletePreview CreateDeletePreview(
+        SftpClient client,
+        string path,
+        CancellationToken ct)
+    {
+        var root = RequireSafeDeleteRoot(path);
+        if (!client.Exists(root))
+            throw new FileNotFoundException($"Remote path does not exist: {root}", root);
+
+        if (!IsDirectoryNotLink(client, root))
+        {
+            var attributes = client.GetAttributes(root);
+            return new SftpDeletePreview(
+                root,
+                FileCount: 1,
+                DirectoryCount: 0,
+                TotalBytes: Math.Max(0, attributes.Size),
+                PreviewPaths: [RemotePath.GetName(root)]);
+        }
+
+        var tree = EnumerateRemoteTreeCore(client, root, ct);
+        var files = tree.Where(entry => !entry.Entry.IsDirectory || entry.Entry.IsSymbolicLink).ToArray();
+        var directories = tree.Count(entry => entry.Entry.IsDirectory && !entry.Entry.IsSymbolicLink) + 1;
+        return new SftpDeletePreview(
+            root,
+            files.Length,
+            directories,
+            files.Sum(entry => Math.Max(0, entry.Entry.Size)),
+            tree.Take(20).Select(entry => entry.RelativePath).ToArray());
+    }
+
+    private static void DeletePathRecursively(SftpClient client, string path, CancellationToken ct)
+    {
+        var root = RequireSafeDeleteRoot(path);
+        if (!client.Exists(root))
+            throw new FileNotFoundException($"Remote path does not exist: {root}", root);
+
+        if (!IsDirectoryNotLink(client, root))
+        {
+            client.DeleteFile(root);
+            return;
+        }
+
+        var tree = EnumerateRemoteTreeCore(client, root, ct);
+        foreach (var entry in tree.Reverse())
+        {
+            ct.ThrowIfCancellationRequested();
+            if (entry.Entry.IsDirectory && !entry.Entry.IsSymbolicLink)
+                client.DeleteDirectory(entry.Entry.FullPath);
+            else
+                client.DeleteFile(entry.Entry.FullPath);
+        }
+        ct.ThrowIfCancellationRequested();
+        client.DeleteDirectory(root);
+    }
+
+    private static string RequireSafeDeleteRoot(string path)
+    {
+        var root = RemotePath.Normalize(path);
+        if (root == "/")
+            throw new IOException("The remote root cannot be deleted.");
+        return root;
+    }
+
+    private static bool IsDirectoryNotLink(SftpClient client, string path)
+    {
+        var attributes = client.GetAttributes(path);
+        return attributes.IsDirectory && !attributes.IsSymbolicLink;
+    }
+
+    private static void ApplyPermissions(
+        SftpClient client,
+        string path,
+        int unixMode,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        client.ChangePermissions(path, unchecked((short)unixMode));
+    }
+
     private static LocalTree EnumerateLocalTree(DirectoryInfo root, CancellationToken ct)
     {
         var directories = new List<LocalDirectory>();
@@ -880,6 +1063,36 @@ public sealed partial class SshNetSftpService
             throw new IOException("The remote path would escape the selected local directory.");
         }
         return candidate;
+    }
+
+    private static string CreateAvailableRemotePath(SftpClient client, string path)
+    {
+        var directory = RemotePath.GetDirectory(path);
+        var name = RemotePath.GetName(path);
+        var extension = Path.GetExtension(name);
+        var stem = extension.Length == 0 ? name : name[..^extension.Length];
+        for (var index = 1; index <= 9_999; index++)
+        {
+            var candidate = RemotePath.Combine(directory, $"{stem} ({index}){extension}");
+            if (!client.Exists(candidate))
+                return candidate;
+        }
+        throw new IOException($"Could not find an available remote name for: {path}");
+    }
+
+    private static string CreateAvailableLocalPath(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        var name = Path.GetFileName(path);
+        var extension = Path.GetExtension(name);
+        var stem = extension.Length == 0 ? name : name[..^extension.Length];
+        for (var index = 1; index <= 9_999; index++)
+        {
+            var candidate = Path.Combine(directory!, $"{stem} ({index}){extension}");
+            if (!File.Exists(candidate) && !Directory.Exists(candidate))
+                return candidate;
+        }
+        throw new IOException($"Could not find an available local name for: {path}");
     }
 
     private static void ValidateRemotePathSegment(string name)
@@ -1049,7 +1262,11 @@ public sealed partial class SshNetSftpService
         totalFiles,
         1));
 
-    private sealed record FileTransferResult(long Bytes, long ResumedBytes, string? Sha256);
+    private sealed record FileTransferResult(
+        long Bytes,
+        long ResumedBytes,
+        string? Sha256,
+        bool Skipped = false);
     private sealed record LocalDirectory(DirectoryInfo Info, string RelativePath);
     private sealed record LocalFile(FileInfo Info, string RelativePath);
     private sealed record LocalTree(List<LocalDirectory> Directories, List<LocalFile> Files);
@@ -1057,6 +1274,14 @@ public sealed partial class SshNetSftpService
 
 public sealed class SftpChecksumMismatchException(string sourcePath, string destinationPath)
     : IOException($"SHA-256 verification failed: {sourcePath} -> {destinationPath}")
+{
+    public string SourcePath { get; } = sourcePath;
+    public string DestinationPath { get; } = destinationPath;
+}
+
+/// <summary>Raised when a job retained the interactive Ask policy but reaches a collision.</summary>
+public sealed class SftpTransferConflictException(string sourcePath, string destinationPath)
+    : IOException($"A transfer conflict requires a decision: {sourcePath} -> {destinationPath}")
 {
     public string SourcePath { get; } = sourcePath;
     public string DestinationPath { get; } = destinationPath;

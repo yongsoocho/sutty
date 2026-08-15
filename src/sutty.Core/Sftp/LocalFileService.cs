@@ -166,6 +166,56 @@ public sealed class LocalFileService : ISftpService
     public Task DeleteDirectoryAsync(string path, CancellationToken ct = default)
         => Task.Run(() => { ct.ThrowIfCancellationRequested(); Directory.Delete(path, recursive: false); }, ct);
 
+    public Task<SftpDeletePreview> PreviewDeleteAsync(string path, CancellationToken ct = default)
+        => Task.Run(() =>
+        {
+            var root = RequireSafeLocalDeleteRoot(path);
+            ct.ThrowIfCancellationRequested();
+            if (File.Exists(root))
+            {
+                var file = new FileInfo(root);
+                return new SftpDeletePreview(
+                    root,
+                    FileCount: 1,
+                    DirectoryCount: 0,
+                    TotalBytes: Math.Max(0, file.Length),
+                    PreviewPaths: [file.Name]);
+            }
+            if (!Directory.Exists(root))
+                throw new DirectoryNotFoundException(root);
+
+            var tree = EnumerateTreeAsync(root, ct).GetAwaiter().GetResult();
+            var files = tree.Where(entry => !entry.Entry.IsDirectory || entry.Entry.IsSymbolicLink).ToArray();
+            return new SftpDeletePreview(
+                root,
+                files.Length,
+                tree.Count(entry => entry.Entry.IsDirectory && !entry.Entry.IsSymbolicLink) + 1,
+                files.Sum(entry => Math.Max(0, entry.Entry.Size)),
+                tree.Take(20).Select(entry => entry.RelativePath).ToArray());
+        }, ct);
+
+    public Task DeletePathRecursiveAsync(string path, CancellationToken ct = default)
+        => Task.Run(() =>
+        {
+            var root = RequireSafeLocalDeleteRoot(path);
+            if (File.Exists(root))
+            {
+                File.Delete(root);
+                return;
+            }
+            if (!Directory.Exists(root))
+                throw new DirectoryNotFoundException(root);
+            DeleteDirectoryTree(root, ct);
+        }, ct);
+
+    public Task ChangePermissionsAsync(
+        string path,
+        int unixMode,
+        bool recursive = false,
+        CancellationToken ct = default)
+        => Task.FromException(new NotSupportedException(
+            "Unix permission changes require an SFTP server and are unavailable for the local test adapter."));
+
     public Task CreateDirectoryAsync(string path, CancellationToken ct = default)
         => Task.Run(() =>
         {
@@ -174,6 +224,47 @@ public sealed class LocalFileService : ISftpService
                 throw new IOException($"Path already exists: {path}");
             Directory.CreateDirectory(path);
         }, ct);
+
+    private static string RequireSafeLocalDeleteRoot(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var fullPath = Path.GetFullPath(path);
+        var volumeRoot = Path.GetPathRoot(fullPath);
+        if (!string.IsNullOrEmpty(volumeRoot) &&
+            string.Equals(
+                fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                volumeRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new IOException("A filesystem root cannot be deleted.");
+        }
+        return fullPath;
+    }
+
+    private static void DeleteDirectoryTree(string root, CancellationToken ct)
+    {
+        var directory = new DirectoryInfo(root);
+        foreach (var entry in directory.EnumerateFileSystemInfos())
+        {
+            ct.ThrowIfCancellationRequested();
+            var isDirectory = entry.Attributes.HasFlag(FileAttributes.Directory);
+            var isLink = entry.Attributes.HasFlag(FileAttributes.ReparsePoint);
+            if (isDirectory && !isLink)
+            {
+                DeleteDirectoryTree(entry.FullName, ct);
+            }
+            else if (isDirectory)
+            {
+                Directory.Delete(entry.FullName, recursive: false);
+            }
+            else
+            {
+                File.Delete(entry.FullName);
+            }
+        }
+        ct.ThrowIfCancellationRequested();
+        Directory.Delete(root, recursive: false);
+    }
 
     private static Task CopyFileSafelyAsync(string sourcePath, string destinationPath, bool overwrite,
         IProgress<double>? progress, CancellationToken ct) => Task.Run(() =>
@@ -272,7 +363,9 @@ public sealed class LocalFileService : ISftpService
 
         var totalBytes = files.Sum(file => file.Length);
         long completedBytes = 0;
+        long copiedBytes = 0;
         long resumedBytes = 0;
+        var filesSkipped = 0;
         string? singleFileHash = null;
 
         for (var index = 0; index < files.Count; index++)
@@ -290,7 +383,9 @@ public sealed class LocalFileService : ISftpService
                 progress,
                 ct).ConfigureAwait(false);
             completedBytes += file.Length;
+            copiedBytes += outcome.Bytes;
             resumedBytes += outcome.ResumedBytes;
+            filesSkipped += outcome.Skipped ? 1 : 0;
             if (files.Count == 1)
                 singleFileHash = outcome.Sha256;
         }
@@ -309,11 +404,12 @@ public sealed class LocalFileService : ISftpService
             direction,
             Path.GetFullPath(sourcePath),
             Path.GetFullPath(destinationPath),
-            files.Count,
-            totalBytes,
+            files.Count - filesSkipped,
+            copiedBytes,
             resumedBytes,
             singleFileHash,
-            Stopwatch.GetElapsedTime(started));
+            Stopwatch.GetElapsedTime(started),
+            filesSkipped);
     }
 
     private static async Task<LocalCopyOutcome> CopyOneWithRetryAsync(
@@ -374,14 +470,78 @@ public sealed class LocalFileService : ISftpService
         IProgress<SftpTransferProgress>? progress,
         CancellationToken ct)
     {
-        var destinationDirectory = Path.GetDirectoryName(file.DestinationPath);
+        var destination = file.DestinationPath;
+        var replaceExistingDestination = false;
+        if (Directory.Exists(destination))
+            throw new IOException($"A directory already exists: {destination}");
+
+        if (File.Exists(destination) && options.VerifyChecksum)
+        {
+            var sourceHash = await ComputeSha256Async(file.SourcePath, ct).ConfigureAwait(false);
+            var destinationHash = await ComputeSha256Async(destination, ct).ConfigureAwait(false);
+            if (CryptographicOperations.FixedTimeEquals(sourceHash, destinationHash))
+            {
+                progress?.Report(new SftpTransferProgress(
+                    direction,
+                    SftpTransferPhase.Preparing,
+                    file.RelativePath,
+                    completedBytes + file.Length,
+                    totalBytes,
+                    completedFiles,
+                    totalFiles,
+                    attempt));
+                return new LocalCopyOutcome(file.Length, file.Length,
+                    Convert.ToHexString(sourceHash).ToLowerInvariant());
+            }
+        }
+
+        if (File.Exists(destination))
+        {
+            switch (options.EffectiveConflictPolicy)
+            {
+                case SftpConflictPolicy.Overwrite:
+                    replaceExistingDestination = true;
+                    break;
+                case SftpConflictPolicy.Skip:
+                    progress?.Report(new SftpTransferProgress(
+                        direction,
+                        SftpTransferPhase.Preparing,
+                        file.RelativePath,
+                        completedBytes + file.Length,
+                        totalBytes,
+                        completedFiles,
+                        totalFiles,
+                        attempt));
+                    return new LocalCopyOutcome(0, 0, null, Skipped: true);
+                case SftpConflictPolicy.Rename:
+                    destination = CreateAvailableLocalPath(destination);
+                    break;
+                case SftpConflictPolicy.NewerOnly:
+                    if (File.GetLastWriteTimeUtc(destination) >= File.GetLastWriteTimeUtc(file.SourcePath))
+                    {
+                        progress?.Report(new SftpTransferProgress(
+                            direction,
+                            SftpTransferPhase.Preparing,
+                            file.RelativePath,
+                            completedBytes + file.Length,
+                            totalBytes,
+                            completedFiles,
+                            totalFiles,
+                            attempt));
+                        return new LocalCopyOutcome(0, 0, null, Skipped: true);
+                    }
+                    replaceExistingDestination = true;
+                    break;
+                default:
+                    throw new SftpTransferConflictException(file.SourcePath, destination);
+            }
+        }
+
+        var destinationDirectory = Path.GetDirectoryName(destination);
         if (!string.IsNullOrEmpty(destinationDirectory))
             Directory.CreateDirectory(destinationDirectory);
 
-        if (!options.Overwrite && File.Exists(file.DestinationPath))
-            throw new IOException($"File already exists: {file.DestinationPath}");
-
-        var partialPath = file.DestinationPath + ".sutty.part";
+        var partialPath = destination + ".sutty.part";
         if (!options.Resume && File.Exists(partialPath))
             File.Delete(partialPath);
 
@@ -411,7 +571,7 @@ public sealed class LocalFileService : ISftpService
             FileShare.Read,
             128 * 1024,
             FileOptions.Asynchronous | FileOptions.SequentialScan))
-        await using (var destination = new FileStream(
+        await using (var destinationStream = new FileStream(
             partialPath,
             FileMode.OpenOrCreate,
             FileAccess.Write,
@@ -420,13 +580,13 @@ public sealed class LocalFileService : ISftpService
             FileOptions.Asynchronous | FileOptions.SequentialScan))
         {
             source.Position = resumed;
-            destination.Position = resumed;
-            destination.SetLength(resumed);
+            destinationStream.Position = resumed;
+            destinationStream.SetLength(resumed);
             var buffer = new byte[128 * 1024];
             int read;
             while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
             {
-                await destination.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                await destinationStream.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                 progress?.Report(new SftpTransferProgress(
                     direction,
                     SftpTransferPhase.Transferring,
@@ -437,7 +597,7 @@ public sealed class LocalFileService : ISftpService
                     totalFiles,
                     attempt));
             }
-            await destination.FlushAsync(ct).ConfigureAwait(false);
+            await destinationStream.FlushAsync(ct).ConfigureAwait(false);
         }
 
         string? hash = null;
@@ -459,8 +619,23 @@ public sealed class LocalFileService : ISftpService
             hash = Convert.ToHexString(sourceHash).ToLowerInvariant();
         }
 
-        File.Move(partialPath, file.DestinationPath, options.Overwrite);
-        return new LocalCopyOutcome(resumed, hash);
+        File.Move(partialPath, destination, replaceExistingDestination);
+        return new LocalCopyOutcome(file.Length, resumed, hash);
+    }
+
+    private static string CreateAvailableLocalPath(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        var name = Path.GetFileName(path);
+        var extension = Path.GetExtension(name);
+        var stem = extension.Length == 0 ? name : name[..^extension.Length];
+        for (var index = 1; index <= 9_999; index++)
+        {
+            var candidate = Path.Combine(directory!, $"{stem} ({index}){extension}");
+            if (!File.Exists(candidate) && !Directory.Exists(candidate))
+                return candidate;
+        }
+        throw new IOException($"Could not find an available local name for: {path}");
     }
 
     private static async Task<byte[]> ComputeSha256Async(string path, CancellationToken ct)
@@ -519,7 +694,11 @@ public sealed class LocalFileService : ISftpService
         string RelativePath,
         long Length);
 
-    private sealed record LocalCopyOutcome(long ResumedBytes, string? Sha256);
+    private sealed record LocalCopyOutcome(
+        long Bytes,
+        long ResumedBytes,
+        string? Sha256,
+        bool Skipped = false);
     private sealed record LocalSourceDirectory(string RelativePath);
     private sealed record LocalSourceFile(FileInfo Info, string RelativePath);
     private sealed record LocalSourceTree(

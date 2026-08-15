@@ -103,6 +103,20 @@ namespace sutty.UI.Views
             SftpRetryToggle.IsOn = settings.SftpRetryEnabled;
             SftpRetryCountBox.Value = settings.SftpRetryCount;
             SftpRetryCountBox.IsEnabled = settings.SftpRetryEnabled;
+            SftpVerificationCombo.SelectedItem = SftpVerificationCombo.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(
+                    item.Tag as string,
+                    settings.SftpVerificationMode,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? SftpVerificationCombo.Items[1];
+            SftpConflictPolicyCombo.SelectedItem = SftpConflictPolicyCombo.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(item => string.Equals(
+                    item.Tag as string,
+                    settings.SftpConflictPolicy,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? SftpConflictPolicyCombo.Items[0];
             HistoryDaysBox.Value = settings.HistoryRetentionDays;
             HistoryTopHostCountBox.Value = settings.HistoryTopHostCount;
 
@@ -283,6 +297,34 @@ namespace sutty.UI.Views
             CommitChangesNow(SettingChangeKind.Sftp);
         }
 
+        private void SftpVerificationCombo_SelectionChanged(
+            object sender,
+            SelectionChangedEventArgs e)
+        {
+            if (_loading || SftpVerificationCombo.SelectedItem is not ComboBoxItem item ||
+                item.Tag is not string mode)
+            {
+                return;
+            }
+
+            SettingsService.Current.SftpVerificationMode = mode;
+            CommitChangesNow(SettingChangeKind.Sftp);
+        }
+
+        private void SftpConflictPolicyCombo_SelectionChanged(
+            object sender,
+            SelectionChangedEventArgs e)
+        {
+            if (_loading || SftpConflictPolicyCombo.SelectedItem is not ComboBoxItem item ||
+                item.Tag is not string policy)
+            {
+                return;
+            }
+
+            SettingsService.Current.SftpConflictPolicy = policy;
+            CommitChangesNow(SettingChangeKind.Sftp);
+        }
+
         private async void ImportOpenSsh_Click(object sender, RoutedEventArgs e)
         {
             if (OwnerWindowHandle == IntPtr.Zero)
@@ -347,6 +389,32 @@ namespace sutty.UI.Views
                 ShowImportStatus(
                     $"INI 프로필 가져오기 실패: {error.Message}",
                     $"INI profile import failed: {error.Message}",
+                    false);
+            }
+        }
+
+        private async void ImportSftpSiteManager_Click(object sender, RoutedEventArgs e)
+        {
+            if (OwnerWindowHandle == IntPtr.Zero)
+            {
+                ShowImportStatus("파일 선택 창을 열 수 없습니다.", "The file picker is unavailable.", false);
+                return;
+            }
+            try
+            {
+                var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+                picker.FileTypeFilter.Add(".xml");
+                InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
+                var file = await picker.PickSingleFileAsync();
+                if (file is null || string.IsNullOrWhiteSpace(file.Path)) return;
+                ImportProfiles(HostProfileImportService.ImportSftpSiteManagerXml(file.Path));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                                              ArgumentException or System.Xml.XmlException)
+            {
+                ShowImportStatus(
+                    $"SFTP Site Manager XML 가져오기 실패: {error.Message}",
+                    $"SFTP Site Manager XML import failed: {error.Message}",
                     false);
             }
         }

@@ -123,9 +123,7 @@ public static class RouteResolver
 
         if (requested.Type == ConnectionRouteType.ExternalProxyCommand)
         {
-            var command = requested.Command?.Trim() ?? "";
-            if (command.Length is < 1 or > 4_096 || command.Any(ch => ch is '\0' or '\r' or '\n'))
-                throw new RoutePolicyViolationException("A valid single-line ProxyCommand is required.");
+            ProxyCommandTemplate.Validate(requested.Command);
         }
 
         return new ResolvedConnectionRoute(

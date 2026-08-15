@@ -15,6 +15,7 @@ public enum SftpQueueJobState
 {
     Pending,
     Running,
+    Paused,
     Interrupted,
     Failed,
     Completed,
@@ -25,6 +26,7 @@ public enum SftpQueueTargetState
 {
     Pending,
     Running,
+    Paused,
     Interrupted,
     Failed,
     Succeeded,
@@ -241,6 +243,7 @@ public sealed class SftpTransferQueueStore
     public static IReadOnlySet<string> GetRetryTargetIds(SftpQueuedJob job) => job.Targets
         .Where(target => target.State is SftpQueueTargetState.Pending or
                                       SftpQueueTargetState.Running or
+                                      SftpQueueTargetState.Paused or
                                       SftpQueueTargetState.Interrupted or
                                       SftpQueueTargetState.Failed or
                                       SftpQueueTargetState.Cancelled)
@@ -253,6 +256,8 @@ public sealed class SftpTransferQueueStore
             return SftpQueueJobState.Completed;
         if (targets.Any(target => target.State == SftpQueueTargetState.Running))
             return SftpQueueJobState.Running;
+        if (targets.Any(target => target.State == SftpQueueTargetState.Paused))
+            return SftpQueueJobState.Paused;
         if (targets.Any(target => target.State == SftpQueueTargetState.Failed))
             return SftpQueueJobState.Failed;
         if (targets.Any(target => target.State == SftpQueueTargetState.Interrupted))

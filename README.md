@@ -35,7 +35,7 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - Independent SSH, Terminal, and SFTP states, so an unavailable SFTP subsystem does not close a working SSH session.
 - REPL and Multi command execution backed by structured standard output, standard error, exit status/signal, and duration; reusable positional command templates remain available.
 - Remote SFTP navigation and lazy loading; bounded recursive tree enumeration; file/folder upload and download (including empty directories); same-directory rename; file or empty-directory deletion; directory creation; Copy path; and Open in Terminal. Symbolic links are listed but never followed recursively.
-- A compact per-panel transfer queue with queued/running state, an explicit `0%`–`100%` value, progress bar, speed, ETA, cancellation, and an eight-job cap. Transfers support resumable deterministic partial files, persisted non-secret checkpoints, configurable transient-failure retries, and SHA-256 verification.
+- A compact per-panel transfer queue with queued/running state, an explicit `0%`–`100%` value, progress bar, speed, ETA, cancellation, and an eight-job cap. Transfers support resumable deterministic partial files, persisted non-secret checkpoints, configurable transient-failure retries, and user-selectable final-size or SHA-256 verification (safe SHA-256 by default).
 - Safe file-transfer staging. Uploads use a remote temporary name and preserve an existing destination during promotion; downloads use an adjacent local temporary file. Multi supports 1→N upload and N→1 download for explicitly checked sessions, with per-server progress/results, deterministic local isolation, and failed/incomplete-target-only retry. A credential-free atomic job queue restores incomplete single and Multi transfers after restart.
 - Append-only connection-attempt history plus explicit Saved Host profiles, groups, environments, favorites, and search in SQLite.
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
@@ -54,7 +54,7 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP recursive transfer, durable restart queue/checkpoints, retry/resume, checksum verification, 1→N/N→1 Multi transfer, and failed-target-only retry are implemented, but pause, `chmod`, synchronized browsing, recursive delete, a complete collision-policy matrix, and large/deep-path live multi-host acceptance remain incomplete.
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent audit/export, timeout, or streaming workflow.
-- Local/remote/dynamic forwarding has session lifecycle support, but external-bind warnings, a post-connect tunnel manager, and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists, but no production certificate or accepted signed artifact has been supplied. Managed gateway policy, central audit transport, encrypted Sutty bundle export/import, support bundles, and the GA compatibility/accessibility matrices remain planned.
+- Local/remote/dynamic forwarding has session lifecycle support and non-loopback binds require an explicit high-risk confirmation, but a post-connect tunnel manager and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed artifact has been supplied. Managed gateway policy, central audit transport, encrypted Sutty bundle export/import, support bundles, and the GA compatibility/accessibility matrices remain planned.
 
 The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Enterprise implementation status](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md). Product gates and explicit non-goals are in [Product Direction](docs/PRODUCT_DIRECTION.md), and the current source plan is [Windows Multi SSH/SFTP Product Plan v2.0](docs/Sutty_Windows_Multi_SSH_SFTP_Product_Plan_v2.0_KO.docx).
 
@@ -74,7 +74,7 @@ Local files under `%LOCALAPPDATA%\sutty` include:
 - `sftp-transfer-checkpoints.json` — non-secret source/destination paths, sizes, timestamps, and offsets used to resume explicitly restarted transfers.
 - `sftp-transfer-queue.json` — credential-free single/Multi transfer intent and per-target state used for explicit restart recovery.
 - `vault.key` and `vault.json` — the DPAPI-protected master key and authenticated encrypted credential records, created only when the local vault is used.
-- `crash.log` — local unhandled-exception details; it is not yet guaranteed to be redacted, so inspect it before sharing.
+- `crash.log` — local unhandled-exception type and HRESULT only; original exception text and secrets are not written.
 
 Private-key file contents stay in the user-selected external file. Unknown keys are rejected before a trust prompt and retried only after an explicit decision. A changed saved key is never silently replaced.
 
@@ -86,6 +86,7 @@ Read [Security](SECURITY.md) before reporting or sharing diagnostic data.
 | --- | --- |
 | [`sutty.UI`](src/sutty.UI) | WinUI 3 shell, local/SSH terminal presentation, REPL, Files, Multi, and settings UI |
 | [`sutty.Core`](src/sutty.Core) | Local ConPTY, SSH sessions, command results, interactive-terminal contract, host-key trust, and SFTP services |
+| [`sutty.SshAgent`](src/sutty.SshAgent) | Upstream-pinned Windows OpenSSH Agent/Pageant adapter compiled against the selected SSH.NET runtime |
 | [`sutty.Command`](src/sutty.Command) | SQLite command templates, connection history, pins, and non-secret drafts |
 | [`sutty.Setting`](src/sutty.Setting) | Atomic JSON-backed application settings |
 | [`tests`](tests) | Focused self-tests plus an opt-in credentialed live-server smoke/fault/scale/soak harness; not a completed GA matrix |
@@ -146,7 +147,7 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - SFTP subsystem을 사용할 수 없어도 작동 중인 SSH 세션을 닫지 않는 SSH·Terminal·SFTP 독립 상태
 - 표준 출력·표준 오류·종료 상태/signal·소요 시간을 구조화하는 REPL·Multi 명령 실행과 재사용 가능한 위치형 명령 템플릿
 - 원격 SFTP 탐색과 지연 로딩, 제한된 재귀 트리 열거, 파일·폴더 업로드/다운로드(빈 폴더 포함), 같은 디렉터리 내 이름 변경, 파일 또는 빈 디렉터리 삭제, 디렉터리 생성, 경로 복사, Terminal에서 열기. 심볼릭 링크는 표시하지만 재귀적으로 따라가지 않습니다.
-- 대기·실행 상태, 명시적인 `0%`–`100%` 숫자, 진행 막대, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. 결정적인 partial 파일, 비밀정보 없는 영속 체크포인트, 설정 가능한 일시 오류 재시도, SHA-256 검증으로 전송을 재개할 수 있습니다.
+- 대기·실행 상태, 명시적인 `0%`–`100%` 숫자, 진행 막대, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. 결정적인 partial 파일, 비밀정보 없는 영속 체크포인트, 설정 가능한 일시 오류 재시도, 사용자가 선택하는 최종 크기 또는 SHA-256 검증(기본값은 안전한 SHA-256)으로 전송을 재개할 수 있습니다.
 - 안전한 파일 전송 준비 단계. 업로드는 원격 임시 이름을 사용하고 기존 대상을 보존한 채 승격하며, 다운로드는 같은 로컬 디렉터리의 임시 파일을 사용합니다. Multi는 명시적으로 체크한 세션의 1→N 업로드와 N→1 다운로드, 서버별 진행률·결과, 결정적인 로컬 경로 분리, 실패·미완료 대상만 재시도를 지원합니다. 자격증명 없는 atomic job queue가 재실행 후 Single·Multi 미완료 전송을 복원합니다.
 - SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·그룹·환경·즐겨찾기·검색
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
@@ -165,7 +166,7 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - SFTP 재귀 전송, 영속 재시작 queue·checkpoint, 재시도·재개, checksum 검증, 1→N/N→1 Multi 전송, 실패 대상만 재시도를 구현했습니다. 일시정지, `chmod`, 동기 탐색, 재귀 삭제, 완전한 충돌 정책, 대용량·깊은 경로·실제 다중 Host 인수는 미완성입니다.
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 audit/export, timeout, streaming 흐름이 없습니다.
-- Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했지만 외부 bind 경고, 연결 후 tunnel 관리자, 실제 포워딩 매트릭스는 미완성입니다. 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. 관리형 gateway 정책, 중앙 감사 전송, 암호화 Sutty bundle 가져오기·내보내기, 지원 번들, GA 호환성·접근성 매트릭스는 계획 상태입니다.
+- Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했고 loopback이 아닌 bind는 고위험 확인을 요구하지만 연결 후 tunnel 관리자와 실제 포워딩 매트릭스는 미완성입니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. 관리형 gateway 정책, 중앙 감사 전송, 암호화 Sutty bundle 가져오기·내보내기, 지원 번들, GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
 현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Enterprise 구현 상태](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md), 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md), 제품 게이트와 명시적 비목표는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 있습니다.
 
@@ -185,7 +186,7 @@ Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정
 - `sftp-transfer-checkpoints.json` — 사용자가 같은 전송을 다시 시작할 때 이어받기 위한 비밀정보 없는 출발·도착 경로, 크기, 시각, offset
 - `sftp-transfer-queue.json` — 명시적 재시작 복원에 사용하는 자격증명 없는 Single·Multi 전송 의도와 대상별 상태
 - `vault.key`, `vault.json` — 로컬 보관소 사용 시에만 생성되는 DPAPI 보호 master key와 인증 암호화된 자격 증명 기록
-- `crash.log` — 로컬 미처리 예외 상세. 아직 redaction을 보장하지 않으므로 공유 전에 반드시 확인해야 합니다.
+- `crash.log` — 로컬 미처리 예외의 type과 HRESULT만 기록합니다. 원문 예외 텍스트와 비밀정보는 쓰지 않습니다.
 
 개인키 파일 내용은 사용자가 선택한 외부 파일에 그대로 있습니다. 알 수 없는 키는 신뢰 창보다 먼저 거부하고 명시적 결정 뒤에만 새 연결로 재시도합니다. 변경된 저장 키를 조용히 교체하지 않습니다.
 
@@ -197,6 +198,7 @@ Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정
 | --- | --- |
 | [`sutty.UI`](src/sutty.UI) | WinUI 3 셸, 로컬/SSH 터미널 표시, REPL, Files, Multi, 설정 UI |
 | [`sutty.Core`](src/sutty.Core) | 로컬 ConPTY, SSH 세션, 명령 결과, 대화형 터미널 계약, 호스트키 신뢰, SFTP 서비스 |
+| [`sutty.SshAgent`](src/sutty.SshAgent) | 선택한 SSH.NET 런타임에 맞춰 직접 빌드하는 upstream 고정 Windows OpenSSH Agent/Pageant adapter |
 | [`sutty.Command`](src/sutty.Command) | SQLite 명령 템플릿, 접속 기록, pin, 비밀정보 없는 초안 |
 | [`sutty.Setting`](src/sutty.Setting) | 원자적으로 저장하는 JSON 환경설정 |
 | [`tests`](tests) | 집중형 self-test와 선택 실행하는 자격증명 기반 실서버 smoke·fault·scale·soak harness. 아직 완료된 GA 매트릭스가 아닙니다. |

@@ -48,8 +48,6 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore locked dependencies
-        env:
-          RuntimeIdentifiers: win-x64;win-arm64
         run: >-
           dotnet restore .\sutty.slnx
           --locked-mode
@@ -109,10 +107,29 @@ jobs:
           SUTTY_TEST_FAULT_MB: ${{ vars.SUTTY_TEST_FAULT_MB }}
         run: |
           $keyPath = Join-Path $env:RUNNER_TEMP 'sutty-live-test-key'
+          $agentProvisioned = $false
           try {
             if (-not [string]::IsNullOrWhiteSpace($env:SUTTY_TEST_SSH_PRIVATE_KEY)) {
               [System.IO.File]::WriteAllText($keyPath, $env:SUTTY_TEST_SSH_PRIVATE_KEY)
               $env:SUTTY_TEST_SSH_KEY_PATH = $keyPath
+            }
+
+            if ($env:SUTTY_TEST_SSH_AUTH -eq 'Agent') {
+              if (-not (Test-Path -LiteralPath $keyPath)) {
+                throw 'Agent live testing requires SUTTY_TEST_SSH_PRIVATE_KEY.'
+              }
+              Set-Service -Name ssh-agent -StartupType Manual
+              Start-Service -Name ssh-agent
+              & ssh-add $keyPath
+              if ($LASTEXITCODE -ne 0) { throw 'ssh-add failed for the live test key.' }
+              $env:SUTTY_REQUIRE_WINDOWS_AGENT = 'true'
+              $agentProvisioned = $true
+              dotnet run `
+                --project .\tests\sutty.Core.Security.SelfTest\sutty.Core.Security.SelfTest.csproj `
+                --configuration Debug `
+                --no-build `
+                --no-restore
+              if ($LASTEXITCODE -ne 0) { throw 'Windows Agent integration self-test failed.' }
             }
 
             dotnet run `
@@ -122,6 +139,9 @@ jobs:
               --no-restore
           }
           finally {
+            if ($agentProvisioned) {
+              & ssh-add -D | Out-Null
+            }
             if (Test-Path -LiteralPath $keyPath) {
               Remove-Item -LiteralPath $keyPath -Force
             }
@@ -141,8 +161,6 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore locked dependencies
-        env:
-          RuntimeIdentifiers: win-x64;win-arm64
         run: >-
           dotnet restore .\sutty.slnx
           --locked-mode
@@ -175,8 +193,6 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
 
       - name: Restore locked dependencies
-        env:
-          RuntimeIdentifiers: win-x64;win-arm64
         run: >-
           dotnet restore .\sutty.slnx
           --locked-mode

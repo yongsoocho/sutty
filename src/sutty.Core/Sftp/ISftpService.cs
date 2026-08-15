@@ -59,5 +59,27 @@ public interface ISftpService
     /// <summary>비어 있는 원격 디렉터리만 삭제한다.</summary>
     Task DeleteDirectoryAsync(string path, CancellationToken ct = default);
 
+    /// <summary>
+    /// Enumerates a bounded, non-destructive preview before recursive deletion.
+    /// The service must reject the remote root and must never follow symbolic links.
+    /// </summary>
+    Task<SftpDeletePreview> PreviewDeleteAsync(string path, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a file or a complete remote directory tree after the caller has shown
+    /// an explicit preview and confirmation. The remote root is always rejected.
+    /// </summary>
+    Task DeletePathRecursiveAsync(string path, CancellationToken ct = default);
+
+    /// <summary>
+    /// Applies a Unix permission mode (0000-7777). Recursive changes skip symbolic
+    /// links so a server cannot make this operation escape the selected tree.
+    /// </summary>
+    Task ChangePermissionsAsync(
+        string path,
+        int unixMode,
+        bool recursive = false,
+        CancellationToken ct = default);
+
     Task CreateDirectoryAsync(string path, CancellationToken ct = default);
 }

@@ -9,9 +9,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
-    <!-- The agent adapter's public IPrivateKeySource surface remains binary-compatible
-         with SSH.NET 2026; keep the security-fixed SSH.NET release despite the adapter's
-         conservative pre-2026 NuGet upper bound. -->
-    <PackageReference Include="SshNet.Agent" Version="2024.2.0.5" NoWarn="NU1608" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\sutty.SshAgent\sutty.SshAgent.csproj" />
   </ItemGroup>
 </Project>

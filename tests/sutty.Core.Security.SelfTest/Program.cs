@@ -96,6 +96,26 @@ var proxyCommandRoute = RouteResolver.Resolve(
     new ConnectionRoutePolicy());
 Assert(proxyCommandRoute.Command.Contains("%h:%p", StringComparison.Ordinal),
     "ProxyCommand route accepts endpoint placeholders without a proxy host field");
+var expandedProxyCommand = ProxyCommandTemplate.Expand(
+    proxyCommandRoute.Command,
+    "server.internal",
+    22,
+    "domain\\operator");
+Assert(expandedProxyCommand.Contains("\"server.internal\":22", StringComparison.Ordinal) &&
+       expandedProxyCommand.Contains("jump.example", StringComparison.Ordinal),
+    "ProxyCommand endpoint placeholders are quoted before cmd.exe execution");
+AssertThrows<RoutePolicyViolationException>(
+    () => ProxyCommandTemplate.Expand(
+        proxyCommandRoute.Command,
+        "server.internal & whoami",
+        22,
+        "operator"),
+    "ProxyCommand rejects shell metacharacters in target substitutions");
+Assert(!ForwardingExposurePolicy.IsExternalBind("127.0.0.1") &&
+       !ForwardingExposurePolicy.IsExternalBind("::1") &&
+       ForwardingExposurePolicy.IsExternalBind("0.0.0.0") &&
+       ForwardingExposurePolicy.IsExternalBind("::"),
+    "forwarding exposure policy distinguishes loopback and external listeners");
 
 var jumpRoute = RouteResolver.Resolve(
     new ConnectionRoute
@@ -370,15 +390,31 @@ static void AssertSshNet2026PublicApi()
 
 static void AssertSshAgentAdapterLoads()
 {
+    var requireLiveAgent = string.Equals(
+        Environment.GetEnvironmentVariable("SUTTY_REQUIRE_WINDOWS_AGENT"),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
     try
     {
         var agent = new SshAgent(TimeSpan.FromMilliseconds(500));
         var identities = agent.RequestIdentities();
         Assert(identities.All(identity => identity is IPrivateKeySource),
             "Windows SSH Agent identities implement the SSH.NET key-source contract");
+        if (requireLiveAgent)
+        {
+            Assert(identities.Length > 0,
+                "required Windows SSH Agent contains at least one test identity");
+        }
     }
-    catch (Exception ex) when (ex is SshAgentException or TimeoutException)
+    catch (Exception ex) when (ex is SshAgentException or TimeoutException or IOException)
     {
+        if (requireLiveAgent)
+        {
+            throw new InvalidOperationException(
+                "A live Windows SSH Agent was required but could not be queried.",
+                ex);
+        }
+
         // The Windows service or named pipe is optional on a build machine. Reaching the
         // adapter-specific transport still proves that the adapter loaded against SSH.NET.
     }

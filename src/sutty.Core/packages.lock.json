@@ -21,15 +21,6 @@
           "Microsoft.Extensions.Logging.Abstractions": "8.0.3"
         }
       },
-      "SshNet.Agent": {
-        "type": "Direct",
-        "requested": "[2024.2.0.5, )",
-        "resolved": "2024.2.0.5",
-        "contentHash": "Q7f1HCLmRUTkUtBgvooTw5H12uLN6oMUfGPADlKHXZtBq79C2q6T9DDuBecug4FhXl9Di1tTh4dIrOAwb6jutQ==",
-        "dependencies": {
-          "SSH.NET": "[2024.2.0, 2026.0.0)"
-        }
-      },
       "BouncyCastle.Cryptography": {
         "type": "Transitive",
         "resolved": "2.7.0",
@@ -39,6 +30,12 @@
         "type": "Transitive",
         "resolved": "8.0.2",
         "contentHash": "3iE7UF7MQkCv1cxzCahz+Y/guQbTqieyxyaWKhrRO91itI9cOKO76OHeQDahqG4MmW5umr3CcCvGmK92lWNlbg=="
+      },
+      "sutty.sshagent": {
+        "type": "Project",
+        "dependencies": {
+          "SSH.NET": "[2026.0.0, )"
+        }
       }
     }
   }

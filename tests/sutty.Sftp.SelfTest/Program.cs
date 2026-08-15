@@ -114,6 +114,80 @@ try
     Assert((await File.ReadAllBytesAsync(resumeDestination)).SequenceEqual(resumeBytes),
         "checksum-verified resumed download matches the source");
 
+    var policySource = Path.Combine(scratch, "policy-source.txt");
+    await File.WriteAllTextAsync(policySource, "incoming");
+    var skipDestination = Path.Combine(remote, "skip-policy.txt");
+    await File.WriteAllTextAsync(skipDestination, "existing");
+    var skippedUpload = await files.UploadPathAsync(
+        policySource,
+        skipDestination,
+        new SftpTransferOptions { ConflictPolicy = SftpConflictPolicy.Skip, VerifyChecksum = false });
+    Assert(skippedUpload.FilesTransferred == 0 && skippedUpload.FilesSkipped == 1 &&
+           await File.ReadAllTextAsync(skipDestination) == "existing",
+        "skip conflict policy preserves an existing upload destination");
+
+    var renameDestination = Path.Combine(remote, "rename-policy.txt");
+    await File.WriteAllTextAsync(renameDestination, "existing");
+    var renamedUpload = await files.UploadPathAsync(
+        policySource,
+        renameDestination,
+        new SftpTransferOptions { ConflictPolicy = SftpConflictPolicy.Rename, VerifyChecksum = false });
+    Assert(renamedUpload.FilesTransferred == 1 &&
+           await File.ReadAllTextAsync(Path.Combine(remote, "rename-policy (1).txt")) == "incoming",
+        "rename conflict policy creates a non-destructive upload name");
+
+    var newerDestination = Path.Combine(remote, "newer-policy.txt");
+    await File.WriteAllTextAsync(newerDestination, "existing");
+    File.SetLastWriteTimeUtc(policySource, DateTime.UtcNow.AddMinutes(-10));
+    File.SetLastWriteTimeUtc(newerDestination, DateTime.UtcNow);
+    var newerOnlySkipped = await files.UploadPathAsync(
+        policySource,
+        newerDestination,
+        new SftpTransferOptions { ConflictPolicy = SftpConflictPolicy.NewerOnly, VerifyChecksum = false });
+    Assert(newerOnlySkipped.FilesSkipped == 1 &&
+           await File.ReadAllTextAsync(newerDestination) == "existing",
+        "newer-only conflict policy preserves a newer destination");
+    File.SetLastWriteTimeUtc(policySource, DateTime.UtcNow.AddMinutes(10));
+    var newerOnlyReplaced = await files.UploadPathAsync(
+        policySource,
+        newerDestination,
+        new SftpTransferOptions { ConflictPolicy = SftpConflictPolicy.NewerOnly, VerifyChecksum = false });
+    Assert(newerOnlyReplaced.FilesTransferred == 1 &&
+           await File.ReadAllTextAsync(newerDestination) == "incoming",
+        "newer-only conflict policy replaces an older destination");
+
+    await AssertThrowsAsync<SftpTransferConflictException>(
+        () => files.UploadPathAsync(
+            policySource,
+            newerDestination,
+            new SftpTransferOptions { ConflictPolicy = SftpConflictPolicy.Ask, VerifyChecksum = false }),
+        "ask conflict policy never silently chooses an unattended action");
+
+    var downloadPolicySource = Path.Combine(remote, "download-policy-source.txt");
+    await File.WriteAllTextAsync(downloadPolicySource, "remote incoming");
+    var downloadSkipDestination = Path.Combine(downloads, "download-skip-policy.txt");
+    await File.WriteAllTextAsync(downloadSkipDestination, "existing");
+    var skippedDownload = await files.DownloadPathAsync(
+        downloadPolicySource,
+        downloadSkipDestination,
+        new SftpTransferOptions { ConflictPolicy = SftpConflictPolicy.Skip, VerifyChecksum = false });
+    Assert(skippedDownload.FilesSkipped == 1 &&
+           await File.ReadAllTextAsync(downloadSkipDestination) == "existing",
+        "skip conflict policy preserves an existing download destination");
+
+    var deleteRoot = Path.Combine(scratch, "delete-preview");
+    Directory.CreateDirectory(Path.Combine(deleteRoot, "nested"));
+    await File.WriteAllTextAsync(Path.Combine(deleteRoot, "nested", "payload.txt"), "remove me");
+    var deletePreview = await files.PreviewDeleteAsync(deleteRoot);
+    Assert(deletePreview.DirectoryCount == 2 && deletePreview.FileCount == 1 &&
+           deletePreview.PreviewPaths.Contains(Path.Combine("nested", "payload.txt")),
+        "recursive delete preview reports files, folders, and bounded paths");
+    await files.DeletePathRecursiveAsync(deleteRoot);
+    Assert(!Directory.Exists(deleteRoot), "safe recursive delete removes the selected tree");
+    await AssertThrowsAsync<IOException>(
+        () => files.PreviewDeleteAsync(Path.GetPathRoot(scratch)!),
+        "recursive delete rejects a filesystem root");
+
     var checkpointPath = Path.Combine(scratch, "checkpoints.json");
     var checkpointStore = new SftpTransferCheckpointStore(checkpointPath);
     var checkpointId = SftpTransferCheckpointStore.CreateId(
@@ -202,6 +276,12 @@ try
         Direction = sutty.Core.Sftp.SftpTransferDirection.Upload,
         SourcePath = source,
         DestinationPath = "/deploy/source.txt",
+        Options = new SftpTransferOptions
+        {
+            ConflictPolicy = SftpConflictPolicy.Rename,
+            Overwrite = false,
+            Resume = true,
+        },
         State = SftpQueueJobState.Running,
         Targets =
         [
@@ -241,8 +321,16 @@ try
         "restart recovery preserves successful servers");
     Assert(SftpTransferQueueStore.GetRetryTargetIds(recovered).SetEquals(["saved-beta"]),
         "restart recovery selects interrupted servers only");
+    Assert(recovered.Options.ConflictPolicy == SftpConflictPolicy.Rename,
+        "durable transfer queue preserves the per-job conflict policy");
     Assert(!File.ReadAllText(queuePath).Contains("password", StringComparison.OrdinalIgnoreCase),
         "durable transfer queue contains no credentials");
+
+    queue.UpdateTarget(queuedJob.Id, "saved-beta", SftpQueueTargetState.Paused);
+    var paused = queue.Get(queuedJob.Id)!;
+    Assert(paused.State == SftpQueueJobState.Paused &&
+           SftpTransferQueueStore.GetRetryTargetIds(paused).SetEquals(["saved-beta"]),
+        "paused transfer remains durable and is explicitly resumable");
 
     var cancelledPath = Path.Combine(downloads, "cancelled.txt");
     using var cancelled = new CancellationTokenSource();
@@ -378,6 +466,12 @@ sealed class RecordingSftpService(string? downloadSource = null, bool failFirstU
         throw new NotSupportedException();
     public Task DeleteDirectoryAsync(string path, CancellationToken ct = default) =>
         throw new NotSupportedException();
+    public Task<SftpDeletePreview> PreviewDeleteAsync(string path, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+    public Task DeletePathRecursiveAsync(string path, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+    public Task ChangePermissionsAsync(string path, int unixMode, bool recursive = false,
+        CancellationToken ct = default) => throw new NotSupportedException();
     public Task CreateDirectoryAsync(string path, CancellationToken ct = default) =>
         throw new NotSupportedException();
 }

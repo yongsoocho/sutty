@@ -162,6 +162,14 @@ public sealed partial class SshNetSession
             foreach (var rule in Info.PortForwardings)
             {
                 ValidateForwardingRule(rule);
+                if (ForwardingExposurePolicy.IsExternalBind(rule.BindHost))
+                {
+                    Log(
+                        ConnectionLogSeverity.Warning,
+                        "Port forwarding exposure",
+                        $"{rule.BindHost}:{rule.BindPort} 포워딩이 루프백 외부 주소에 바인드됩니다.",
+                        $"Forwarding {rule.BindHost}:{rule.BindPort} binds beyond loopback.");
+                }
                 ForwardedPort port = rule.Type switch
                 {
                     SshPortForwardingType.Local => new ForwardedPortLocal(

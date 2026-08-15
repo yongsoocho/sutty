@@ -298,6 +298,11 @@
                                     HorizontalAlignment="Stretch"
                                     Click="ImportIniProfiles_Click"
                                     Content="{x:Bind h:Loc.T('레거시 INI 프로필 폴더 가져오기…', 'Import legacy INI profile folder…')}" />
+                                <Button
+                                    x:Name="ImportSftpSiteManagerButton"
+                                    HorizontalAlignment="Stretch"
+                                    Click="ImportSftpSiteManager_Click"
+                                    Content="{x:Bind h:Loc.T('SFTP Site Manager XML 가져오기…', 'Import SFTP Site Manager XML…')}" />
                                 <TextBlock
                                     x:Name="ImportStatusText"
                                     AutomationProperties.LiveSetting="Polite"
@@ -327,10 +332,47 @@
                                         ValueChanged="NumberBox_ValueChanged"
                                         Style="{StaticResource SettingsNumber}" />
                                 </StackPanel>
+                                <StackPanel Spacing="6">
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="{x:Bind h:Loc.T('전송 완료 검증', 'TRANSFER VERIFICATION')}" />
+                                    <ComboBox
+                                        x:Name="SftpVerificationCombo"
+                                        HorizontalAlignment="Stretch"
+                                        SelectionChanged="SftpVerificationCombo_SelectionChanged">
+                                        <ComboBoxItem
+                                            Content="{x:Bind h:Loc.T('빠름 · 최종 크기만 확인', 'Fast · final size only')}"
+                                            Tag="SizeOnly" />
+                                        <ComboBoxItem
+                                            Content="{x:Bind h:Loc.T('안전 · 크기 + SHA-256 (기본)', 'Safe · size + SHA-256 (default)')}"
+                                            Tag="Sha256" />
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Spacing="6">
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="{x:Bind h:Loc.T('같은 이름 파일 처리', 'FILE CONFLICT POLICY')}" />
+                                    <ComboBox
+                                        x:Name="SftpConflictPolicyCombo"
+                                        HorizontalAlignment="Stretch"
+                                        SelectionChanged="SftpConflictPolicyCombo_SelectionChanged">
+                                        <ComboBoxItem
+                                            Content="{x:Bind h:Loc.T('매번 확인 (기본)', 'Ask every time (default)')}"
+                                            Tag="Ask" />
+                                        <ComboBoxItem
+                                            Content="{x:Bind h:Loc.T('안전하게 덮어쓰기', 'Safely overwrite')}"
+                                            Tag="Overwrite" />
+                                        <ComboBoxItem
+                                            Content="{x:Bind h:Loc.T('기존 파일 건너뛰기', 'Skip existing files')}"
+                                            Tag="Skip" />
+                                        <ComboBoxItem
+                                            Content="{x:Bind h:Loc.T('새 이름으로 저장', 'Keep both with a new name')}"
+                                            Tag="Rename" />
+                                        <ComboBoxItem
+                                            Content="{x:Bind h:Loc.T('새 파일일 때만 교체', 'Replace only when source is newer')}"
+                                            Tag="NewerOnly" />
+                                    </ComboBox>
+                                </StackPanel>
                                 <TextBlock
                                     FontSize="10.5"
                                     Foreground="{ThemeResource TextMuted}"
-                                    Text="{x:Bind h:Loc.T('이어받기 체크포인트를 유지하며 연결 오류와 체크섬 불일치만 다시 시도합니다.', 'Keeps resume checkpoints and retries only connection errors and checksum mismatches.')}"
+                                    Text="{x:Bind h:Loc.T('SHA-256 모드는 전송 후 원격 파일을 다시 읽으므로 대용량 파일에서 더 오래 걸립니다.', 'SHA-256 mode rereads the remote file after transfer and takes longer for large files.')}"
                                     TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>

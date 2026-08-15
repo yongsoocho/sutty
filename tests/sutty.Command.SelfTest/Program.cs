@@ -162,6 +162,40 @@ try
            secureCrt.AuthMethod == "PublicKey",
         "INI saved-session host and key import");
 
+    var siteManagerXml = HostProfileImportService.ParseSftpSiteManagerXml("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <SftpSiteManager>
+          <Servers>
+            <Folder>
+              <Name>Production</Name>
+              <Server>
+                <Host>sftp.example</Host>
+                <Port>2222</Port>
+                <Protocol>1</Protocol>
+                <Logontype>1</Logontype>
+                <User>deployer</User>
+                <Pass>must-not-be-imported</Pass>
+                <Keyfile>C:\keys\deploy.ppk</Keyfile>
+                <Name>Deploy target</Name>
+              </Server>
+            </Folder>
+            <Server>
+              <Host>ftp.example</Host>
+              <Port>21</Port>
+              <Protocol>0</Protocol>
+              <Name>FTP-only</Name>
+            </Server>
+          </Servers>
+        </SftpSiteManager>
+        """);
+    var importedSiteManager = siteManagerXml.Profiles.Single();
+    Assert(importedSiteManager.Host == "sftp.example" && importedSiteManager.Port == 2222 &&
+           importedSiteManager.AuthMethod == "PublicKey" &&
+           importedSiteManager.GroupName == "SFTP Site Manager import / Production",
+        "SFTP site-manager import preserves hierarchy and key path");
+    Assert(siteManagerXml.Warnings.Any(item => item.Contains("non-SFTP", StringComparison.Ordinal)),
+        "FTP entries are never guessed as SSH profiles");
+
     HostHistoryStore.Append(
         "Production API", "api.example", "admin", 2202, "PublicKey", @"C:\keys\api.key",
         ["api"], "Success", null, 125);

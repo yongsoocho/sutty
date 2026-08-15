@@ -423,16 +423,20 @@ public sealed partial class FileTreePanel : UserControl
                     transferItem.DestinationPath.Equals(
                         RemotePath.Combine(directory.FullPath, item.Name),
                         StringComparison.Ordinal));
-            var overwrite = !collision || await ConfirmOverwriteAsync(item.Name);
+            var conflictPolicy = await ResolveConflictPolicyAsync(item.Name, collision);
             if (!_isAvailable || !ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion)
                 return;
-            if (collision && !overwrite) continue;
-            _ = UploadAsync(item, directory.FullPath, overwrite, sftp, sessionVersion);
+            if (conflictPolicy is null) continue;
+            _ = UploadAsync(item, directory.FullPath, conflictPolicy.Value, sftp, sessionVersion);
         }
     }
 
     private async Task UploadAsync(
-        IStorageItem item, string remoteDirectory, bool overwrite, ISftpService sftp, int sessionVersion)
+        IStorageItem item,
+        string remoteDirectory,
+        SftpConflictPolicy conflictPolicy,
+        ISftpService sftp,
+        int sessionVersion)
     {
         long size = 0;
         if (item is StorageFile file)
@@ -442,7 +446,7 @@ public sealed partial class FileTreePanel : UserControl
         if (!ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion) return;
 
         var destination = RemotePath.Combine(remoteDirectory, item.Name);
-        var options = CreateTransferOptions(overwrite);
+        var options = CreateTransferOptions(conflictPolicy);
         var queuedJob = CreateSingleQueuedJob(
             sutty.Core.Sftp.SftpTransferDirection.Upload,
             item.Path,
@@ -495,12 +499,20 @@ public sealed partial class FileTreePanel : UserControl
         }
         catch (OperationCanceledException)
         {
-            transfer.MarkCancelled();
-            UpdateQueuedTransfer(
-                queuedJob,
-                transfer.UserCancellationRequested
-                    ? SftpQueueTargetState.Cancelled
-                    : SftpQueueTargetState.Interrupted);
+            if (transfer.PauseRequested)
+            {
+                transfer.MarkPaused();
+                UpdateQueuedTransfer(queuedJob, SftpQueueTargetState.Paused);
+            }
+            else
+            {
+                transfer.MarkCancelled();
+                UpdateQueuedTransfer(
+                    queuedJob,
+                    transfer.UserCancellationRequested
+                        ? SftpQueueTargetState.Cancelled
+                        : SftpQueueTargetState.Interrupted);
+            }
         }
         catch (Exception ex)
         {
@@ -512,7 +524,8 @@ public sealed partial class FileTreePanel : UserControl
         finally
         {
             if (workerAcquired) _transferWorkerGate.Release();
-            transfer.Dispose();
+            if (transfer.State != SftpTransferState.Paused)
+                transfer.Dispose();
             RefreshRestoredTransfers();
         }
     }
@@ -575,12 +588,24 @@ public sealed partial class FileTreePanel : UserControl
                 "This location does not provide a direct file path for downloads."));
             return;
         }
-        _ = DownloadAsync(node, localPath, sftp, sessionVersion);
+        var localCollision = File.Exists(localPath) || Directory.Exists(localPath);
+        var conflictPolicy = await ResolveConflictPolicyAsync(node.Name, localCollision);
+        if (conflictPolicy is null || !_isAvailable || !ReferenceEquals(_sftp, sftp) ||
+            sessionVersion != _sessionVersion)
+        {
+            return;
+        }
+        _ = DownloadAsync(node, localPath, conflictPolicy.Value, sftp, sessionVersion);
     }
 
-    private async Task DownloadAsync(FileNode node, string localPath, ISftpService sftp, int sessionVersion)
+    private async Task DownloadAsync(
+        FileNode node,
+        string localPath,
+        SftpConflictPolicy conflictPolicy,
+        ISftpService sftp,
+        int sessionVersion)
     {
-        var options = CreateTransferOptions(overwrite: true);
+        var options = CreateTransferOptions(conflictPolicy);
         var queuedJob = CreateSingleQueuedJob(
             sutty.Core.Sftp.SftpTransferDirection.Download,
             node.FullPath,
@@ -620,7 +645,7 @@ public sealed partial class FileTreePanel : UserControl
             UpdateQueuedTransfer(queuedJob, SftpQueueTargetState.Running);
             var progress = new Progress<sutty.Core.Sftp.SftpTransferProgress>(itemProgress =>
                 transfer.Report(itemProgress.Fraction));
-            // The picker is the explicit user destination/overwrite confirmation.
+            // The picker chooses the local path; the durable policy above controls collisions.
             await sftp.DownloadPathAsync(
                 node.FullPath,
                 localPath,
@@ -632,12 +657,20 @@ public sealed partial class FileTreePanel : UserControl
         }
         catch (OperationCanceledException)
         {
-            transfer.MarkCancelled();
-            UpdateQueuedTransfer(
-                queuedJob,
-                transfer.UserCancellationRequested
-                    ? SftpQueueTargetState.Cancelled
-                    : SftpQueueTargetState.Interrupted);
+            if (transfer.PauseRequested)
+            {
+                transfer.MarkPaused();
+                UpdateQueuedTransfer(queuedJob, SftpQueueTargetState.Paused);
+            }
+            else
+            {
+                transfer.MarkCancelled();
+                UpdateQueuedTransfer(
+                    queuedJob,
+                    transfer.UserCancellationRequested
+                        ? SftpQueueTargetState.Cancelled
+                        : SftpQueueTargetState.Interrupted);
+            }
         }
         catch (Exception ex)
         {
@@ -649,7 +682,8 @@ public sealed partial class FileTreePanel : UserControl
         finally
         {
             if (workerAcquired) _transferWorkerGate.Release();
-            transfer.Dispose();
+            if (transfer.State != SftpTransferState.Paused)
+                transfer.Dispose();
             RefreshRestoredTransfers();
         }
     }
@@ -709,26 +743,40 @@ public sealed partial class FileTreePanel : UserControl
             _sftp is not { } sftp) return;
         var version = _sessionVersion;
         var token = _sessionCts.Token;
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = Loc.T("원격 항목 삭제", "Delete remote item"),
-            Content = node.IsDirectory
-                ? Loc.T($"빈 폴더 '{node.Name}'을(를) 삭제할까요? 비어 있지 않으면 삭제되지 않습니다.",
-                    $"Delete the empty folder '{node.Name}'? Non-empty folders will not be deleted.")
-                : Loc.T($"파일 '{node.Name}'을(를) 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
-                    $"Delete '{node.Name}'? This cannot be undone."),
-            PrimaryButtonText = Loc.T("삭제", "Delete"),
-            CloseButtonText = Loc.T("취소", "Cancel"),
-            DefaultButton = ContentDialogButton.Close,
-        };
-        if (await ShowDialogSafelyAsync(dialog) != ContentDialogResult.Primary) return;
-        if (!_isAvailable || token.IsCancellationRequested ||
-            !ReferenceEquals(_sftp, sftp) || version != _sessionVersion) return;
         try
         {
-            if (node.IsDirectory) await sftp.DeleteDirectoryAsync(node.FullPath, token);
-            else await sftp.DeleteFileAsync(node.FullPath, token);
+            if (node.IsDirectory)
+            {
+                var preview = await sftp.PreviewDeleteAsync(node.FullPath, token);
+                if (!_isAvailable || token.IsCancellationRequested ||
+                    !ReferenceEquals(_sftp, sftp) || version != _sessionVersion)
+                    return;
+                if (!await ConfirmRecursiveDeleteAsync(node, preview))
+                    return;
+                if (!_isAvailable || token.IsCancellationRequested ||
+                    !ReferenceEquals(_sftp, sftp) || version != _sessionVersion)
+                {
+                    return;
+                }
+                await sftp.DeletePathRecursiveAsync(node.FullPath, token);
+            }
+            else
+            {
+                var dialog = new ContentDialog
+                {
+                    XamlRoot = XamlRoot,
+                    Title = Loc.T("원격 파일 삭제", "Delete remote file"),
+                    Content = Loc.T($"파일 '{node.Name}'을(를) 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+                        $"Delete '{node.Name}'? This cannot be undone."),
+                    PrimaryButtonText = Loc.T("삭제", "Delete"),
+                    CloseButtonText = Loc.T("취소", "Cancel"),
+                    DefaultButton = ContentDialogButton.Close,
+                };
+                if (await ShowDialogSafelyAsync(dialog) != ContentDialogResult.Primary) return;
+                if (!_isAvailable || token.IsCancellationRequested ||
+                    !ReferenceEquals(_sftp, sftp) || version != _sessionVersion) return;
+                await sftp.DeleteFileAsync(node.FullPath, token);
+            }
             if (ReferenceEquals(_sftp, sftp) && version == _sessionVersion)
                 await NavigateToPathAsync(_currentPath);
         }
@@ -737,6 +785,77 @@ public sealed partial class FileTreePanel : UserControl
         {
             if (ReferenceEquals(_sftp, sftp) && version == _sessionVersion)
                 ShowOperationError(Loc.T("삭제 실패", "Delete failed"), ex);
+        }
+    }
+
+    private async void ChangePermissions_Click(object sender, RoutedEventArgs e)
+    {
+        if (NodeFrom(sender) is not { CanModify: true } node || !IsNodeCurrent(node) ||
+            _sftp is not { } sftp) return;
+        var version = _sessionVersion;
+        var token = _sessionCts.Token;
+        var modeBox = new TextBox
+        {
+            Text = node.IsDirectory ? "0755" : "0644",
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas"),
+            Header = Loc.T("Unix 권한 (8진수)", "Unix permissions (octal)"),
+            PlaceholderText = "0755",
+            MinWidth = 240,
+            MaxLength = 4,
+        };
+        var recursive = new CheckBox
+        {
+            Content = Loc.T("하위 항목에도 적용 (심볼릭 링크 제외)",
+                "Apply to descendants (symbolic links excluded)"),
+            Visibility = node.IsDirectory ? Visibility.Visible : Visibility.Collapsed,
+        };
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(new TextBlock
+        {
+            Text = Loc.T(
+                $"{node.FullPath}의 권한을 변경합니다. 서버 권한 정책에 따라 실패할 수 있습니다.",
+                $"Change permissions for {node.FullPath}. Server permissions can reject this operation."),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        content.Children.Add(modeBox);
+        content.Children.Add(recursive);
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = Loc.T("원격 권한 변경", "Change remote permissions"),
+            Content = content,
+            PrimaryButtonText = Loc.T("적용", "Apply"),
+            CloseButtonText = Loc.T("취소", "Cancel"),
+            DefaultButton = ContentDialogButton.Close,
+            IsPrimaryButtonEnabled = TryParseUnixMode(modeBox.Text, out _),
+        };
+        modeBox.TextChanged += (_, _) =>
+            dialog.IsPrimaryButtonEnabled = TryParseUnixMode(modeBox.Text, out _);
+        dialog.Opened += (_, _) =>
+        {
+            modeBox.Focus(FocusState.Programmatic);
+            modeBox.SelectAll();
+        };
+
+        if (await ShowDialogSafelyAsync(dialog) != ContentDialogResult.Primary ||
+            !TryParseUnixMode(modeBox.Text, out var unixMode) ||
+            !_isAvailable || token.IsCancellationRequested ||
+            !ReferenceEquals(_sftp, sftp) || version != _sessionVersion)
+        {
+            return;
+        }
+
+        try
+        {
+            await sftp.ChangePermissionsAsync(node.FullPath, unixMode, recursive.IsChecked == true, token);
+            if (ReferenceEquals(_sftp, sftp) && version == _sessionVersion)
+                await NavigateToPathAsync(_currentPath);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_sftp, sftp) && version == _sessionVersion)
+                ShowOperationError(Loc.T("권한 변경 실패", "Permission change failed"), ex);
         }
     }
 
@@ -758,6 +877,57 @@ public sealed partial class FileTreePanel : UserControl
     {
         if ((sender as FrameworkElement)?.Tag is SftpTransferItemVm transfer)
             transfer.Cancel(userInitiated: true);
+    }
+
+    private void PauseTransfer_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is SftpTransferItemVm transfer)
+            transfer.Pause();
+    }
+
+    private void ResumePausedTransfer_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not SftpTransferItemVm paused ||
+            paused.State != SftpTransferState.Paused ||
+            string.IsNullOrWhiteSpace(paused.QueueJobId) ||
+            _sftp is not { } sftp || _session is null)
+        {
+            return;
+        }
+
+        SftpQueuedJob? job;
+        try { job = _transferQueue.Get(paused.QueueJobId); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            ShowOperationError(Loc.T("전송 큐를 읽을 수 없습니다", "Could not read the transfer queue"), error);
+            return;
+        }
+        if (job is null || job.Mode != SftpQueueMode.Single ||
+            !job.Targets.Any(target => target.Id == CurrentSftpPersistenceId()))
+        {
+            ShowStatus(Loc.T("재개할 전송 정보를 찾을 수 없습니다.", "The paused transfer could not be found."));
+            return;
+        }
+
+        var sessionVersion = _sessionVersion;
+        Transfers.Remove(paused);
+        paused.Dispose();
+        var target = job.Targets.Single(item => item.Id == CurrentSftpPersistenceId());
+        var transfer = TryAddTransfer(
+            job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                ? Path.GetFileName(job.SourcePath.TrimEnd(
+                    Path.DirectorySeparatorChar,
+                    Path.AltDirectorySeparatorChar))
+                : RemotePath.GetName(job.SourcePath),
+            job.SourcePath,
+            job.DestinationPath,
+            target.TotalBytes,
+            job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                ? UiSftpTransferDirection.Upload
+                : UiSftpTransferDirection.Download,
+            job.Id);
+        if (transfer is not null)
+            _ = ResumeSingleQueuedJobAsync(job, transfer, sftp, sessionVersion);
     }
 
     public void CancelTransfersForSession(ISshSession session, bool userInitiated)
@@ -911,12 +1081,20 @@ public sealed partial class FileTreePanel : UserControl
         }
         catch (OperationCanceledException)
         {
-            transfer.MarkCancelled();
-            UpdateQueuedTransfer(
-                job,
-                transfer.UserCancellationRequested
-                    ? SftpQueueTargetState.Cancelled
-                    : SftpQueueTargetState.Interrupted);
+            if (transfer.PauseRequested)
+            {
+                transfer.MarkPaused();
+                UpdateQueuedTransfer(job, SftpQueueTargetState.Paused);
+            }
+            else
+            {
+                transfer.MarkCancelled();
+                UpdateQueuedTransfer(
+                    job,
+                    transfer.UserCancellationRequested
+                        ? SftpQueueTargetState.Cancelled
+                        : SftpQueueTargetState.Interrupted);
+            }
         }
         catch (Exception error)
         {
@@ -928,7 +1106,8 @@ public sealed partial class FileTreePanel : UserControl
         finally
         {
             if (workerAcquired) _transferWorkerGate.Release();
-            transfer.Dispose();
+            if (transfer.State != SftpTransferState.Paused)
+                transfer.Dispose();
             RefreshRestoredTransfers();
         }
     }
@@ -1021,30 +1200,128 @@ public sealed partial class FileTreePanel : UserControl
         return transfer;
     }
 
-    private static SftpTransferOptions CreateTransferOptions(bool overwrite)
+    private static SftpTransferOptions CreateTransferOptions(SftpConflictPolicy conflictPolicy)
     {
         var settings = SettingsService.Current;
         return new SftpTransferOptions
         {
-            Overwrite = overwrite,
+            Overwrite = conflictPolicy is SftpConflictPolicy.Overwrite or SftpConflictPolicy.NewerOnly,
+            ConflictPolicy = conflictPolicy,
             Resume = true,
-            VerifyChecksum = true,
+            VerifyChecksum = string.Equals(
+                settings.SftpVerificationMode,
+                "Sha256",
+                StringComparison.OrdinalIgnoreCase),
             RetryEnabled = settings.SftpRetryEnabled,
             MaxRetries = settings.SftpRetryCount,
         };
     }
 
-    private async Task<bool> ConfirmOverwriteAsync(string name)
+    private async Task<SftpConflictPolicy?> ResolveConflictPolicyAsync(string name, bool collision)
     {
+        var configured = SftpTransferOptions.ParseConflictPolicy(
+            SettingsService.Current.SftpConflictPolicy);
+        if (configured != SftpConflictPolicy.Ask)
+            return configured;
+
+        var choices = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+        choices.Items.Add(new ComboBoxItem
+        {
+            Content = Loc.T("기존 파일 건너뛰기", "Skip existing files"),
+            Tag = SftpConflictPolicy.Skip,
+        });
+        choices.Items.Add(new ComboBoxItem
+        {
+            Content = Loc.T("안전하게 덮어쓰기", "Safely overwrite"),
+            Tag = SftpConflictPolicy.Overwrite,
+        });
+        choices.Items.Add(new ComboBoxItem
+        {
+            Content = Loc.T("새 이름으로 저장", "Keep both with a new name"),
+            Tag = SftpConflictPolicy.Rename,
+        });
+        choices.Items.Add(new ComboBoxItem
+        {
+            Content = Loc.T("새 파일일 때만 교체", "Replace only when source is newer"),
+            Tag = SftpConflictPolicy.NewerOnly,
+        });
+        choices.SelectedIndex = 0;
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(new TextBlock
+        {
+            Text = collision
+                ? Loc.T($"'{name}'과(와) 같은 이름의 항목이 이미 있습니다.",
+                    $"An item named '{name}' already exists.")
+                : Loc.T($"'{name}' 전송 중 같은 이름의 항목이 발견될 경우 적용할 방법을 선택하세요.",
+                    $"Choose what to do if a name conflict is found while transferring '{name}'."),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        content.Children.Add(choices);
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = Loc.T("같은 이름의 파일", "File already exists"),
-            Content = Loc.T($"'{name}'을(를) 안전하게 교체할까요?", $"Safely replace '{name}'?"),
-            PrimaryButtonText = Loc.T("교체", "Replace"),
-            CloseButtonText = Loc.T("건너뛰기", "Skip"),
+            Title = Loc.T("같은 이름 파일 처리", "File conflict policy"),
+            Content = content,
+            PrimaryButtonText = Loc.T("이 정책으로 전송", "Transfer with this policy"),
+            CloseButtonText = Loc.T("취소", "Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
+        if (await ShowDialogSafelyAsync(dialog) != ContentDialogResult.Primary ||
+            choices.SelectedItem is not ComboBoxItem { Tag: SftpConflictPolicy policy })
+        {
+            return null;
+        }
+        return policy;
+    }
+
+    private async Task<bool> ConfirmRecursiveDeleteAsync(
+        FileNode node,
+        SftpDeletePreview preview)
+    {
+        var paths = preview.PreviewPaths.Count == 0
+            ? Loc.T("(비어 있음)", "(empty)")
+            : string.Join(Environment.NewLine, preview.PreviewPaths.Select(path => $"• {path}"));
+        var acknowledgement = new CheckBox
+        {
+            Content = Loc.T("이 폴더와 모든 하위 항목을 영구 삭제함을 이해했습니다.",
+                "I understand this permanently deletes the folder and all descendants."),
+        };
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(new TextBlock
+        {
+            Text = Loc.T(
+                $"'{node.FullPath}'에서 파일 {preview.FileCount:N0}개, 폴더 {preview.DirectoryCount:N0}개를 삭제합니다. 총 {FormatBytes(preview.TotalBytes)}입니다.",
+                $"Delete {preview.FileCount:N0} file(s) and {preview.DirectoryCount:N0} folder(s) from '{node.FullPath}' ({FormatBytes(preview.TotalBytes)} total)."),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = Loc.T("미리보기 (최대 20개)", "Preview (up to 20 paths)"),
+            Foreground = ThemeResources.Brush(this, "TextMuted"),
+            FontSize = 11,
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = paths,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas"),
+            FontSize = 10.5,
+            MaxHeight = 180,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        content.Children.Add(acknowledgement);
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = Loc.T("원격 폴더 영구 삭제", "Permanently delete remote folder"),
+            Content = content,
+            PrimaryButtonText = Loc.T("영구 삭제", "Delete permanently"),
+            CloseButtonText = Loc.T("취소", "Cancel"),
+            DefaultButton = ContentDialogButton.Close,
+            IsPrimaryButtonEnabled = false,
+        };
+        acknowledgement.Checked += (_, _) => dialog.IsPrimaryButtonEnabled = true;
+        acknowledgement.Unchecked += (_, _) => dialog.IsPrimaryButtonEnabled = false;
         return await ShowDialogSafelyAsync(dialog) == ContentDialogResult.Primary;
     }
 
@@ -1090,6 +1367,31 @@ public sealed partial class FileTreePanel : UserControl
         return !string.IsNullOrEmpty(value) && value is not "." and not ".." &&
                !value.Contains('/') && !value.Contains('\\');
     }
+
+    private static bool TryParseUnixMode(string? value, out int unixMode)
+    {
+        unixMode = 0;
+        var normalized = value?.Trim() ?? "";
+        if (normalized.Length is < 3 or > 4 || normalized.Any(character => character is < '0' or > '7'))
+            return false;
+        try
+        {
+            unixMode = Convert.ToInt32(normalized, 8);
+            return unixMode is >= 0 and <= 0x0FFF;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes:N0} B",
+        < 1024 * 1024 => $"{bytes / 1024d:0.#} KB",
+        < 1024 * 1024 * 1024 => $"{bytes / 1024d / 1024d:0.#} MB",
+        _ => $"{bytes / 1024d / 1024d / 1024d:0.#} GB",
+    };
 
     private static FileNode? NodeFrom(object sender) =>
         (sender as FrameworkElement)?.Tag as FileNode;

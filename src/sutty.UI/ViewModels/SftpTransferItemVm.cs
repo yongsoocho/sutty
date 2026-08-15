@@ -16,6 +16,8 @@ public enum SftpTransferState
 {
     Queued,
     Running,
+    Pausing,
+    Paused,
     Cancelling,
     Completed,
     Cancelled,
@@ -27,7 +29,6 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
 {
     private readonly Stopwatch _watch = new();
     private readonly CancellationTokenSource _cancellation = new();
-    private readonly CancellationToken _token;
     private double _progress;
     private SftpTransferState _state = SftpTransferState.Queued;
     private string? _error;
@@ -47,7 +48,6 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
         TotalBytes = Math.Max(0, totalBytes);
         Direction = direction;
         QueueJobId = queueJobId;
-        _token = _cancellation.Token;
     }
 
     public string Name { get; }
@@ -57,7 +57,8 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     public SftpTransferDirection Direction { get; }
     public string? QueueJobId { get; }
     public bool UserCancellationRequested => _userCancellationRequested;
-    public CancellationToken Token => _token;
+    public bool PauseRequested { get; private set; }
+    public CancellationToken Token => _cancellation.Token;
     public string DirectionGlyph => Direction == SftpTransferDirection.Upload ? "\uE898" : "\uE896";
     public string DirectionText => Direction == SftpTransferDirection.Upload
         ? Loc.T("업로드", "Upload")
@@ -84,18 +85,25 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
             OnPropertyChanged(nameof(ProgressText));
             OnPropertyChanged(nameof(DetailText));
             OnPropertyChanged(nameof(CanCancel));
+            OnPropertyChanged(nameof(CanPause));
+            OnPropertyChanged(nameof(CanResume));
             OnPropertyChanged(nameof(IsActive));
         }
     }
 
     public bool CanCancel => State is SftpTransferState.Queued or SftpTransferState.Running;
-    public bool IsActive => State is SftpTransferState.Queued or SftpTransferState.Running or SftpTransferState.Cancelling;
+    public bool CanPause => State is SftpTransferState.Queued or SftpTransferState.Running;
+    public bool CanResume => State == SftpTransferState.Paused;
+    public bool IsActive => State is SftpTransferState.Queued or SftpTransferState.Running or
+        SftpTransferState.Pausing or SftpTransferState.Cancelling;
     public string ProgressText => $"{Progress:P0}";
 
     public string StateText => State switch
     {
         SftpTransferState.Queued => Loc.T("대기", "Queued"),
         SftpTransferState.Running => Loc.T("전송 중", "Transferring"),
+        SftpTransferState.Pausing => Loc.T("일시 정지 중", "Pausing"),
+        SftpTransferState.Paused => Loc.T("일시 정지됨", "Paused"),
         SftpTransferState.Cancelling => Loc.T("취소 중", "Cancelling"),
         SftpTransferState.Completed => Loc.T("완료", "Completed"),
         SftpTransferState.Cancelled => Loc.T("취소됨", "Cancelled"),
@@ -109,7 +117,8 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
         {
             if (State == SftpTransferState.Failed && !string.IsNullOrWhiteSpace(_error))
                 return $"{DirectionText} · {_error}";
-            if (State is SftpTransferState.Completed or SftpTransferState.Cancelled or SftpTransferState.Cancelling)
+            if (State is SftpTransferState.Completed or SftpTransferState.Cancelled or
+                SftpTransferState.Cancelling or SftpTransferState.Pausing or SftpTransferState.Paused)
                 return $"{DirectionText} · {StateText}";
             if (State != SftpTransferState.Running || _watch.Elapsed.TotalSeconds <= 0)
                 return $"{DirectionText} · {StateText}";
@@ -140,6 +149,7 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
 
     public void Complete()
     {
+        PauseRequested = false;
         Progress = 1;
         _watch.Stop();
         State = SftpTransferState.Completed;
@@ -147,12 +157,22 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
 
     public void MarkCancelled()
     {
+        PauseRequested = false;
         _watch.Stop();
         State = SftpTransferState.Cancelled;
     }
 
+    public void MarkPaused()
+    {
+        if (!PauseRequested)
+            return;
+        _watch.Stop();
+        State = SftpTransferState.Paused;
+    }
+
     public void Fail(string message)
     {
+        PauseRequested = false;
         _watch.Stop();
         _error = message;
         State = SftpTransferState.Failed;
@@ -161,8 +181,18 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     public void Cancel(bool userInitiated = false)
     {
         if (!CanCancel) return;
+        PauseRequested = false;
         _userCancellationRequested |= userInitiated;
         State = SftpTransferState.Cancelling;
+        _cancellation.Cancel();
+    }
+
+    public void Pause()
+    {
+        if (!CanPause)
+            return;
+        PauseRequested = true;
+        State = SftpTransferState.Pausing;
         _cancellation.Cancel();
     }
 

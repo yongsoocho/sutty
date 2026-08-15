@@ -51,6 +51,7 @@ public sealed partial class HomePanel : UserControl
             KeyPathBox.Text = _keyPathHistory[0];
 
         UpdateAuthUi();
+        RefreshProxyCommandPreview();
         ActualThemeChanged += (_, _) => UpdateAuthUi();
     }
 
@@ -63,7 +64,11 @@ public sealed partial class HomePanel : UserControl
             KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
     }
 
-    public void RefreshLanguage() => Bindings.Update();
+    public void RefreshLanguage()
+    {
+        Bindings.Update();
+        RefreshProxyCommandPreview();
+    }
 
     /// <summary>Loads a saved-host or history draft. Secrets are supplied only from the encrypted vault.</summary>
     public void ApplyConnectionDraft(SshConnectionInfo draft)
@@ -100,6 +105,7 @@ public sealed partial class HomePanel : UserControl
             JumpPassphraseBox.Password = draft.Route.Passphrase ?? "";
             ProxyCommandBox.Text = draft.Route.Command ?? "";
         }
+        RefreshProxyCommandPreview();
         EnterpriseRouteCheck.IsChecked = draft.RoutePolicy?.EnterpriseMode == true;
 
         var forwarding = draft.PortForwardings?.FirstOrDefault();
@@ -207,6 +213,58 @@ public sealed partial class HomePanel : UserControl
                 ConnectionRouteType.SshJump => "22",
                 _ => "1080",
             };
+
+        RefreshProxyCommandPreview();
+    }
+
+    private void ProxyCommandInput_TextChanged(object sender, TextChangedEventArgs e)
+        => RefreshProxyCommandPreview();
+
+    private void RefreshProxyCommandPreview()
+    {
+        if (ProxyCommandPreviewText is null || ProxyCommandBox is null ||
+            HostBox is null || PortBox is null || UsernameBox is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(ProxyCommandBox.Text))
+        {
+            ProxyCommandPreviewText.Text = Loc.T(
+                "실행 미리보기는 명령을 입력하면 표시됩니다.",
+                "The execution preview appears after you enter a command.");
+            ProxyCommandPreviewText.Foreground = ThemeResources.Brush(this, "TextMuted");
+            return;
+        }
+
+        if (!int.TryParse(PortBox.Text, out var port))
+        {
+            ProxyCommandPreviewText.Text = Loc.T(
+                "실행 미리보기 · 대상 포트를 확인하세요.",
+                "Execution preview · check the target port.");
+            ProxyCommandPreviewText.Foreground = ThemeResources.Brush(this, "StatusRed");
+            return;
+        }
+
+        try
+        {
+            var expanded = ProxyCommandTemplate.Expand(
+                ProxyCommandBox.Text,
+                HostBox.Text,
+                port,
+                UsernameBox.Text);
+            ProxyCommandPreviewText.Text = Loc.T(
+                $"실행 미리보기 · {expanded}",
+                $"Execution preview · {expanded}");
+            ProxyCommandPreviewText.Foreground = ThemeResources.Brush(this, "TextMuted");
+        }
+        catch (RoutePolicyViolationException error)
+        {
+            ProxyCommandPreviewText.Text = Loc.T(
+                $"실행할 수 없음 · {error.Message}",
+                $"Cannot execute · {error.Message}");
+            ProxyCommandPreviewText.Foreground = ThemeResources.Brush(this, "StatusRed");
+        }
     }
 
     private ConnectionRouteType SelectedRouteType()
@@ -555,6 +613,27 @@ public sealed partial class HomePanel : UserControl
             SettingsSaveStatusText.Visibility = Visibility.Visible;
             ProxyCommandBox.Focus(FocusState.Programmatic);
             return;
+        }
+
+        if (routeType == ConnectionRouteType.ExternalProxyCommand)
+        {
+            try
+            {
+                _ = ProxyCommandTemplate.Expand(
+                    ProxyCommandBox.Text,
+                    host,
+                    port,
+                    UsernameBox.Text);
+            }
+            catch (RoutePolicyViolationException error)
+            {
+                SettingsSaveStatusText.Text = Loc.T(
+                    $"ProxyCommand 안전성 검사 실패: {error.Message}",
+                    $"ProxyCommand safety check failed: {error.Message}");
+                SettingsSaveStatusText.Visibility = Visibility.Visible;
+                ProxyCommandBox.Focus(FocusState.Programmatic);
+                return;
+            }
         }
 
         List<SshPortForwardingRule> forwardings = [];

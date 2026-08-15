@@ -30,8 +30,18 @@ env:
 
 jobs:
   package:
-    name: Build, sign, and verify x64 MSIX
+    name: Build, sign, and verify ${{ matrix.processor }} MSIX
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            runtime: win-x64
+            processor: x64
+          - platform: ARM64
+            runtime: win-arm64
+            processor: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +61,7 @@ jobs:
           RELEASE_BASE_URL: ${{ inputs.release_base_url }}
           CERTIFICATE_BASE64: ${{ secrets.SUTTY_MSIX_CERT_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.SUTTY_MSIX_CERT_PASSWORD }}
+          TARGET_ARCHITECTURE: ${{ matrix.processor }}
         run: |
           $versionPattern = '^[1-9][0-9]{0,4}(\.[0-9]{1,5}){3}$'
           if ($env:PACKAGE_VERSION -notmatch $versionPattern) {
@@ -96,19 +107,17 @@ jobs:
           $manifest.Package.Identity.Publisher = $certificate.Subject
           $manifest.Save($manifestPath)
 
-          $packageFileName = "Sutty-$($env:PACKAGE_VERSION)-x64.msix"
+          $packageFileName = "Sutty-$($env:PACKAGE_VERSION)-$($env:TARGET_ARCHITECTURE).msix"
           "certificate_path=$certificatePath" >> $env:GITHUB_OUTPUT
           "publisher=$($certificate.Subject)" >> $env:GITHUB_OUTPUT
           "package_file_name=$packageFileName" >> $env:GITHUB_OUTPUT
           "release_base_url=$($env:RELEASE_BASE_URL.TrimEnd('/'))" >> $env:GITHUB_OUTPUT
 
       - name: Restore locked dependencies
-        env:
-          RuntimeIdentifiers: win-x64;win-arm64
         run: >-
           dotnet restore .\sutty.slnx
           --locked-mode
-          -p:Platform=x64
+          -p:Platform=${{ matrix.platform }}
           -p:Configuration=Release
           -p:PublishReadyToRun=false
           -p:PublishTrimmed=false
@@ -117,11 +126,11 @@ jobs:
         run: >-
           dotnet publish .\src\sutty.UI\sutty.UI.csproj
           --configuration Release
-          --runtime win-x64
+          --runtime ${{ matrix.runtime }}
           --self-contained true
           --no-restore
-          --output .\artifacts\release-policy-check
-          -p:Platform=x64
+          --output .\artifacts\release-policy-check-${{ matrix.processor }}
+          -p:Platform=${{ matrix.platform }}
           -p:GenerateAppxPackageOnBuild=false
           -p:AppxPackageSigningEnabled=false
           -p:PublishReadyToRun=false
@@ -131,20 +140,20 @@ jobs:
 
       - name: Reject development data from signed release payload
         shell: pwsh
-        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\release-policy-check
+        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\release-policy-check-${{ matrix.processor }}
 
       - name: Build unsigned MSIX
         run: >-
           dotnet build .\src\sutty.UI\sutty.UI.csproj
           --configuration Release
           --no-restore
-          -p:Platform=x64
-          -p:RuntimeIdentifier=win-x64
+          -p:Platform=${{ matrix.platform }}
+          -p:RuntimeIdentifier=${{ matrix.runtime }}
           -p:GenerateAppxPackageOnBuild=true
           -p:AppxPackageSigningEnabled=false
           -p:AppxBundle=Never
           -p:UapAppxPackageBuildMode=SideloadOnly
-          -p:AppxPackageDir=${{ github.workspace }}\artifacts\msix\
+          -p:AppxPackageDir=${{ github.workspace }}\artifacts\msix-${{ matrix.processor }}\
           -p:PublishReadyToRun=false
           -p:PublishTrimmed=false
           -p:DebugSymbols=false
@@ -160,11 +169,12 @@ jobs:
           RELEASE_BASE_URL: ${{ steps.release.outputs.release_base_url }}
           PACKAGE_VERSION: ${{ inputs.package_version }}
           APPINSTALLER_VERSION: ${{ inputs.appinstaller_version }}
+          TARGET_ARCHITECTURE: ${{ matrix.processor }}
         run: |
           $outputDirectory = New-Item -ItemType Directory -Force -Path .\artifacts\signed
-          $packages = @(Get-ChildItem .\artifacts\msix -Recurse -File -Filter *.msix)
+          $packages = @(Get-ChildItem ".\artifacts\msix-$($env:TARGET_ARCHITECTURE)" -Recurse -File -Filter *.msix)
           if ($packages.Count -ne 1) {
-            throw "Expected exactly one x64 MSIX, found $($packages.Count)."
+            throw "Expected exactly one $($env:TARGET_ARCHITECTURE) MSIX, found $($packages.Count)."
           }
           $signedPackage = Join-Path $outputDirectory.FullName $env:PACKAGE_FILE_NAME
           Copy-Item -LiteralPath $packages[0].FullName -Destination $signedPackage
@@ -183,7 +193,8 @@ jobs:
           & $signTool.FullName verify /pa /all /v $signedPackage
           if ($LASTEXITCODE -ne 0) { throw 'MSIX signature verification failed.' }
 
-          $appInstallerUri = "$($env:RELEASE_BASE_URL)/Sutty.appinstaller"
+          $appInstallerFileName = "Sutty-$($env:TARGET_ARCHITECTURE).appinstaller"
+          $appInstallerUri = "$($env:RELEASE_BASE_URL)/$appInstallerFileName"
           $packageUri = "$($env:RELEASE_BASE_URL)/$($env:PACKAGE_FILE_NAME)"
           $descriptor = @"
           <?xml version="1.0" encoding="utf-8"?>
@@ -193,7 +204,7 @@ jobs:
             <MainPackage Name="7f1b349a-3ed4-42cc-a98d-f68091d3cacf"
                          Publisher="$([System.Security.SecurityElement]::Escape($env:PUBLISHER))"
                          Version="$([System.Security.SecurityElement]::Escape($env:PACKAGE_VERSION))"
-                         ProcessorArchitecture="x64"
+                         ProcessorArchitecture="$([System.Security.SecurityElement]::Escape($env:TARGET_ARCHITECTURE))"
                          Uri="$([System.Security.SecurityElement]::Escape($packageUri))" />
             <UpdateSettings>
               <OnLaunch HoursBetweenUpdateChecks="0"
@@ -205,7 +216,7 @@ jobs:
           </AppInstaller>
           "@
           [System.IO.File]::WriteAllText(
-            (Join-Path $outputDirectory.FullName 'Sutty.appinstaller'),
+            (Join-Path $outputDirectory.FullName $appInstallerFileName),
             $descriptor.Trim(),
             [System.Text.UTF8Encoding]::new($false))
           $packageHash = (Get-FileHash -LiteralPath $signedPackage -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -217,7 +228,7 @@ jobs:
       - name: Upload signed release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: sutty-${{ inputs.package_version }}-signed-msix
+          name: sutty-${{ inputs.package_version }}-${{ matrix.processor }}-signed-msix
           path: artifacts/signed
           if-no-files-found: error
 

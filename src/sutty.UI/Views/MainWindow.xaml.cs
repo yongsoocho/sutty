@@ -45,6 +45,7 @@ namespace sutty.UI.Views
         private string? _lastMultiSftpSourcePath;
         private string? _lastMultiSftpDestinationPath;
         private string? _lastMultiSftpQueueJobId;
+        private SftpTransferOptions? _lastMultiSftpOptions;
         private int _multiSftpInProgress;
 
         private enum MultiSftpOperation
@@ -565,7 +566,18 @@ namespace sutty.UI.Views
                         $"Uploading after excluding {skipped} local or SFTP-unavailable target(s).");
                 }
 
-                var options = CreateSftpTransferOptions();
+                var options = await ConfirmMultiSftpTransferAsync(
+                    targets,
+                    sutty.Core.Sftp.SftpTransferDirection.Upload,
+                    request.LocalPath,
+                    request.RemoteDirectory);
+                if (options is null)
+                {
+                    panel.ShowSftpStatus(
+                        "다중 SFTP 업로드를 취소했습니다.",
+                        "Multi-server SFTP upload was cancelled.");
+                    return;
+                }
                 var queueJob = CreateQueuedJob(
                     SftpQueueMode.FanOut,
                     sutty.Core.Sftp.SftpTransferDirection.Upload,
@@ -578,6 +590,7 @@ namespace sutty.UI.Views
                 _lastMultiSftpSourcePath = request.LocalPath;
                 _lastMultiSftpDestinationPath = request.RemoteDirectory;
                 _lastMultiSftpQueueJobId = queueJob.Id;
+                _lastMultiSftpOptions = options;
                 var progress = CreateMultiSftpProgress(panel, queueJob.Id);
                 _lastMultiSftpBatch = await _multiSftpCoordinator.UploadAsync(
                     request.LocalPath,
@@ -637,7 +650,18 @@ namespace sutty.UI.Views
                         $"Excluding {skipped} local, duplicate, or SFTP-unavailable target(s).");
                 }
 
-                var options = CreateSftpTransferOptions();
+                var options = await ConfirmMultiSftpTransferAsync(
+                    sources,
+                    sutty.Core.Sftp.SftpTransferDirection.Download,
+                    request.RemotePath,
+                    request.LocalDirectory);
+                if (options is null)
+                {
+                    panel.ShowSftpStatus(
+                        "다중 SFTP 다운로드를 취소했습니다.",
+                        "Multi-server SFTP download was cancelled.");
+                    return;
+                }
                 var queueJob = CreateQueuedJob(
                     SftpQueueMode.FanIn,
                     sutty.Core.Sftp.SftpTransferDirection.Download,
@@ -650,6 +674,7 @@ namespace sutty.UI.Views
                 _lastMultiSftpSourcePath = request.RemotePath;
                 _lastMultiSftpDestinationPath = request.LocalDirectory;
                 _lastMultiSftpQueueJobId = queueJob.Id;
+                _lastMultiSftpOptions = options;
                 var progress = CreateMultiSftpProgress(panel, queueJob.Id);
                 _lastMultiSftpBatch = await _multiSftpCoordinator.DownloadAsync(
                     request.RemotePath,
@@ -705,13 +730,13 @@ namespace sutty.UI.Views
                     ? await _multiSftpCoordinator.RetryFailedAsync(
                         _lastMultiSftpSourcePath,
                         _lastMultiSftpBatch,
-                        CreateSftpTransferOptions(),
+                        _lastMultiSftpOptions ?? CreateSftpTransferOptions(SftpConflictPolicy.Skip),
                         progress)
                     : await _multiSftpCoordinator.RetryFailedDownloadAsync(
                         _lastMultiSftpSourcePath,
                         _lastMultiSftpDestinationPath,
                         _lastMultiSftpBatch,
-                        CreateSftpTransferOptions(),
+                        _lastMultiSftpOptions ?? CreateSftpTransferOptions(SftpConflictPolicy.Skip),
                         progress);
                 PersistMultiSftpBatch(_lastMultiSftpQueueJobId, _lastMultiSftpBatch);
                 panel.CompleteSftpBatch(_lastMultiSftpBatch);
@@ -788,6 +813,7 @@ namespace sutty.UI.Views
                 _lastMultiSftpOperation = job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
                     ? MultiSftpOperation.Upload
                     : MultiSftpOperation.Download;
+                _lastMultiSftpOptions = job.Options;
                 var progress = CreateMultiSftpProgress(panel, job.Id);
                 _lastMultiSftpBatch = _lastMultiSftpOperation == MultiSftpOperation.Upload
                     ? await _multiSftpCoordinator.UploadAsync(
@@ -945,14 +971,138 @@ namespace sutty.UI.Views
             }
         }
 
-        private static SftpTransferOptions CreateSftpTransferOptions()
+        private async Task<SftpTransferOptions?> ConfirmMultiSftpTransferAsync(
+            IReadOnlyCollection<MultiSftpTarget> targets,
+            sutty.Core.Sftp.SftpTransferDirection direction,
+            string sourcePath,
+            string destinationPath)
+        {
+            var configuredPolicy = SftpTransferOptions.ParseConflictPolicy(
+                SettingsService.Current.SftpConflictPolicy);
+            var content = new StackPanel { Spacing = 9 };
+            var isUpload = direction == sutty.Core.Sftp.SftpTransferDirection.Upload;
+            content.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    $"{targets.Count}개 서버에 {(isUpload ? "업로드" : "다운로드")}합니다. 대상과 충돌 처리 정책을 확인하세요.",
+                    $"{(isUpload ? "Upload to" : "Download from")} {targets.Count} server(s). Review the targets and conflict policy."),
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    $"원본: {sourcePath}{Environment.NewLine}대상: {destinationPath}",
+                    $"Source: {sourcePath}{Environment.NewLine}Destination: {destinationPath}"),
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                FontSize = 11,
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    "선택된 서버 (최대 16개)",
+                    "Selected servers (up to 16)"),
+                FontSize = 11,
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = string.Join(Environment.NewLine, targets.Select(target => $"• {target.DisplayName}")),
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                FontSize = 11,
+                MaxHeight = 180,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+            ComboBox? policyChoices = null;
+            if (configuredPolicy == SftpConflictPolicy.Ask)
+            {
+                content.Children.Add(new TextBlock
+                {
+                    Text = Helpers.Loc.T("같은 이름 파일 처리", "File conflict policy"),
+                    FontSize = 11,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                });
+                policyChoices = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+                policyChoices.Items.Add(new ComboBoxItem
+                {
+                    Content = Helpers.Loc.T("기존 파일 건너뛰기", "Skip existing files"),
+                    Tag = SftpConflictPolicy.Skip,
+                });
+                policyChoices.Items.Add(new ComboBoxItem
+                {
+                    Content = Helpers.Loc.T("안전하게 덮어쓰기", "Safely overwrite"),
+                    Tag = SftpConflictPolicy.Overwrite,
+                });
+                policyChoices.Items.Add(new ComboBoxItem
+                {
+                    Content = Helpers.Loc.T("새 이름으로 저장", "Keep both with a new name"),
+                    Tag = SftpConflictPolicy.Rename,
+                });
+                policyChoices.Items.Add(new ComboBoxItem
+                {
+                    Content = Helpers.Loc.T("새 파일일 때만 교체", "Replace only when source is newer"),
+                    Tag = SftpConflictPolicy.NewerOnly,
+                });
+                policyChoices.SelectedIndex = 0;
+                content.Children.Add(policyChoices);
+            }
+            else
+            {
+                content.Children.Add(new TextBlock
+                {
+                    Text = Helpers.Loc.T(
+                        $"충돌 정책: {DescribeConflictPolicy(configuredPolicy, korean: true)}",
+                        $"Conflict policy: {DescribeConflictPolicy(configuredPolicy, korean: false)}"),
+                    FontSize = 11,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+            }
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Content.XamlRoot,
+                Title = Helpers.Loc.T("다중 SFTP 전송 확인", "Confirm multi-server SFTP transfer"),
+                Content = content,
+                PrimaryButtonText = Helpers.Loc.T(
+                    $"{targets.Count}개 서버에서 시작",
+                    $"Start on {targets.Count} servers"),
+                CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                DefaultButton = ContentDialogButton.Close,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                return null;
+
+            var policy = policyChoices?.SelectedItem is ComboBoxItem { Tag: SftpConflictPolicy selected }
+                ? selected
+                : configuredPolicy;
+            return CreateSftpTransferOptions(policy);
+        }
+
+        private static string DescribeConflictPolicy(SftpConflictPolicy policy, bool korean) => policy switch
+        {
+            SftpConflictPolicy.Overwrite => korean ? "안전하게 덮어쓰기" : "Safely overwrite",
+            SftpConflictPolicy.Skip => korean ? "기존 파일 건너뛰기" : "Skip existing files",
+            SftpConflictPolicy.Rename => korean ? "새 이름으로 저장" : "Keep both with a new name",
+            SftpConflictPolicy.NewerOnly => korean ? "새 파일일 때만 교체" : "Replace only when source is newer",
+            _ => korean ? "매번 확인" : "Ask every time",
+        };
+
+        private static SftpTransferOptions CreateSftpTransferOptions(SftpConflictPolicy conflictPolicy)
         {
             var settings = SettingsService.Current;
             return new SftpTransferOptions
             {
-                Overwrite = true,
+                Overwrite = conflictPolicy is SftpConflictPolicy.Overwrite or SftpConflictPolicy.NewerOnly,
+                ConflictPolicy = conflictPolicy,
                 Resume = true,
-                VerifyChecksum = true,
+                VerifyChecksum = string.Equals(
+                    settings.SftpVerificationMode,
+                    "Sha256",
+                    StringComparison.OrdinalIgnoreCase),
                 RetryEnabled = settings.SftpRetryEnabled,
                 MaxRetries = settings.SftpRetryCount,
             };
@@ -1339,6 +1489,9 @@ namespace sutty.UI.Views
                 return;
             }
 
+            if (!await ConfirmHighRiskConnectionFeaturesAsync(info))
+                return;
+
             info.HostKeyPromptAsync ??= PromptUnknownHostKeyAsync;
             info.KeyboardInteractivePromptAsync ??= PromptKeyboardInteractiveAsync;
 
@@ -1671,6 +1824,101 @@ namespace sutty.UI.Views
                 await warning.ShowAsync();
                 return null;
             }
+        }
+
+        private async Task<bool> ConfirmHighRiskConnectionFeaturesAsync(SshConnectionInfo info)
+        {
+            if (info.Route?.Type == ConnectionRouteType.ExternalProxyCommand)
+            {
+                string expandedCommand;
+                try
+                {
+                    expandedCommand = ProxyCommandTemplate.Expand(
+                        info.Route.Command,
+                        info.Host,
+                        info.Port,
+                        info.Username);
+                }
+                catch (RoutePolicyViolationException error)
+                {
+                    var invalidDialog = new ContentDialog
+                    {
+                        Title = Helpers.Loc.T(
+                            "ProxyCommand 안전성 검사 실패",
+                            "ProxyCommand safety check failed"),
+                        Content = error.Message,
+                        CloseButtonText = "OK",
+                        XamlRoot = Content.XamlRoot,
+                    };
+                    await invalidDialog.ShowAsync();
+                    return false;
+                }
+
+                var commandWarning = new TextBlock
+                {
+                    Text = Helpers.Loc.T(
+                        "ProxyCommand는 이 컴퓨터에서 임의 명령을 실행할 수 있습니다. 아래 최종 명령을 확인한 뒤 계속하세요.",
+                        "ProxyCommand can run an arbitrary local command. Review the final command before continuing."),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
+                    TextWrapping = TextWrapping.Wrap,
+                };
+                var commandPreview = new TextBox
+                {
+                    Text = expandedCommand,
+                    IsReadOnly = true,
+                    AcceptsReturn = false,
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    TextWrapping = TextWrapping.Wrap,
+                };
+                var commandContent = new StackPanel { Spacing = 12 };
+                commandContent.Children.Add(commandWarning);
+                commandContent.Children.Add(commandPreview);
+                var commandDialog = new ContentDialog
+                {
+                    Title = Helpers.Loc.T(
+                        "ProxyCommand 실행 확인",
+                        "Confirm ProxyCommand execution"),
+                    Content = commandContent,
+                    PrimaryButtonText = Helpers.Loc.T("확인 후 연결", "Review and connect"),
+                    CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = Content.XamlRoot,
+                };
+                if (await commandDialog.ShowAsync() != ContentDialogResult.Primary)
+                    return false;
+            }
+
+            var externalBindings = (info.PortForwardings ?? [])
+                .Where(rule => ForwardingExposurePolicy.IsExternalBind(rule.BindHost))
+                .Select(rule => $"{rule.Type}: {rule.BindHost}:{rule.BindPort}")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (externalBindings.Length == 0)
+                return true;
+
+            var forwardingWarning = new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    "아래 포워딩은 루프백 전용이 아니므로 다른 장치에서 접근할 수 있습니다. 방화벽과 접근 정책을 확인한 경우에만 계속하세요.\n\n" +
+                    string.Join(Environment.NewLine, externalBindings),
+                    "The forwarding listeners below are not loopback-only and may be reachable from other devices. Continue only after reviewing firewall and access policy.\n\n" +
+                    string.Join(Environment.NewLine, externalBindings)),
+                Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                TextWrapping = TextWrapping.Wrap,
+            };
+            var forwardingDialog = new ContentDialog
+            {
+                Title = Helpers.Loc.T("외부 포트 노출 경고", "External port exposure warning"),
+                Content = forwardingWarning,
+                PrimaryButtonText = Helpers.Loc.T(
+                    "위험을 이해하고 연결",
+                    "I understand, connect"),
+                CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+            return await forwardingDialog.ShowAsync() == ContentDialogResult.Primary;
         }
 
         private static sutty.Command.HostRouteProfile PersistRoute(SshConnectionInfo info) => new()

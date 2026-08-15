@@ -141,6 +141,12 @@
                                     Text="{x:Bind h:Loc.T('이름 바꾸기…', 'Rename…')}"
                                     Visibility="{x:Bind CanModify}" />
                                 <MenuFlyoutItem
+                                    Click="ChangePermissions_Click"
+                                    Icon="Edit"
+                                    Tag="{x:Bind}"
+                                    Text="{x:Bind h:Loc.T('권한 변경…', 'Change permissions…')}"
+                                    Visibility="{x:Bind CanModify}" />
+                                <MenuFlyoutItem
                                     Click="Delete_Click"
                                     Icon="Delete"
                                     Tag="{x:Bind}"
@@ -297,6 +303,8 @@
                                         <ColumnDefinition Width="18" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -317,6 +325,32 @@
                                         TextTrimming="CharacterEllipsis" />
                                     <Button
                                         Grid.Column="2"
+                                        Grid.RowSpan="2"
+                                        Padding="3"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="PauseTransfer_Click"
+                                        Tag="{x:Bind}"
+                                        ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 일시 정지', 'Pause transfer')}"
+                                        Visibility="{x:Bind CanPause, Mode=OneWay}">
+                                        <FontIcon FontSize="9" Glyph="&#xE769;" />
+                                    </Button>
+                                    <Button
+                                        Grid.Column="3"
+                                        Grid.RowSpan="2"
+                                        Padding="3"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="ResumePausedTransfer_Click"
+                                        Tag="{x:Bind}"
+                                        ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 재개', 'Resume transfer')}"
+                                        Visibility="{x:Bind CanResume, Mode=OneWay}">
+                                        <FontIcon FontSize="9" Glyph="&#xE768;" />
+                                    </Button>
+                                    <Button
+                                        Grid.Column="4"
                                         Grid.RowSpan="2"
                                         Padding="3"
                                         VerticalAlignment="Center"

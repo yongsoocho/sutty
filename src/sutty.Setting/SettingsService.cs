@@ -135,6 +135,19 @@ public static class SettingsService
         settings.DefaultSshPort = Math.Clamp(settings.DefaultSshPort, 1, 65_535);
         settings.DefaultKeepAliveSeconds = Math.Clamp(settings.DefaultKeepAliveSeconds, 0, 3_600);
         settings.SftpRetryCount = Math.Clamp(settings.SftpRetryCount, 0, 10);
+        settings.SftpVerificationMode = settings.SftpVerificationMode?.ToLowerInvariant() switch
+        {
+            "sizeonly" => "SizeOnly",
+            _ => "Sha256",
+        };
+        settings.SftpConflictPolicy = settings.SftpConflictPolicy?.ToLowerInvariant() switch
+        {
+            "overwrite" => "Overwrite",
+            "skip" => "Skip",
+            "rename" => "Rename",
+            "neweronly" => "NewerOnly",
+            _ => "Ask",
+        };
         settings.LastAuthMethod = settings.LastAuthMethod?.ToLowerInvariant() switch
         {
             "publickey" => "PublicKey",
