@@ -1,6 +1,7 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using sutty.Command;
 using sutty.Setting;
 using sutty.UI.Helpers;
 using System;
@@ -8,6 +9,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace sutty.UI.Views
 {
@@ -26,8 +29,9 @@ namespace sutty.UI.Views
         Window = 1 << 7,
         TerminalFeatures = 1 << 8,
         Sftp = 1 << 9,
+        HostProfiles = 1 << 10,
         All = Language | Theme | TerminalAppearance | TerminalMode | TerminalFeatures |
-              Connection | History | Window | Sftp,
+              Connection | History | Window | Sftp | HostProfiles,
     }
 
     public sealed class SettingsChangedEventArgs : EventArgs
@@ -46,6 +50,7 @@ namespace sutty.UI.Views
     /// </summary>
     public sealed partial class SettingsPanel : UserControl
     {
+        public IntPtr OwnerWindowHandle { get; set; }
         /// <summary>Raised after settings have been written. Kept for existing consumers.</summary>
         public event EventHandler? Saved;
 
@@ -276,6 +281,92 @@ namespace sutty.UI.Views
             SettingsService.Current.SftpRetryEnabled = SftpRetryToggle.IsOn;
             SftpRetryCountBox.IsEnabled = SftpRetryToggle.IsOn;
             CommitChangesNow(SettingChangeKind.Sftp);
+        }
+
+        private async void ImportOpenSsh_Click(object sender, RoutedEventArgs e)
+        {
+            if (OwnerWindowHandle == IntPtr.Zero)
+            {
+                ShowImportStatus("파일 선택 창을 열 수 없습니다.", "The file picker is unavailable.", false);
+                return;
+            }
+            try
+            {
+                var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+                picker.FileTypeFilter.Add(".config");
+                picker.FileTypeFilter.Add(".txt");
+                picker.FileTypeFilter.Add("*");
+                InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
+                var file = await picker.PickSingleFileAsync();
+                if (file is null || string.IsNullOrWhiteSpace(file.Path)) return;
+                ImportProfiles(HostProfileImportService.ImportOpenSshFile(file.Path));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                ShowImportStatus(
+                    $"OpenSSH 가져오기 실패: {error.Message}",
+                    $"OpenSSH import failed: {error.Message}",
+                    false);
+            }
+        }
+
+        private void ImportWindowsSessions_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                ImportProfiles(HostProfileImportService.ImportPuttyRegistry());
+            }
+            catch (Exception error) when (error is UnauthorizedAccessException or
+                                              System.Security.SecurityException or IOException)
+            {
+                ShowImportStatus(
+                    $"Windows 저장 세션 가져오기 실패: {error.Message}",
+                    $"Windows saved-session import failed: {error.Message}",
+                    false);
+            }
+        }
+
+        private async void ImportIniProfiles_Click(object sender, RoutedEventArgs e)
+        {
+            if (OwnerWindowHandle == IntPtr.Zero)
+            {
+                ShowImportStatus("폴더 선택 창을 열 수 없습니다.", "The folder picker is unavailable.", false);
+                return;
+            }
+            try
+            {
+                var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+                picker.FileTypeFilter.Add("*");
+                InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
+                var folder = await picker.PickSingleFolderAsync();
+                if (folder is null || string.IsNullOrWhiteSpace(folder.Path)) return;
+                ImportProfiles(HostProfileImportService.ImportSecureCrtDirectory(folder.Path));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                ShowImportStatus(
+                    $"INI 프로필 가져오기 실패: {error.Message}",
+                    $"INI profile import failed: {error.Message}",
+                    false);
+            }
+        }
+
+        private void ImportProfiles(HostProfileImportBatch batch)
+        {
+            var result = HostProfileImportService.SaveUnique(batch);
+            var warningCount = batch.Warnings.Count;
+            ShowImportStatus(
+                $"가져오기 완료 · 추가 {result.Imported} · 중복 {result.Skipped} · 실패 {result.Failed} · 검토 {warningCount}",
+                $"Import complete · {result.Imported} added · {result.Skipped} duplicates · {result.Failed} failed · {warningCount} warning(s)",
+                result.Failed == 0);
+            SettingsChanged?.Invoke(this, new SettingsChangedEventArgs(SettingChangeKind.HostProfiles));
+        }
+
+        private void ShowImportStatus(string korean, string english, bool succeeded)
+        {
+            ImportStatusText.Text = Loc.T(korean, english);
+            ImportStatusText.Foreground = ThemeResources.Brush(this, succeeded ? "StatusGreen" : "StatusRed");
+            ImportStatusText.Visibility = Visibility.Visible;
         }
 
         private async Task LoadInstalledFontsAsync()

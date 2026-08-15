@@ -39,6 +39,8 @@ public sealed class HostProfile
     public string Environment { get; init; } = HostEnvironments.Unclassified;
     public bool IsFavorite { get; init; }
     public string? CredentialId { get; init; }
+    public HostRouteProfile Route { get; init; } = new();
+    public List<HostTunnelProfile> Tunnels { get; init; } = [];
     public DateTimeOffset CreatedAtUtc { get; init; }
     public DateTimeOffset UpdatedAtUtc { get; init; }
     public DateTimeOffset? LastConnectedAtUtc { get; init; }
@@ -57,6 +59,8 @@ public sealed class HostProfileDraft
     public string Environment { get; set; } = HostEnvironments.Unclassified;
     public bool IsFavorite { get; set; }
     public string? CredentialId { get; set; }
+    public HostRouteProfile Route { get; set; } = new();
+    public IEnumerable<HostTunnelProfile>? Tunnels { get; set; }
 }
 
 /// <summary>
@@ -93,6 +97,8 @@ public static class HostProfileStore
                         environment       TEXT NOT NULL DEFAULT 'Unclassified',
                         is_favorite       INTEGER NOT NULL DEFAULT 0,
                         credential_id     TEXT,
+                        route_json        TEXT NOT NULL DEFAULT '{}',
+                        tunnels_json      TEXT NOT NULL DEFAULT '[]',
                         created_at_utc    TEXT NOT NULL,
                         updated_at_utc    TEXT NOT NULL,
                         last_connected_at_utc TEXT,
@@ -111,6 +117,8 @@ public static class HostProfileStore
                     """;
                 command.ExecuteNonQuery();
             }
+
+            EnsureConnectionOptionColumns(connection);
 
             MigrateLegacyPins(connection);
             _initialized = true;
@@ -147,12 +155,13 @@ public static class HostProfileStore
                 INSERT INTO host_profiles (
                     id, display_name, host, port, username, auth_method,
                     private_key_path, tags_json, group_name, environment,
-                    is_favorite, credential_id, created_at_utc, updated_at_utc,
+                    is_favorite, credential_id, route_json, tunnels_json,
+                    created_at_utc, updated_at_utc,
                     last_connected_at_utc)
                 VALUES (
                     $id, $displayName, $host, $port, $username, $authMethod,
                     $privateKeyPath, $tags, $groupName, $environment,
-                    $favorite, $credentialId, $now, $now, NULL)
+                    $favorite, $credentialId, $route, $tunnels, $now, $now, NULL)
                 ON CONFLICT(id) DO UPDATE SET
                     display_name = excluded.display_name,
                     host = excluded.host,
@@ -165,6 +174,8 @@ public static class HostProfileStore
                     environment = excluded.environment,
                     is_favorite = excluded.is_favorite,
                     credential_id = excluded.credential_id,
+                    route_json = excluded.route_json,
+                    tunnels_json = excluded.tunnels_json,
                     updated_at_utc = excluded.updated_at_utc
                 """;
             AddDraftParameters(command, id, normalized, now);
@@ -330,12 +341,13 @@ public static class HostProfileStore
                 INSERT OR IGNORE INTO host_profiles (
                     id, display_name, host, port, username, auth_method,
                     private_key_path, tags_json, group_name, environment,
-                    is_favorite, credential_id, created_at_utc, updated_at_utc,
+                    is_favorite, credential_id, route_json, tunnels_json,
+                    created_at_utc, updated_at_utc,
                     last_connected_at_utc)
                 VALUES (
                     $id, $displayName, $host, $port, $username, $authMethod,
                     $privateKeyPath, $tags, $groupName, $environment,
-                    1, NULL, $now, $now, NULL)
+                    1, NULL, $route, $tunnels, $now, $now, NULL)
                 """;
             AddDraftParameters(insert, id, normalized, now);
             insert.ExecuteNonQuery();
@@ -367,6 +379,31 @@ public static class HostProfileStore
         return command.ExecuteScalar() is not null;
     }
 
+    private static void EnsureConnectionOptionColumns(SqliteConnection connection)
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var inspect = connection.CreateCommand())
+        {
+            inspect.CommandText = "PRAGMA table_info(host_profiles)";
+            using var reader = inspect.ExecuteReader();
+            while (reader.Read())
+                columns.Add(reader.GetString(1));
+        }
+
+        if (!columns.Contains("route_json"))
+        {
+            using var addRoute = connection.CreateCommand();
+            addRoute.CommandText = "ALTER TABLE host_profiles ADD COLUMN route_json TEXT NOT NULL DEFAULT '{}'";
+            addRoute.ExecuteNonQuery();
+        }
+        if (!columns.Contains("tunnels_json"))
+        {
+            using var addTunnels = connection.CreateCommand();
+            addTunnels.CommandText = "ALTER TABLE host_profiles ADD COLUMN tunnels_json TEXT NOT NULL DEFAULT '[]'";
+            addTunnels.ExecuteNonQuery();
+        }
+    }
+
     private static void AddDraftParameters(
         SqliteCommand command,
         string id,
@@ -385,6 +422,8 @@ public static class HostProfileStore
         command.Parameters.AddWithValue("$environment", draft.Environment);
         command.Parameters.AddWithValue("$favorite", draft.IsFavorite ? 1 : 0);
         command.Parameters.AddWithValue("$credentialId", (object?)draft.CredentialId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$route", SerializeRoute(draft.Route));
+        command.Parameters.AddWithValue("$tunnels", SerializeTunnels(draft.Tunnels));
         command.Parameters.AddWithValue("$now", now.ToString("O"));
     }
 
@@ -405,9 +444,7 @@ public static class HostProfileStore
         if (username.Length > 128 || username.Any(char.IsControl))
             throw new ArgumentException("The user name is invalid.", nameof(draft));
 
-        var authMethod = string.Equals(draft.AuthMethod, "PublicKey", StringComparison.OrdinalIgnoreCase)
-            ? "PublicKey"
-            : "Password";
+        var authMethod = NormalizeAuthMethod(draft.AuthMethod);
         var keyPath = authMethod == "PublicKey" ? draft.PrivateKeyPath?.Trim() ?? "" : "";
         if (keyPath.Length > 2_048 || keyPath.Any(char.IsControl))
             throw new ArgumentException("The private-key path is invalid.", nameof(draft));
@@ -433,6 +470,8 @@ public static class HostProfileStore
             Environment = HostEnvironments.Normalize(draft.Environment),
             IsFavorite = draft.IsFavorite,
             CredentialId = credentialId,
+            Route = NormalizeRoute(draft.Route),
+            Tunnels = NormalizeTunnels(draft.Tunnels),
         };
     }
 
@@ -471,6 +510,141 @@ public static class HostProfileStore
         }
     }
 
+    private static string NormalizeAuthMethod(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "publickey" or "public-key" or "key" => "PublicKey",
+        "agent" or "sshagent" or "ssh-agent" => "Agent",
+        "keyboardinteractive" or "keyboard-interactive" or "otp" => "KeyboardInteractive",
+        _ => "Password",
+    };
+
+    private static HostRouteProfile NormalizeRoute(HostRouteProfile? route)
+    {
+        route ??= new HostRouteProfile();
+        var type = route.Type?.Trim() switch
+        {
+            "HttpConnect" => "HttpConnect",
+            "Socks4" => "Socks4",
+            "Socks5" => "Socks5",
+            "SshJump" => "SshJump",
+            "AuditedGateway" => "AuditedGateway",
+            "ExternalProxyCommand" => "ExternalProxyCommand",
+            _ => "Direct",
+        };
+        var usesHost = type is "HttpConnect" or "Socks4" or "Socks5" or
+            "SshJump" or "AuditedGateway";
+        var host = usesHost ? LimitClean(route.Host, 255, "route host") : "";
+        var port = usesHost && route.Port is >= 1 and <= 65_535 ? route.Port : 0;
+        if (usesHost && (string.IsNullOrWhiteSpace(host) || port == 0))
+            throw new ArgumentException("A saved route requires a valid host and port.", nameof(route));
+
+        var command = type == "ExternalProxyCommand"
+            ? LimitClean(route.Command, 4_096, "ProxyCommand")
+            : "";
+        if (type == "ExternalProxyCommand" && string.IsNullOrWhiteSpace(command))
+            throw new ArgumentException("A saved ProxyCommand route requires a command.", nameof(route));
+
+        var auth = type == "SshJump" ? NormalizeAuthMethod(route.AuthMethod) : "Password";
+        var keyPath = type == "SshJump" && auth == "PublicKey"
+            ? LimitClean(route.PrivateKeyPath, 2_048, "route private-key path")
+            : "";
+        return new HostRouteProfile
+        {
+            Id = string.IsNullOrWhiteSpace(route.Id)
+                ? type.ToLowerInvariant()
+                : LimitClean(route.Id, 128, "route id"),
+            Type = type,
+            Host = host,
+            Port = port,
+            Username = usesHost ? LimitClean(route.Username, 128, "route username") : "",
+            AuthMethod = auth,
+            PrivateKeyPath = keyPath,
+            Command = command,
+            ProxyDns = route.ProxyDns,
+            EnterpriseMode = route.EnterpriseMode,
+        };
+    }
+
+    private static List<HostTunnelProfile> NormalizeTunnels(IEnumerable<HostTunnelProfile>? tunnels)
+    {
+        var normalized = new List<HostTunnelProfile>();
+        foreach (var tunnel in tunnels ?? [])
+        {
+            if (normalized.Count >= 32)
+                break;
+            var type = tunnel.Type?.Trim() switch
+            {
+                "Remote" => "Remote",
+                "Dynamic" => "Dynamic",
+                _ => "Local",
+            };
+            var bindHost = LimitClean(tunnel.BindHost, 255, "tunnel bind host");
+            if (string.IsNullOrWhiteSpace(bindHost) || tunnel.BindPort is < 1 or > 65_535)
+                throw new ArgumentException("A tunnel requires a valid bind host and port.", nameof(tunnels));
+            var destinationHost = type == "Dynamic"
+                ? "127.0.0.1"
+                : LimitClean(tunnel.DestinationHost, 255, "tunnel destination host");
+            var destinationPort = type == "Dynamic" ? 0 : tunnel.DestinationPort;
+            if (type != "Dynamic" &&
+                (string.IsNullOrWhiteSpace(destinationHost) || destinationPort is < 1 or > 65_535))
+            {
+                throw new ArgumentException(
+                    "A local or remote tunnel requires a valid destination.", nameof(tunnels));
+            }
+            normalized.Add(new HostTunnelProfile
+            {
+                Type = type,
+                BindHost = bindHost,
+                BindPort = tunnel.BindPort,
+                DestinationHost = destinationHost,
+                DestinationPort = destinationPort,
+            });
+        }
+        return normalized;
+    }
+
+    private static string LimitClean(string? value, int maximumLength, string field)
+    {
+        var normalized = value?.Trim() ?? "";
+        if (normalized.Length > maximumLength || normalized.Any(char.IsControl))
+            throw new ArgumentException($"The {field} is invalid.", nameof(value));
+        return normalized;
+    }
+
+    private static string SerializeRoute(HostRouteProfile? route) => JsonSerializer.Serialize(
+        NormalizeRoute(route), CommandJsonContext.Default.HostRouteProfile);
+
+    private static HostRouteProfile DeserializeRoute(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return new HostRouteProfile();
+        try
+        {
+            return NormalizeRoute(JsonSerializer.Deserialize(
+                value, CommandJsonContext.Default.HostRouteProfile));
+        }
+        catch (Exception error) when (error is JsonException or ArgumentException)
+        {
+            return new HostRouteProfile();
+        }
+    }
+
+    private static string SerializeTunnels(IEnumerable<HostTunnelProfile>? tunnels) => JsonSerializer.Serialize(
+        NormalizeTunnels(tunnels), CommandJsonContext.Default.ListHostTunnelProfile);
+
+    private static List<HostTunnelProfile> DeserializeTunnels(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return [];
+        try
+        {
+            return NormalizeTunnels(JsonSerializer.Deserialize(
+                value, CommandJsonContext.Default.ListHostTunnelProfile));
+        }
+        catch (Exception error) when (error is JsonException or ArgumentException)
+        {
+            return [];
+        }
+    }
+
     private static string EscapeLike(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("%", "\\%", StringComparison.Ordinal)
@@ -490,15 +664,18 @@ public static class HostProfileStore
         Environment = HostEnvironments.Normalize(reader.GetString(9)),
         IsFavorite = reader.GetInt32(10) != 0,
         CredentialId = reader.IsDBNull(11) ? null : reader.GetString(11),
-        CreatedAtUtc = DateTimeOffset.Parse(reader.GetString(12)),
-        UpdatedAtUtc = DateTimeOffset.Parse(reader.GetString(13)),
-        LastConnectedAtUtc = reader.IsDBNull(14) ? null : DateTimeOffset.Parse(reader.GetString(14)),
+        Route = DeserializeRoute(reader.GetString(12)),
+        Tunnels = DeserializeTunnels(reader.GetString(13)),
+        CreatedAtUtc = DateTimeOffset.Parse(reader.GetString(14)),
+        UpdatedAtUtc = DateTimeOffset.Parse(reader.GetString(15)),
+        LastConnectedAtUtc = reader.IsDBNull(16) ? null : DateTimeOffset.Parse(reader.GetString(16)),
     };
 
     private const string SelectColumns = """
         id, display_name, host, port, username, auth_method,
         private_key_path, tags_json, group_name, environment,
-        is_favorite, credential_id, created_at_utc, updated_at_utc,
+        is_favorite, credential_id, route_json, tunnels_json,
+        created_at_utc, updated_at_utc,
         last_connected_at_utc
         """;
 }

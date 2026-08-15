@@ -275,6 +275,41 @@
 
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel Spacing="10">
+                                <TextBlock
+                                    Style="{StaticResource SettingsLabel}"
+                                    Text="{x:Bind h:Loc.T('호스트 프로필 가져오기', 'HOST PROFILE IMPORT')}" />
+                                <TextBlock
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('비밀번호 없이 호스트·키 경로·route·tunnel만 가져옵니다. 중복 호스트는 건너뜁니다.', 'Imports hosts, key paths, routes, and tunnels without passwords. Duplicate hosts are skipped.')}"
+                                    TextWrapping="Wrap" />
+                                <Button
+                                    x:Name="ImportOpenSshButton"
+                                    HorizontalAlignment="Stretch"
+                                    Click="ImportOpenSsh_Click"
+                                    Content="{x:Bind h:Loc.T('OpenSSH config 가져오기…', 'Import OpenSSH config…')}" />
+                                <Button
+                                    x:Name="ImportWindowsSessionsButton"
+                                    HorizontalAlignment="Stretch"
+                                    Click="ImportWindowsSessions_Click"
+                                    Content="{x:Bind h:Loc.T('Windows 저장 세션 가져오기', 'Import Windows saved sessions')}" />
+                                <Button
+                                    x:Name="ImportIniProfilesButton"
+                                    HorizontalAlignment="Stretch"
+                                    Click="ImportIniProfiles_Click"
+                                    Content="{x:Bind h:Loc.T('레거시 INI 프로필 폴더 가져오기…', 'Import legacy INI profile folder…')}" />
+                                <TextBlock
+                                    x:Name="ImportStatusText"
+                                    AutomationProperties.LiveSetting="Polite"
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    TextWrapping="Wrap"
+                                    Visibility="Collapsed" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="10">
                                 <TextBlock Style="{StaticResource SettingsLabel}" Text="SFTP TRANSFER RETRY" />
                                 <ToggleSwitch
                                     x:Name="SftpRetryToggle"

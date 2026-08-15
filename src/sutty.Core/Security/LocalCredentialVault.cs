@@ -10,9 +10,16 @@ namespace sutty.Core.Security;
 /// only inside an AES-GCM envelope. Callers should keep the returned strings alive for
 /// no longer than the authentication attempt requires.
 /// </summary>
-public sealed record CredentialSecret(string Password = "", string PrivateKeyPassphrase = "")
+public sealed record CredentialSecret(
+    string Password = "",
+    string PrivateKeyPassphrase = "",
+    string RoutePassword = "",
+    string RoutePrivateKeyPassphrase = "")
 {
-    public bool IsEmpty => string.IsNullOrEmpty(Password) && string.IsNullOrEmpty(PrivateKeyPassphrase);
+    public bool IsEmpty => string.IsNullOrEmpty(Password) &&
+                           string.IsNullOrEmpty(PrivateKeyPassphrase) &&
+                           string.IsNullOrEmpty(RoutePassword) &&
+                           string.IsNullOrEmpty(RoutePrivateKeyPassphrase);
 }
 
 public sealed record CredentialVaultMetadata(string Id, DateTimeOffset UpdatedAtUtc);
@@ -363,7 +370,9 @@ public sealed class LocalCredentialVault : IDisposable
     private static void ValidateSecret(CredentialSecret secret)
     {
         if (secret.Password.Length > MaxSecretCharacters ||
-            secret.PrivateKeyPassphrase.Length > MaxSecretCharacters)
+            secret.PrivateKeyPassphrase.Length > MaxSecretCharacters ||
+            secret.RoutePassword.Length > MaxSecretCharacters ||
+            secret.RoutePrivateKeyPassphrase.Length > MaxSecretCharacters)
         {
             throw new ArgumentOutOfRangeException(nameof(secret), "Credential values are too long.");
         }

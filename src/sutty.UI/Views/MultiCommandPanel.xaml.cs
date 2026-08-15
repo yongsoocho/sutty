@@ -15,6 +15,7 @@ using WinRT.Interop;
 namespace sutty.UI.Views
 {
     public sealed record MultiSftpUploadRequest(string LocalPath, string RemoteDirectory);
+    public sealed record MultiSftpDownloadRequest(string RemotePath, string LocalDirectory);
 
     /// <summary>
     /// Multi command 오른쪽 패널.
@@ -37,7 +38,9 @@ namespace sutty.UI.Views
         /// <summary>체크된 모든 세션에서 이 명령을 실행해 달라는 신호.</summary>
         public event EventHandler<string>? BroadcastRequested;
         public event EventHandler<MultiSftpUploadRequest>? SftpUploadRequested;
+        public event EventHandler<MultiSftpDownloadRequest>? SftpDownloadRequested;
         public event EventHandler? SftpRetryFailedRequested;
+        public event EventHandler? SftpResumePendingRequested;
 
         public MultiCommandPanel()
         {
@@ -76,8 +79,10 @@ namespace sutty.UI.Views
         {
             UploadFilesButton.IsEnabled = !isRunning;
             UploadFolderButton.IsEnabled = !isRunning;
+            DownloadPathButton.IsEnabled = !isRunning;
             SftpRemoteDirectoryBox.IsEnabled = !isRunning;
             RetryFailedButton.IsEnabled = !isRunning;
+            ResumePendingButton.IsEnabled = !isRunning;
             if (!string.IsNullOrWhiteSpace(status))
                 SftpStatusText.Text = status;
         }
@@ -111,6 +116,14 @@ namespace sutty.UI.Views
 
         public void ShowSftpStatus(string korean, string english)
             => SftpStatusText.Text = Helpers.Loc.T(korean, english);
+
+        public void SetRecoveredJobCount(int count)
+        {
+            ResumePendingButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            ResumePendingButton.Content = Helpers.Loc.T(
+                $"복원된 전송 {count}개 재개",
+                $"Resume {count} restored transfer(s)");
+        }
 
         // WinUI TextBox는 줄구분자로 '\r'을 쓴다
         private static string NormalizeNewlines(string text)
@@ -238,8 +251,43 @@ namespace sutty.UI.Views
             }
         }
 
+        private async void DownloadPath_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetRemoteDirectory(out var remotePath))
+                return;
+            if (OwnerWindowHandle == IntPtr.Zero)
+            {
+                ShowSftpStatus("폴더 선택 창을 열 수 없습니다.", "The folder picker is unavailable.");
+                return;
+            }
+
+            try
+            {
+                var picker = new FolderPicker
+                {
+                    SuggestedStartLocation = PickerLocationId.Downloads,
+                };
+                picker.FileTypeFilter.Add("*");
+                InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
+                var folder = await picker.PickSingleFolderAsync();
+                if (folder is not null && !string.IsNullOrWhiteSpace(folder.Path))
+                    SftpDownloadRequested?.Invoke(
+                        this,
+                        new MultiSftpDownloadRequest(remotePath, folder.Path));
+            }
+            catch (Exception error)
+            {
+                ShowSftpStatus(
+                    $"다운로드 폴더 선택 실패: {error.Message}",
+                    $"Could not select the download folder: {error.Message}");
+            }
+        }
+
         private void RetryFailed_Click(object sender, RoutedEventArgs e)
             => SftpRetryFailedRequested?.Invoke(this, EventArgs.Empty);
+
+        private void ResumePending_Click(object sender, RoutedEventArgs e)
+            => SftpResumePendingRequested?.Invoke(this, EventArgs.Empty);
 
         private bool TryGetRemoteDirectory(out string remoteDirectory)
         {
