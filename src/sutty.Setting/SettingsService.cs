@@ -134,12 +134,14 @@ public static class SettingsService
         settings.TerminalScrollbackLines = Math.Clamp(settings.TerminalScrollbackLines, 100, 50_000);
         settings.DefaultSshPort = Math.Clamp(settings.DefaultSshPort, 1, 65_535);
         settings.DefaultKeepAliveSeconds = Math.Clamp(settings.DefaultKeepAliveSeconds, 0, 3_600);
-        settings.LastAuthMethod = string.Equals(
-            settings.LastAuthMethod,
-            "PublicKey",
-            StringComparison.OrdinalIgnoreCase)
-                ? "PublicKey"
-                : "Password";
+        settings.SftpRetryCount = Math.Clamp(settings.SftpRetryCount, 0, 10);
+        settings.LastAuthMethod = settings.LastAuthMethod?.ToLowerInvariant() switch
+        {
+            "publickey" => "PublicKey",
+            "agent" => "Agent",
+            "keyboardinteractive" => "KeyboardInteractive",
+            _ => "Password",
+        };
         settings.HistoryRetentionDays = Math.Clamp(settings.HistoryRetentionDays, 1, 365);
         settings.HistoryTopHostCount = Math.Clamp(settings.HistoryTopHostCount, 1, 16);
         settings.MainWindowWidth = Math.Clamp(settings.MainWindowWidth, 720, 7_680);

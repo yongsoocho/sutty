@@ -33,7 +33,6 @@ public sealed class TerminalBroadcastCapture
 
     public Task<string> Completion => _completion.Task;
 
-<<<<<<< HEAD
     /// <summary>Returns the output received so far without waiting for the end marker.</summary>
     public string Snapshot()
     {
@@ -57,8 +56,6 @@ public sealed class TerminalBroadcastCapture
             _completion.TrySetException(error);
     }
 
-=======
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
     public void Feed(ReadOnlySpan<byte> bytes)
     {
         if (_completion.Task.IsCompleted || bytes.IsEmpty)
@@ -117,7 +114,6 @@ public sealed class TerminalBroadcastCapture
             if (index < 0)
                 return -1;
 
-<<<<<<< HEAD
             var afterIndex = index + marker.Length;
             var lineStart = index;
             while (lineStart > 0 && text[lineStart - 1] is not ('\r' or '\n'))
@@ -132,12 +128,6 @@ public sealed class TerminalBroadcastCapture
             var logicalLine = StripTerminalControlSequences(
                 text[lineStart..lineEnd]).Trim();
             if (string.Equals(logicalLine, marker, StringComparison.Ordinal))
-=======
-            var beforeIsLineBoundary = index == 0 || text[index - 1] is '\r' or '\n';
-            var afterIndex = index + marker.Length;
-            var afterIsLineBoundary = afterIndex == text.Length || text[afterIndex] is '\r' or '\n';
-            if (beforeIsLineBoundary && afterIsLineBoundary)
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
                 return index;
 
             searchFrom = index + marker.Length;
@@ -162,7 +152,6 @@ public sealed class TerminalBroadcastCapture
 
     private string CleanForPreview(string value)
     {
-<<<<<<< HEAD
         var normalized = StripTerminalControlSequences(value)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
@@ -174,8 +163,6 @@ public sealed class TerminalBroadcastCapture
 
     private static string StripTerminalControlSequences(string value)
     {
-=======
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         var result = new StringBuilder(value.Length);
         var state = EscapeState.Ground;
         foreach (var character in value)
@@ -216,17 +203,7 @@ public sealed class TerminalBroadcastCapture
             }
         }
 
-<<<<<<< HEAD
         return result.ToString();
-=======
-        var normalized = result.ToString()
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n');
-        return string.Join('\n', normalized
-            .Split('\n')
-            .Where(line => !line.Contains($"echo {_endMarker}", StringComparison.OrdinalIgnoreCase)))
-            .Trim('\n');
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
     }
 
     private enum EscapeState

@@ -63,6 +63,105 @@ try
     Assert(await File.ReadAllTextAsync(localDownload) == "second",
         "confirmed download replaces destination");
 
+    Assert(SftpTransferOptions.Default.RetryEnabled,
+        "SFTP retries are enabled by default");
+    Assert(SftpTransferOptions.Default.MaxRetries == 3,
+        "SFTP default retry count is three");
+
+    var sourceTree = Path.Combine(scratch, "source-tree");
+    Directory.CreateDirectory(Path.Combine(sourceTree, "nested", "empty"));
+    await File.WriteAllTextAsync(Path.Combine(sourceTree, "root.json"), "{\"ok\":true}");
+    await File.WriteAllTextAsync(Path.Combine(sourceTree, "nested", "child.yaml"), "value: 42");
+    var uploadedTree = Path.Combine(remote, "uploaded-tree");
+    var treeProgress = new List<SftpTransferProgress>();
+    var uploadTreeResult = await files.UploadPathAsync(
+        sourceTree,
+        uploadedTree,
+        progress: new InlineProgress<SftpTransferProgress>(treeProgress.Add));
+    Assert(uploadTreeResult.FilesTransferred == 2, "recursive upload transfers every file");
+    Assert(File.Exists(Path.Combine(uploadedTree, "nested", "child.yaml")),
+        "recursive upload preserves nested paths");
+    Assert(Directory.Exists(Path.Combine(uploadedTree, "nested", "empty")),
+        "recursive upload preserves empty directories");
+    Assert(treeProgress.Last().Phase == SftpTransferPhase.Completed &&
+           treeProgress.Last().Fraction == 1.0,
+        "recursive upload reports completion");
+
+    var enumeratedTree = await files.EnumerateTreeAsync(uploadedTree);
+    Assert(enumeratedTree.Any(entry => entry.RelativePath.EndsWith("child.yaml")),
+        "folder tree enumeration includes nested files");
+    Assert(enumeratedTree.Any(entry => entry.Entry.IsDirectory &&
+                                      entry.RelativePath.EndsWith("empty")),
+        "folder tree enumeration includes empty folders");
+
+    var downloadedTree = Path.Combine(downloads, "downloaded-tree");
+    var downloadTreeResult = await files.DownloadPathAsync(uploadedTree, downloadedTree);
+    Assert(downloadTreeResult.FilesTransferred == 2, "recursive download transfers every file");
+    Assert(await File.ReadAllTextAsync(Path.Combine(downloadedTree, "nested", "child.yaml")) ==
+           "value: 42", "recursive download preserves contents");
+
+    var resumeSource = Path.Combine(remote, "resume.bin");
+    var resumeBytes = Enumerable.Range(0, 32_768).Select(index => (byte)(index % 251)).ToArray();
+    await File.WriteAllBytesAsync(resumeSource, resumeBytes);
+    var resumeDestination = Path.Combine(downloads, "resume.bin");
+    await File.WriteAllBytesAsync(resumeDestination + ".sutty.part", resumeBytes[..8_192]);
+    var resumed = await files.DownloadPathAsync(
+        resumeSource,
+        resumeDestination,
+        new SftpTransferOptions { Resume = true, VerifyChecksum = true });
+    Assert(resumed.ResumedBytes == 8_192, "resume continues from the partial-file offset");
+    Assert(resumed.Sha256 is { Length: 64 }, "completed transfer returns a SHA-256 checksum");
+    Assert((await File.ReadAllBytesAsync(resumeDestination)).SequenceEqual(resumeBytes),
+        "checksum-verified resumed download matches the source");
+
+    var checkpointPath = Path.Combine(scratch, "checkpoints.json");
+    var checkpointStore = new SftpTransferCheckpointStore(checkpointPath);
+    var checkpointId = SftpTransferCheckpointStore.CreateId(
+        "server-a",
+        sutty.Core.Sftp.SftpTransferDirection.Upload,
+        source,
+        "/srv/source.txt");
+    checkpointStore.Save(new SftpTransferCheckpoint
+    {
+        Id = checkpointId,
+        Scope = "server-a",
+        Direction = sutty.Core.Sftp.SftpTransferDirection.Upload,
+        SourcePath = source,
+        DestinationPath = "/srv/source.txt",
+        PartialPath = "/srv/source.txt.sutty.part",
+        TotalBytes = 100,
+        TransferredBytes = 40,
+        SourceLastWriteUtcTicks = 123,
+    });
+    Assert(checkpointStore.Load(checkpointId)?.TransferredBytes == 40,
+        "transfer checkpoint survives a store reload");
+    Assert(!File.ReadAllText(checkpointPath).Contains("password", StringComparison.OrdinalIgnoreCase),
+        "transfer checkpoint document contains no credential fields");
+    checkpointStore.Delete(checkpointId);
+    Assert(checkpointStore.Load(checkpointId) is null, "completed checkpoint is removed");
+
+    var goodTarget = new RecordingSftpService();
+    var retryTarget = new RecordingSftpService(failFirstUpload: true);
+    var coordinator = new MultiSftpTransferCoordinator(maximumParallelism: 2);
+    var batch = await coordinator.UploadAsync(
+        source,
+        [
+            new MultiSftpTarget("good", "good-server", goodTarget, "/deploy"),
+            new MultiSftpTarget("retry", "retry-server", retryTarget, "/deploy"),
+        ],
+        new SftpTransferOptions { RetryEnabled = false });
+    Assert(batch.Failed.Count == 1 && batch.Failed[0].Target.Id == "retry",
+        "multi-server upload isolates a failed server");
+    Assert(goodTarget.UploadCalls == 1 && retryTarget.UploadCalls == 1,
+        "initial multi-server upload invokes every selected server once");
+    var retryBatch = await coordinator.RetryFailedAsync(
+        source,
+        batch,
+        new SftpTransferOptions { RetryEnabled = false });
+    Assert(retryBatch.IsSuccessful, "failed-server retry succeeds independently");
+    Assert(goodTarget.UploadCalls == 1 && retryTarget.UploadCalls == 2,
+        "retry invokes failed servers only");
+
     var cancelledPath = Path.Combine(downloads, "cancelled.txt");
     using var cancelled = new CancellationTokenSource();
     cancelled.Cancel();
@@ -103,4 +202,73 @@ static async Task AssertThrowsAsync<TException>(Func<Task> action, string descri
 sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
 {
     public void Report(T value) => report(value);
+}
+
+sealed class RecordingSftpService(bool failFirstUpload = false) : ISftpService
+{
+    public int UploadCalls { get; private set; }
+
+    public Task<SftpTransferResult> UploadPathAsync(
+        string localPath,
+        string remotePath,
+        SftpTransferOptions? options = null,
+        IProgress<SftpTransferProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        UploadCalls++;
+        ct.ThrowIfCancellationRequested();
+        if (failFirstUpload && UploadCalls == 1)
+            throw new IOException("simulated target failure");
+        var bytes = new FileInfo(localPath).Length;
+        progress?.Report(new SftpTransferProgress(
+            sutty.Core.Sftp.SftpTransferDirection.Upload,
+            SftpTransferPhase.Completed,
+            Path.GetFileName(localPath),
+            bytes,
+            bytes,
+            1,
+            1,
+            1));
+        return Task.FromResult(new SftpTransferResult(
+            sutty.Core.Sftp.SftpTransferDirection.Upload,
+            localPath,
+            remotePath,
+            1,
+            bytes,
+            0,
+            null,
+            TimeSpan.Zero));
+    }
+
+    public Task<IReadOnlyList<RemoteTreeEntry>> EnumerateTreeAsync(
+        string path,
+        CancellationToken ct = default) => throw new NotSupportedException();
+
+    public Task<SftpTransferResult> DownloadPathAsync(
+        string remotePath,
+        string localPath,
+        SftpTransferOptions? options = null,
+        IProgress<SftpTransferProgress>? progress = null,
+        CancellationToken ct = default) => throw new NotSupportedException();
+
+    public Task<IReadOnlyList<sutty.Core.Models.RemoteFileEntry>> ListDirectoryAsync(
+        string path,
+        CancellationToken ct = default) => throw new NotSupportedException();
+
+    public Task UploadFileAsync(string localPath, string remoteDirectory, bool overwrite = false,
+        IProgress<double>? progress = null, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task DownloadFileAsync(string remotePath, string localPath, bool overwrite = false,
+        IProgress<double>? progress = null, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+
+    public Task MoveAsync(string sourcePath, string destinationPath,
+        CancellationToken ct = default) => throw new NotSupportedException();
+    public Task DeleteFileAsync(string path, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+    public Task DeleteDirectoryAsync(string path, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+    public Task CreateDirectoryAsync(string path, CancellationToken ct = default) =>
+        throw new NotSupportedException();
 }

@@ -7,13 +7,25 @@ namespace sutty.Core.Sftp;
 /// SSH.NET SftpClient wrapper. SSH.NET does not promise that one SftpClient can be
 /// called concurrently, so every list/transfer/mutation is serialized by one gate.
 /// </summary>
-public sealed class SshNetSftpService : ISftpService
+public sealed partial class SshNetSftpService : ISftpService
 {
     private readonly Func<SftpClient?> _clientProvider;
+    private readonly Func<CancellationToken, Task<SftpClient?>>? _reconnectAsync;
+    private readonly SftpTransferCheckpointStore _checkpointStore;
+    private readonly string _checkpointScope;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
 
-    public SshNetSftpService(Func<SftpClient?> clientProvider)
-        => _clientProvider = clientProvider;
+    public SshNetSftpService(
+        Func<SftpClient?> clientProvider,
+        string checkpointScope = "default",
+        Func<CancellationToken, Task<SftpClient?>>? reconnectAsync = null,
+        SftpTransferCheckpointStore? checkpointStore = null)
+    {
+        _clientProvider = clientProvider;
+        _checkpointScope = string.IsNullOrWhiteSpace(checkpointScope) ? "default" : checkpointScope;
+        _reconnectAsync = reconnectAsync;
+        _checkpointStore = checkpointStore ?? SftpTransferCheckpointStore.Default;
+    }
 
     private SftpClient Client =>
         _clientProvider() is { IsConnected: true } client
@@ -31,6 +43,8 @@ public sealed class SshNetSftpService : ISftpService
                 Name = f.Name,
                 FullPath = f.FullName,
                 IsDirectory = f.IsDirectory,
+                IsSymbolicLink = f.IsSymbolicLink,
+                IsRegularFile = f.IsRegularFile,
                 Size = f.Length,
                 Modified = f.LastWriteTime,
             })

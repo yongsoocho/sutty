@@ -273,6 +273,33 @@
                             </StackPanel>
                         </Border>
 
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Style="{StaticResource SettingsLabel}" Text="SFTP TRANSFER RETRY" />
+                                <ToggleSwitch
+                                    x:Name="SftpRetryToggle"
+                                    Header="{x:Bind h:Loc.T('일시적인 SFTP 실패 자동 재시도', 'Retry transient SFTP failures')}"
+                                    OffContent="Off"
+                                    OnContent="On"
+                                    Toggled="SftpRetryToggle_Toggled" />
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource SettingsLabel}" Text="{x:Bind h:Loc.T('재시도 횟수 (기본 3회)', 'Retry count (default: 3)')}" />
+                                    <NumberBox
+                                        x:Name="SftpRetryCountBox"
+                                        Maximum="10"
+                                        Minimum="0"
+                                        SpinButtonPlacementMode="Hidden"
+                                        ValueChanged="NumberBox_ValueChanged"
+                                        Style="{StaticResource SettingsNumber}" />
+                                </StackPanel>
+                                <TextBlock
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('이어받기 체크포인트를 유지하며 연결 오류와 체크섬 불일치만 다시 시도합니다.', 'Keeps resume checkpoints and retries only connection errors and checksum mismatches.')}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
                         <!--  접속 히스토리 (append-only 로그) 설정  -->
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel Spacing="10">

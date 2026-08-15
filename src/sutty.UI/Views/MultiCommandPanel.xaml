@@ -18,6 +18,7 @@
     <Grid RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -91,8 +92,134 @@
             </Grid>
         </Grid>
 
-        <!--  ── 아래 75%: 저장된 커맨드 (실행 = 브로드캐스트) ──  -->
-        <Grid Grid.Row="1" RowSpacing="8">
+        <!--  ── 체크된 SSH 세션 대상 다중 SFTP ──  -->
+        <Expander
+            Grid.Row="1"
+            MaxHeight="300"
+            HorizontalAlignment="Stretch"
+            Header="{x:Bind h:Loc.T('다중 SFTP 업로드', 'Multi-server SFTP upload')}">
+            <StackPanel Padding="0,8,0,2" Spacing="7">
+                <TextBox
+                    x:Name="SftpRemoteDirectoryBox"
+                    MinHeight="34"
+                    CornerRadius="7"
+                    FontFamily="Cascadia Mono, Consolas"
+                    FontSize="11.5"
+                    Header="{x:Bind h:Loc.T('모든 대상의 원격 폴더', 'Remote folder on every target')}"
+                    PlaceholderText="/tmp"
+                    Text="/tmp" />
+                <Grid ColumnSpacing="7">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                        x:Name="UploadFilesButton"
+                        Height="32"
+                        HorizontalAlignment="Stretch"
+                        Click="UploadFile_Click"
+                        CornerRadius="7">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="11" Glyph="&#xE898;" />
+                            <TextBlock Text="{x:Bind h:Loc.T('파일 업로드…', 'Upload file…')}" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        x:Name="UploadFolderButton"
+                        Grid.Column="1"
+                        Height="32"
+                        HorizontalAlignment="Stretch"
+                        Click="UploadFolder_Click"
+                        CornerRadius="7">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="11" Glyph="&#xE8B7;" />
+                            <TextBlock Text="{x:Bind h:Loc.T('폴더 업로드…', 'Upload folder…')}" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <Button
+                    x:Name="RetryFailedButton"
+                    Height="30"
+                    HorizontalAlignment="Stretch"
+                    Click="RetryFailed_Click"
+                    Content="{x:Bind h:Loc.T('실패한 서버만 재시도', 'Retry failed servers only')}"
+                    CornerRadius="7"
+                    Visibility="Collapsed" />
+                <TextBlock
+                    x:Name="SftpStatusText"
+                    FontSize="10.5"
+                    Foreground="{ThemeResource TextMuted}"
+                    Text="{x:Bind h:Loc.T('체크한 SSH 세션만 대상이 됩니다.', 'Only checked SSH sessions are targeted.')}"
+                    TextWrapping="Wrap" />
+                <ScrollViewer MaxHeight="118" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{x:Bind SftpTargets}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MultiSftpTargetVm">
+                                <Border
+                                    Margin="0,0,0,5"
+                                    Padding="8,6"
+                                    Background="{ThemeResource CardBg}"
+                                    BorderBrush="{ThemeResource CardBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="7">
+                                    <Grid ColumnSpacing="7" RowSpacing="3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="18" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="38" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <FontIcon
+                                            Grid.RowSpan="2"
+                                            VerticalAlignment="Center"
+                                            FontSize="11"
+                                            Foreground="{ThemeResource AccentTeal}"
+                                            Glyph="{x:Bind StateGlyph, Mode=OneWay}" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            FontSize="11"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource TextPrimary}"
+                                            Text="{x:Bind DisplayName}"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <TextBlock
+                                            Grid.Column="2"
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="10"
+                                            Foreground="{ThemeResource AccentTeal}"
+                                            Text="{x:Bind ProgressText, Mode=OneWay}"
+                                            TextAlignment="Right" />
+                                        <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" ColumnSpacing="6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="62" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <ProgressBar
+                                                Width="62"
+                                                VerticalAlignment="Center"
+                                                Maximum="1"
+                                                Value="{x:Bind Progress, Mode=OneWay}" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                FontSize="9.5"
+                                                Foreground="{ThemeResource TextMuted}"
+                                                Text="{x:Bind DetailText, Mode=OneWay}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Expander>
+
+        <!--  ── 아래: 저장된 커맨드 (실행 = 브로드캐스트) ──  -->
+        <Grid Grid.Row="2" RowSpacing="8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />

@@ -9,6 +9,7 @@ using sutty.Core.Models;
 using sutty.Core.Security;
 using sutty.Core.Routing;
 using sutty.Core.Sessions;
+using sutty.Core.Sftp;
 using sutty.Core.Terminal;
 using sutty.Setting;
 using System;
@@ -36,6 +37,10 @@ namespace sutty.UI.Views
         private string _appIconPath = "";
         private bool _isMultiView;
         private int _broadcastInProgress;
+        private readonly MultiSftpTransferCoordinator _multiSftpCoordinator = new();
+        private MultiSftpBatchResult? _lastMultiSftpBatch;
+        private string? _lastMultiSftpLocalPath;
+        private int _multiSftpInProgress;
 
         public MainWindow()
         {
@@ -276,7 +281,7 @@ namespace sutty.UI.Views
             }
 
             var authMethod = Enum.TryParse<SshAuthMethod>(authMethodName, true, out var parsed) &&
-                             parsed is SshAuthMethod.Password or SshAuthMethod.PublicKey
+                             Enum.IsDefined(parsed)
                 ? parsed
                 : SshAuthMethod.Password;
 
@@ -288,7 +293,9 @@ namespace sutty.UI.Views
                 Username = username,
                 AuthMethod = authMethod,
                 PrivateKeyPath = authMethod == SshAuthMethod.PublicKey ? privateKeyPath : "",
-                Password = authMethod == SshAuthMethod.Password ? credential?.Password ?? "" : "",
+                Password = authMethod is SshAuthMethod.Password or SshAuthMethod.KeyboardInteractive
+                    ? credential?.Password ?? ""
+                    : "",
                 Passphrase = authMethod == SshAuthMethod.PublicKey
                     ? credential?.PrivateKeyPassphrase ?? ""
                     : "",
@@ -482,10 +489,136 @@ namespace sutty.UI.Views
 
         private MultiCommandPanel CreateMultiPanel()
         {
-            var panel = new MultiCommandPanel();
+            var panel = new MultiCommandPanel
+            {
+                OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this),
+            };
             panel.BroadcastRequested += async (_, command) =>
                 await BroadcastFromPanelAsync(panel, command);
+            panel.SftpUploadRequested += async (_, request) =>
+                await UploadToSelectedSessionsAsync(panel, request);
+            panel.SftpRetryFailedRequested += async (_, _) =>
+                await RetryFailedSftpTargetsAsync(panel);
             return panel;
+        }
+
+        private async Task UploadToSelectedSessionsAsync(
+            MultiCommandPanel panel,
+            MultiSftpUploadRequest request)
+        {
+            if (Interlocked.CompareExchange(ref _multiSftpInProgress, 1, 0) != 0)
+            {
+                panel.ShowSftpStatus(
+                    "이미 다중 SFTP 전송이 실행 중입니다.",
+                    "A multi-server SFTP transfer is already running.");
+                return;
+            }
+
+            panel.ResetSftpTargets();
+            panel.SetSftpRunning(true, Helpers.Loc.T(
+                "선택한 서버별로 업로드를 준비합니다…",
+                "Preparing the upload for each selected server…"));
+            try
+            {
+                var selectedSlots = MultiGrid.GetTargetSlots();
+                var targets = selectedSlots
+                    .Select(slot => slot.CreateSftpTarget(request.RemoteDirectory))
+                    .OfType<MultiSftpTarget>()
+                    .ToArray();
+                if (targets.Length == 0)
+                {
+                    panel.ShowSftpStatus(
+                        "SFTP를 사용할 수 있는 체크된 SSH 세션이 없습니다.",
+                        "No checked SSH session has an available SFTP subsystem.");
+                    return;
+                }
+
+                var skipped = selectedSlots.Count - targets.Length;
+                if (skipped > 0)
+                {
+                    panel.ShowSftpStatus(
+                        $"SFTP 사용 불가 또는 로컬 대상 {skipped}개를 제외하고 전송합니다.",
+                        $"Uploading after excluding {skipped} local or SFTP-unavailable target(s).");
+                }
+
+                _lastMultiSftpLocalPath = request.LocalPath;
+                var progress = new Progress<MultiSftpTargetStatus>(panel.UpdateSftpTarget);
+                _lastMultiSftpBatch = await _multiSftpCoordinator.UploadAsync(
+                    request.LocalPath,
+                    targets,
+                    CreateSftpTransferOptions(),
+                    progress);
+                panel.CompleteSftpBatch(_lastMultiSftpBatch);
+            }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Multi-server SFTP upload failed: {error}");
+                panel.ShowSftpStatus(
+                    $"다중 SFTP 업로드를 시작하지 못했습니다: {error.Message}",
+                    $"Could not start the multi-server SFTP upload: {error.Message}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _multiSftpInProgress, 0);
+                panel.SetSftpRunning(false);
+            }
+        }
+
+        private async Task RetryFailedSftpTargetsAsync(MultiCommandPanel panel)
+        {
+            if (_lastMultiSftpBatch is null || string.IsNullOrWhiteSpace(_lastMultiSftpLocalPath))
+            {
+                panel.ShowSftpStatus(
+                    "재시도할 이전 실패 기록이 없습니다.",
+                    "There is no previous failed transfer to retry.");
+                return;
+            }
+            if (Interlocked.CompareExchange(ref _multiSftpInProgress, 1, 0) != 0)
+            {
+                panel.ShowSftpStatus(
+                    "이미 다중 SFTP 전송이 실행 중입니다.",
+                    "A multi-server SFTP transfer is already running.");
+                return;
+            }
+
+            panel.SetSftpRunning(true, Helpers.Loc.T(
+                "실패한 서버만 다시 전송합니다…",
+                "Retrying failed servers only…"));
+            try
+            {
+                var progress = new Progress<MultiSftpTargetStatus>(panel.UpdateSftpTarget);
+                _lastMultiSftpBatch = await _multiSftpCoordinator.RetryFailedAsync(
+                    _lastMultiSftpLocalPath,
+                    _lastMultiSftpBatch,
+                    CreateSftpTransferOptions(),
+                    progress);
+                panel.CompleteSftpBatch(_lastMultiSftpBatch);
+            }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Failed-target SFTP retry failed: {error}");
+                panel.ShowSftpStatus(
+                    $"실패 서버 재시도를 시작하지 못했습니다: {error.Message}",
+                    $"Could not retry failed servers: {error.Message}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _multiSftpInProgress, 0);
+                panel.SetSftpRunning(false);
+            }
+        }
+
+        private static SftpTransferOptions CreateSftpTransferOptions()
+        {
+            var settings = SettingsService.Current;
+            return new SftpTransferOptions
+            {
+                Overwrite = true,
+                Resume = true,
+                VerifyChecksum = true,
+                RetryEnabled = settings.SftpRetryEnabled,
+                MaxRetries = settings.SftpRetryCount,
+            };
         }
 
         private async Task BroadcastFromPanelAsync(MultiCommandPanel panel, string command)
@@ -586,14 +719,9 @@ namespace sutty.UI.Views
                     return false;
             }
 
-<<<<<<< HEAD
             await Task.WhenAll(targets.Select(slot =>
                 RunBroadcastOnSlotAsync(slot, command)));
             return true;
-=======
-            foreach (var slot in targets)
-                _ = RunBroadcastOnSlotAsync(slot, command);
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
         }
 
         private static async Task RunBroadcastOnSlotAsync(ViewModels.MultiSlotVm slot, string command)
@@ -603,7 +731,6 @@ namespace sutty.UI.Views
             using var timeoutCancellation = new CancellationTokenSource(BroadcastCommandTimeout);
             try
             {
-<<<<<<< HEAD
                 var result = await slot.ExecuteAsync(command, timeoutCancellation.Token);
                 var output = result.CombinedOutput;
                 var timedOut = timeoutCancellation.IsCancellationRequested &&
@@ -614,11 +741,6 @@ namespace sutty.UI.Views
                 slot.ResultText = timedOut
                     ? Helpers.Loc.T("시간 초과", "timed out")
                     : slot.LocalView is not null
-=======
-                var result = await slot.ExecuteAsync(command);
-                var output = result.CombinedOutput;
-                slot.ResultText = slot.LocalView is not null
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
                     ? Helpers.Loc.T("완료", "complete")
                     : result.ExitCode is int exitCode
                         ? $"exit {exitCode}"
@@ -626,15 +748,11 @@ namespace sutty.UI.Views
                             ? signal.ToLowerInvariant()
                             : Helpers.Loc.T("실패", "failed");
                 slot.LastOutput = string.IsNullOrWhiteSpace(output)
-<<<<<<< HEAD
                     ? timedOut
                         ? Helpers.Loc.T(
                             "60초 안에 응답이 없어 중단했습니다.",
                             "Stopped after no response for 60 seconds.")
                         : slot.LocalView is not null
-=======
-                    ? slot.LocalView is not null
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
                         ? Helpers.Loc.T("(출력 없음)", "(no output)")
                         : result.Succeeded
                             ? Helpers.Loc.T("(출력 없음)", "(no output)")
@@ -885,6 +1003,7 @@ namespace sutty.UI.Views
             }
 
             info.HostKeyPromptAsync ??= PromptUnknownHostKeyAsync;
+            info.KeyboardInteractivePromptAsync ??= PromptKeyboardInteractiveAsync;
 
             ISshSession session;
             try
@@ -1010,6 +1129,11 @@ namespace sutty.UI.Views
                 timer.Stop();
                 info.Password = "";
                 info.Passphrase = "";
+                if (info.Route is not null)
+                {
+                    info.Route.Password = "";
+                    info.Route.Passphrase = "";
+                }
                 try
                 {
                     sutty.Command.HostHistoryStore.Append(
@@ -1111,7 +1235,8 @@ namespace sutty.UI.Views
             {
                 if (info.RememberCredential)
                 {
-                    var secret = info.AuthMethod == SshAuthMethod.Password
+                    var secret = info.AuthMethod is SshAuthMethod.Password or
+                        SshAuthMethod.KeyboardInteractive
                         ? new CredentialSecret(Password: info.Password)
                         : new CredentialSecret(PrivateKeyPassphrase: info.Passphrase);
 
@@ -1196,6 +1321,108 @@ namespace sutty.UI.Views
                 };
                 await warning.ShowAsync();
                 return null;
+            }
+        }
+
+        private Task<System.Collections.Generic.IReadOnlyList<string>?>
+            PromptKeyboardInteractiveAsync(
+                KeyboardInteractiveChallenge challenge,
+                CancellationToken ct)
+        {
+            var completion = new TaskCompletionSource<
+                System.Collections.Generic.IReadOnlyList<string>?>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!DispatcherQueue.TryEnqueue(async () =>
+                {
+                    try
+                    {
+                        completion.TrySetResult(
+                            await ShowKeyboardInteractivePromptAsync(challenge, ct));
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        completion.TrySetResult(null);
+                    }
+                    catch (Exception error)
+                    {
+                        completion.TrySetException(error);
+                    }
+                }))
+            {
+                completion.TrySetException(new InvalidOperationException(
+                    "The SSH authentication prompt could not be dispatched to the UI."));
+            }
+            return completion.Task.WaitAsync(ct);
+        }
+
+        private async Task<System.Collections.Generic.IReadOnlyList<string>?>
+            ShowKeyboardInteractivePromptAsync(
+                KeyboardInteractiveChallenge challenge,
+                CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (challenge.Prompts.Count is < 1 or > 16)
+                throw new InvalidOperationException(
+                    "The server supplied an invalid number of authentication prompts.");
+
+            await _hostKeyPromptGate.WaitAsync(ct);
+            try
+            {
+                var content = new StackPanel { Spacing = 9, MinWidth = 340 };
+                if (!string.IsNullOrWhiteSpace(challenge.Instruction))
+                {
+                    content.Children.Add(new TextBlock
+                    {
+                        Text = challenge.Instruction,
+                        Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                        TextWrapping = TextWrapping.Wrap,
+                    });
+                }
+
+                var readers = new System.Collections.Generic.List<Func<string>>();
+                foreach (var prompt in challenge.Prompts)
+                {
+                    var request = string.IsNullOrWhiteSpace(prompt.Request)
+                        ? Helpers.Loc.T("응답", "Response")
+                        : prompt.Request[..Math.Min(prompt.Request.Length, 512)];
+                    if (prompt.IsEchoed)
+                    {
+                        var input = new TextBox { Header = request, MinWidth = 340 };
+                        content.Children.Add(input);
+                        readers.Add(() => input.Text);
+                    }
+                    else
+                    {
+                        var input = new PasswordBox { Header = request, MinWidth = 340 };
+                        content.Children.Add(input);
+                        readers.Add(() => input.Password);
+                    }
+                }
+
+                var dialog = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("SSH 추가 인증", "Additional SSH authentication"),
+                    Content = new ScrollViewer
+                    {
+                        MaxHeight = 480,
+                        Content = content,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    },
+                    PrimaryButtonText = Helpers.Loc.T("응답 전송", "Submit responses"),
+                    CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = Content.XamlRoot,
+                };
+                using var cancellation = ct.Register(() =>
+                    DispatcherQueue.TryEnqueue(dialog.Hide));
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                    return null;
+                ct.ThrowIfCancellationRequested();
+                return readers.Select(read => read()).ToArray();
+            }
+            finally
+            {
+                _hostKeyPromptGate.Release();
             }
         }
 

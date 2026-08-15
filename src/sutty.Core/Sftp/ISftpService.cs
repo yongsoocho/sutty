@@ -10,6 +10,33 @@ public interface ISftpService
 {
     Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(string path, CancellationToken ct = default);
 
+    /// <summary>Recursively enumerates a remote directory without following symbolic links.</summary>
+    Task<IReadOnlyList<RemoteTreeEntry>> EnumerateTreeAsync(
+        string path,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Uploads a file or directory to an exact remote destination. Directory transfers
+    /// preserve the complete tree and use resumable per-file checkpoints.
+    /// </summary>
+    Task<SftpTransferResult> UploadPathAsync(
+        string localPath,
+        string remotePath,
+        SftpTransferOptions? options = null,
+        IProgress<SftpTransferProgress>? progress = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Downloads a file or directory to an exact local destination. Directory transfers
+    /// preserve the complete tree and use resumable per-file checkpoints.
+    /// </summary>
+    Task<SftpTransferResult> DownloadPathAsync(
+        string remotePath,
+        string localPath,
+        SftpTransferOptions? options = null,
+        IProgress<SftpTransferProgress>? progress = null,
+        CancellationToken ct = default);
+
     /// <summary>
     /// 로컬 파일을 원격 디렉터리에 업로드한다.
     /// progress는 0.0~1.0, ct 취소 시 부분 업로드는 정리하고 OperationCanceledException을 던진다.

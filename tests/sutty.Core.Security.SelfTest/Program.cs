@@ -5,32 +5,39 @@ using sutty.Core.Routing;
 using sutty.Core.Sessions;
 using Renci.SshNet;
 using Renci.SshNet.Common;
+using SshNet.Agent;
 using System.Text.Json.Nodes;
 
-AssertSshNet2025PublicApi();
+AssertSshNet2026PublicApi();
+AssertSshAgentAdapterLoads();
 
 ConnectionLogStore.Clear();
+var logPassword = CreateTestSecret("log-password");
+var logPassphrase = CreateTestSecret("log-passphrase");
+var logToken = CreateTestSecret("log-token");
+var logNamedSecret = CreateTestSecret("log-secret");
+var logProxySecret = CreateTestSecret("proxy-password");
 ConnectionLogStore.Append(
     Guid.NewGuid(),
     "diagnostic-test",
     "server.internal:22",
     ConnectionLogSeverity.Error,
     "authentication",
-    "password=do-not-log passphrase:also-secret",
-    "token=hidden secret='hidden-too'",
-    "proxy=https://operator:proxy-secret@proxy.internal:8443");
+    $"password={logPassword} passphrase:{logPassphrase}",
+    $"token={logToken} secret='{logNamedSecret}'",
+    $"proxy=https://operator:{logProxySecret}@proxy.internal:8443");
 var sanitizedLog = ConnectionLogStore.Snapshot().Single();
-Assert(!sanitizedLog.MessageKo.Contains("do-not-log", StringComparison.Ordinal),
+Assert(!sanitizedLog.MessageKo.Contains(logPassword, StringComparison.Ordinal),
     "connection log redacts password values");
-Assert(!sanitizedLog.MessageKo.Contains("also-secret", StringComparison.Ordinal),
+Assert(!sanitizedLog.MessageKo.Contains(logPassphrase, StringComparison.Ordinal),
     "connection log redacts passphrase values");
-Assert(!sanitizedLog.MessageEn.Contains("hidden-too", StringComparison.Ordinal),
+Assert(!sanitizedLog.MessageEn.Contains(logNamedSecret, StringComparison.Ordinal),
     "connection log redacts named secret values");
-Assert(!sanitizedLog.Detail!.Contains("operator:proxy-secret", StringComparison.Ordinal),
+Assert(!sanitizedLog.Detail!.Contains(logProxySecret, StringComparison.Ordinal),
     "connection log redacts URI user info");
 ConnectionLogStore.Clear();
 
-const string failedConnectionPassword = "diagnostic-password-must-not-leak";
+var failedConnectionPassword = CreateTestSecret("failed-connection");
 var failedSession = new SshNetSession(new SshConnectionInfo
 {
     Host = "127.0.0.1",
@@ -57,6 +64,7 @@ Assert(!string.Join('\n', failedConnectionLogs.Select(entry =>
 await failedSession.DisconnectAsync();
 ConnectionLogStore.Clear();
 
+var proxyPassword = CreateTestSecret("proxy-route");
 var proxyRoute = RouteResolver.Resolve(
     new ConnectionRoute
     {
@@ -65,7 +73,7 @@ var proxyRoute = RouteResolver.Resolve(
         Host = "proxy.internal",
         Port = 1080,
         Username = "proxy-user",
-        Password = "secret-not-for-audit",
+        Password = proxyPassword,
     },
     new ConnectionRoutePolicy
     {
@@ -79,6 +87,30 @@ AssertThrows<RoutePolicyViolationException>(
         new ConnectionRoutePolicy { EnterpriseMode = true }),
     "enterprise route policy blocks direct fallback");
 
+var proxyCommandRoute = RouteResolver.Resolve(
+    new ConnectionRoute
+    {
+        Type = ConnectionRouteType.ExternalProxyCommand,
+        Command = "ssh -W %h:%p jump.example",
+    },
+    new ConnectionRoutePolicy());
+Assert(proxyCommandRoute.Command.Contains("%h:%p", StringComparison.Ordinal),
+    "ProxyCommand route accepts endpoint placeholders without a proxy host field");
+
+var jumpRoute = RouteResolver.Resolve(
+    new ConnectionRoute
+    {
+        Type = ConnectionRouteType.SshJump,
+        Host = "jump.example",
+        Port = 22,
+        Username = "jump-user",
+        AuthMethod = SshAuthMethod.Agent,
+    },
+    new ConnectionRoutePolicy());
+Assert(jumpRoute.Type == ConnectionRouteType.SshJump &&
+       jumpRoute.AuthMethod == SshAuthMethod.Agent,
+    "SSH jump route retains its authentication method");
+
 var auditContext = AuditContext.Create(
     new SshConnectionInfo
     {
@@ -89,7 +121,7 @@ var auditContext = AuditContext.Create(
     proxyRoute);
 Assert(auditContext.RouteId == "corp-proxy", "audit context carries route id");
 Assert(auditContext.CorrelationId.Length == 32, "audit context correlation id");
-Assert(!auditContext.ToString().Contains("secret-not-for-audit", StringComparison.Ordinal),
+Assert(!auditContext.ToString().Contains(proxyPassword, StringComparison.Ordinal),
     "audit context excludes proxy credentials");
 
 var scratch = Path.Combine(
@@ -209,14 +241,15 @@ try
         "tampered fingerprint fails closed");
 
     var vaultDirectory = Path.Combine(scratch, "credential-vault");
-    const string password = "vault-password-value";
-    const string passphrase = "vault-passphrase-value";
+    var password = CreateTestSecret("vault-password");
+    var passphrase = CreateTestSecret("vault-passphrase");
     string credentialId;
     using (var vault = new LocalCredentialVault(vaultDirectory))
     {
         credentialId = vault.Store(new CredentialSecret(password, passphrase));
         Assert(vault.TryRead(credentialId, out var restored), "credential can be read");
-        Assert(restored is { Password: password, PrivateKeyPassphrase: passphrase },
+        Assert(restored?.Password == password &&
+               restored.PrivateKeyPassphrase == passphrase,
             "credential round trip");
         Assert(vault.GetMetadata().Single().Id == credentialId, "credential metadata");
     }
@@ -237,11 +270,13 @@ try
         Assert(reloadedVault.TryRead(credentialId, out var restored),
             "credential survives vault reload");
         Assert(restored?.Password == password, "reloaded credential value");
-        reloadedVault.Store(new CredentialSecret("updated-password", ""), credentialId);
+        var updatedPassword = CreateTestSecret("updated-vault-password");
+        reloadedVault.Store(new CredentialSecret(updatedPassword, ""), credentialId);
         Assert(reloadedVault.TryRead(credentialId, out var updated) &&
-               updated?.Password == "updated-password",
+               updated?.Password == updatedPassword,
             "credential update");
-        var disposableId = reloadedVault.Store(new CredentialSecret("delete-me", ""));
+        var disposableId = reloadedVault.Store(new CredentialSecret(
+            CreateTestSecret("disposable-vault-value"), ""));
         Assert(reloadedVault.Delete(disposableId), "credential delete");
         Assert(!reloadedVault.TryRead(disposableId, out _), "deleted credential stays deleted");
     }
@@ -297,7 +332,7 @@ static void AssertThrows<TException>(Action action, string name)
     throw new InvalidOperationException($"Self-test failed: {name} did not throw {typeof(TException).Name}.");
 }
 
-static void AssertSshNet2025PublicApi()
+static void AssertSshNet2026PublicApi()
 {
     var eventArgs = typeof(HostKeyEventArgs);
     Assert(eventArgs.GetProperty(nameof(HostKeyEventArgs.CanTrust)) is
@@ -323,3 +358,22 @@ static void AssertSshNet2025PublicApi()
             [typeof(uint), typeof(uint), typeof(uint), typeof(uint)]) is not null,
         "SSH.NET runtime PTY resize API");
 }
+
+static void AssertSshAgentAdapterLoads()
+{
+    try
+    {
+        var agent = new SshAgent(TimeSpan.FromMilliseconds(500));
+        var identities = agent.RequestIdentities();
+        Assert(identities.All(identity => identity is IPrivateKeySource),
+            "Windows SSH Agent identities implement the SSH.NET key-source contract");
+    }
+    catch (Exception ex) when (ex is SshAgentException or TimeoutException)
+    {
+        // The Windows service or named pipe is optional on a build machine. Reaching the
+        // adapter-specific transport still proves that the adapter loaded against SSH.NET.
+    }
+}
+
+static string CreateTestSecret(string purpose) =>
+    string.Concat("sutty-self-test-", purpose, "-", Guid.NewGuid().ToString("N"));

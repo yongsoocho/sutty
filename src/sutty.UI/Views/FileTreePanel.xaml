@@ -127,7 +127,7 @@
                                     Icon="Download"
                                     Tag="{x:Bind}"
                                     Text="{x:Bind h:Loc.T('다른 이름으로 다운로드…', 'Download / Save as…')}"
-                                    Visibility="{x:Bind IsFile}" />
+                                    Visibility="{x:Bind CanDownload}" />
                                 <MenuFlyoutItem
                                     Click="NewFolder_Click"
                                     Icon="NewFolder"

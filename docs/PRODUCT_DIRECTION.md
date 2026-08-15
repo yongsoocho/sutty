@@ -44,7 +44,7 @@ Terminal and REPL are complementary. The REPL remains Sutty's differentiator; it
 
 ### Current Alpha baseline
 
-The current working tree contains tabbed local PowerShell through Windows ConPTY, a real SSH.NET `ShellStream` PTY with runtime server-side resize, a bounded native VT screen model, fail-closed known-host verification, separated SSH/Terminal/SFTP state, structured command results, practical single-file SFTP operations, a compact transfer queue with explicit percentage, Files/Terminal path integration, Saved Hosts with a local encrypted credential vault, append-only connection outcomes, live settings, and a zero-default-target Multi view with a PROD confirmation.
+The current working tree contains tabbed local PowerShell through Windows ConPTY, a real SSH.NET `ShellStream` PTY with runtime server-side resize, a bounded native VT screen model, fail-closed known-host verification, password/key/Agent/OTP authentication, direct/proxy/jump/ProxyCommand routes, session-scoped forwarding, separated SSH/Terminal/SFTP state, structured command results, recursive resumable verified SFTP operations, per-target Multi SFTP, a compact transfer queue with explicit percentage, Files/Terminal path integration, Saved Hosts with a local encrypted credential vault, append-only connection outcomes, live settings, and a zero-default-target Multi view with a PROD confirmation.
 
 This baseline is useful for development and controlled testing. It has not passed the compatibility, security, accessibility, packaging, large-transfer, or soak gates required for GA.
 
@@ -53,10 +53,10 @@ This baseline is useful for development and controlled testing. It has not passe
 | Gate | Current gap |
 | --- | --- |
 | Terminal compatibility | The hardened package-local xterm.js/WebView2 renderer and server PTY resize contract are integrated; pass and record the remaining shell/TUI/input/Unicode/security/soak matrix before GA. |
-| Secure host and credentials | Saved Host separation and a local encrypted Vault now exist; complete duplicate/bulk UX, OTP/multi-prompt keyboard-interactive UI, and broader secret-lifetime/redaction tests. |
+| Secure host and credentials | Saved Host separation, a local encrypted Vault, and OTP/multi-prompt UI now exist; complete duplicate/bulk UX, live authentication-provider coverage, and broader secret-lifetime/redaction tests. |
 | Host identity | Keep current unknown/trusted/changed enforcement, then add changed-key UX, rotation/management, audit, and integration coverage. |
-| SFTP correctness | Add directory transfer, recursive safety, complete collision policy, symlink handling, permission/error coverage, and large-file/deep-path tests. |
-| Transfer integrity | Add pause/retry behavior, final size verification, failure recovery, and evidence that cancel/disconnect cannot corrupt an existing destination. |
+| SFTP correctness | Recursive transfer and symlink non-traversal exist; complete collision/permission policy, recursive delete, and large-file/deep-path/multi-host tests remain. |
+| Transfer integrity | Retry/resume/checkpoint/checksum and safe promotion exist; add pause, automatic job discovery, fault injection, and evidence that cancel/disconnect cannot corrupt an existing destination. |
 | Command correctness | Finish cancellation UX and failure-path regression coverage across REPL and Multi. |
 | Production data | Keep first-run databases empty and the current release-artifact check enforced; add packaged clean-install/upgrade evidence so development data cannot return through migration or distribution. |
 | Release quality | Add integration/UI/security tests, performance and soak evidence, dependency review, and documented supported builds. |
@@ -64,9 +64,9 @@ This baseline is useful for development and controlled testing. It has not passe
 ### P1 gates for the specified Windows product
 
 - Host groups, tags, favorites, profile search, workspace restore, and command-line opening without secret arguments.
-- Windows OpenSSH Agent, PPK import, jump hosts, HTTP/SOCKS proxy, limited reconnect, and negotiated-algorithm information.
-- Persistent transfer management with configurable limits, retry/resume, verification, and restart recovery.
-- Local, remote, and dynamic port forwarding with safe bind warnings.
+- Complete the live Windows Agent, PPK, OTP, jump-host, ProxyCommand, and HTTP/SOCKS route matrix; add full reconnect policy and negotiated-algorithm information.
+- Complete persistent transfer management with pause, automatic job discovery, configurable concurrency, and large-transfer evidence.
+- Complete local, remote, and dynamic forwarding with safe bind warnings and a post-connect manager.
 - Streaming REPL output, typed snippet parameters, durable/exportable per-host Multi results, timeouts, and audit events.
 - OpenSSH configuration and legacy SSH/SFTP profile import, encrypted Sutty export, and conflict preview.
 - Local enterprise policy, managed host catalogs, diagnostics/support bundle, and redacted audit logging.
@@ -135,7 +135,7 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 
 ### 현재 Alpha 기준선
 
-현재 작업 트리에는 Windows ConPTY 기반 탭형 로컬 PowerShell, 실행 중 서버 측 크기 변경을 지원하는 실제 SSH.NET `ShellStream` PTY, 제한된 네이티브 VT 화면 모델, 기본 차단 known-host 검증, 분리된 SSH/Terminal/SFTP 상태, 구조화된 명령 결과, 실용적인 단일 파일 SFTP 작업, 명시적 퍼센트를 표시하는 간결한 전송 큐, Files/Terminal 경로 연동, 로컬 암호화 자격증명 보관소를 사용하는 저장 호스트, append-only 접속 결과, 즉시 반영 설정, 기본 선택 0개와 PROD 확인을 가진 Multi 화면이 있습니다.
+현재 작업 트리에는 Windows ConPTY 기반 탭형 로컬 PowerShell, 실행 중 서버 측 크기 변경을 지원하는 실제 SSH.NET `ShellStream` PTY, 제한된 네이티브 VT 화면 모델, 기본 차단 known-host 검증, 비밀번호·키·Agent·OTP 인증, direct·proxy·jump·ProxyCommand 경로, 세션 범위 forwarding, 분리된 SSH/Terminal/SFTP 상태, 구조화된 명령 결과, 재귀·재개·검증 SFTP와 대상별 Multi SFTP, 명시적 퍼센트를 표시하는 간결한 전송 큐, Files/Terminal 경로 연동, 로컬 암호화 자격증명 보관소를 사용하는 저장 호스트, append-only 접속 결과, 즉시 반영 설정, 기본 선택 0개와 PROD 확인을 가진 Multi 화면이 있습니다.
 
 이 기준선은 개발과 통제된 테스트에 사용할 수 있습니다. GA에 필요한 호환성·보안·접근성·패키징·대용량 전송·장시간 실행 게이트를 통과하지 않았습니다.
 
@@ -144,10 +144,10 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 | 게이트 | 현재 남은 작업 |
 | --- | --- |
 | 터미널 호환성 | 보안 설정한 패키지 내부 xterm.js/WebView2 렌더러와 서버 PTY resize 계약을 통합했습니다. GA 전에 남은 셸·TUI·입력·Unicode·보안·장시간 실행 매트릭스를 통과하고 기록해야 합니다. |
-| 안전한 Host와 자격 증명 | Saved Host 분리와 로컬 암호화 Vault는 구현됐으며 프로필 복제·일괄 UX, OTP·다중 prompt keyboard-interactive UI, 더 넓은 비밀정보 수명·redaction 테스트가 필요합니다. |
+| 안전한 Host와 자격 증명 | Saved Host 분리, 로컬 암호화 Vault, OTP·다중 prompt UI를 구현했으며 프로필 복제·일괄 UX, 실제 인증 제공자 범위, 더 넓은 비밀정보 수명·redaction 테스트가 필요합니다. |
 | 호스트 신원 | 현재 unknown/trusted/changed 강제를 유지하고, 변경 키 UX, rotation/관리, audit, 통합 검증을 추가해야 합니다. |
-| SFTP 정확성 | 디렉터리 전송, 재귀 작업 안전성, 전체 충돌 정책, symlink 처리, 권한·오류 범위, 대용량 파일·깊은 경로 테스트가 필요합니다. |
-| 전송 무결성 | 일시정지·재시도, 최종 크기 검증, 실패 복구, 취소·연결 종료가 기존 대상을 손상시키지 않는다는 증거가 필요합니다. |
+| SFTP 정확성 | 재귀 전송과 symlink 비추적은 구현했으며 전체 충돌·권한 정책, 재귀 삭제, 대용량·깊은 경로·다중 Host 테스트가 필요합니다. |
+| 전송 무결성 | 재시도·재개·checkpoint·checksum·안전 승격은 구현했으며 일시정지, 자동 job 검색, fault injection, 취소·연결 종료가 기존 대상을 손상시키지 않는다는 증거가 필요합니다. |
 | 명령 정확성 | REPL·Multi의 취소 UX와 실패 경로 회귀 검증을 완성해야 합니다. |
 | 운영 데이터 | 첫 실행 DB를 비워 두고 현재 릴리스 산출물 검사를 계속 강제하며, migration·배포로 개발 데이터가 돌아오지 않도록 package clean install·upgrade 증거를 추가해야 합니다. |
 | 릴리스 품질 | 통합·UI·보안 테스트, 성능·장시간 실행 증거, 의존성 검토, 지원 빌드 문서가 필요합니다. |
@@ -155,9 +155,9 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 ### 명세상 Windows 제품을 위한 P1 게이트
 
 - Host 그룹·태그·즐겨찾기·프로필 검색, 워크스페이스 복원, 비밀 인자가 없는 명령줄 열기
-- Windows OpenSSH Agent, PPK 가져오기, 점프 호스트, HTTP/SOCKS proxy, 제한 자동 재연결, 협상 알고리즘 정보
-- 설정 가능한 제한, 재시도·재개·검증·재시작 복구를 갖춘 영속 전송 관리자
-- 안전한 bind 경고를 포함한 Local·Remote·Dynamic 포트 포워딩
+- Windows Agent·PPK·OTP·점프 호스트·ProxyCommand·HTTP/SOCKS 실제 매트릭스 완성, 전체 재연결 정책, 협상 알고리즘 정보
+- 일시정지·자동 job 검색·설정 가능한 동시성·대용량 검증을 갖춘 영속 전송 관리자 완성
+- 안전한 bind 경고와 연결 후 관리자를 포함한 Local·Remote·Dynamic 포트 포워딩 완성
 - 스트리밍 REPL 출력, typed snippet parameter, 영속·export 가능한 호스트별 Multi 결과, timeout, audit event
 - OpenSSH 설정과 레거시 SSH/SFTP 프로필 가져오기, 암호화 Sutty 내보내기, 충돌 미리보기
 - 로컬 기업 정책, 관리형 Host catalog, 진단/support bundle, redaction된 audit logging

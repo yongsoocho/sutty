@@ -3,22 +3,20 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Commands;
 using sutty.Core.Sessions;
+using sutty.Core.Sftp;
 using sutty.Core.Terminal;
 using sutty.UI.Helpers;
 using sutty.UI.Views;
 using System;
 using System.Linq;
-<<<<<<< HEAD
 using System.Threading;
-=======
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
 using System.Threading.Tasks;
 
 namespace sutty.UI.ViewModels;
 
 /// <summary>
 /// Multi command 4×4 그리드의 슬롯 하나.
-/// 세션이 있으면 체크박스(기본 on)로 브로드캐스트 대상 여부를 정하고, 없으면 빈 칸.
+/// 세션이 있으면 사용자가 체크박스로 브로드캐스트 대상 여부를 명시하고, 없으면 빈 칸.
 /// LastOutput에 마지막 브로드캐스트 결과가 작게 표시된다.
 /// </summary>
 public sealed class MultiSlotVm : ObservableObject
@@ -27,7 +25,7 @@ public sealed class MultiSlotVm : ObservableObject
     public SessionView? View { get; set; }
     public LocalTerminalView? LocalView { get; set; }
 
-    /// <summary>체크된 세션에만 명령이 전송된다 (기본 전체 체크).</summary>
+    /// <summary>체크된 세션에만 명령이 전송된다. 새 대상은 안전을 위해 선택하지 않는다.</summary>
     public bool IsSelected { get; set; }
 
     private string _lastOutput = "";
@@ -97,19 +95,26 @@ public sealed class MultiSlotVm : ObservableObject
 
     public object? SessionKey => (object?)View ?? LocalView;
 
-<<<<<<< HEAD
+    public bool CanUseSftp => View?.Session is
+    {
+        State: SessionState.Connected,
+        SftpState: SftpConnectionState.Ready,
+    };
+
+    public MultiSftpTarget? CreateSftpTarget(string remoteDirectory) => CanUseSftp
+        ? new MultiSftpTarget(
+            View!.Session.Id.ToString("N"),
+            Title,
+            View.Session.Sftp,
+            remoteDirectory)
+        : null;
+
     public Task<CommandExecutionResult> ExecuteAsync(
         string command,
         CancellationToken cancellationToken = default) => View is not null
         ? View.RunExternalCommandDetailedAsync(command, cancellationToken)
         : LocalView is not null
             ? LocalView.RunExternalCommandDetailedAsync(command, cancellationToken)
-=======
-    public Task<CommandExecutionResult> ExecuteAsync(string command) => View is not null
-        ? View.RunExternalCommandDetailedAsync(command)
-        : LocalView is not null
-            ? LocalView.RunExternalCommandDetailedAsync(command)
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
             : Task.FromException<CommandExecutionResult>(
                 new InvalidOperationException("The broadcast slot is empty."));
 

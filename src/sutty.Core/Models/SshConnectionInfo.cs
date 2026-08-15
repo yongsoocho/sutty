@@ -11,6 +11,30 @@ public enum SshAuthMethod
     KeyboardInteractive,
 }
 
+public enum SshPortForwardingType
+{
+    Local,
+    Remote,
+    Dynamic,
+}
+
+/// <summary>One forwarding rule started and stopped with its owning SSH session.</summary>
+public sealed class SshPortForwardingRule
+{
+    public SshPortForwardingType Type { get; set; }
+    public string BindHost { get; set; } = "127.0.0.1";
+    public int BindPort { get; set; }
+    public string DestinationHost { get; set; } = "127.0.0.1";
+    public int DestinationPort { get; set; }
+}
+
+public sealed record KeyboardInteractivePrompt(string Request, bool IsEchoed);
+
+public sealed record KeyboardInteractiveChallenge(
+    string Instruction,
+    string Language,
+    IReadOnlyList<KeyboardInteractivePrompt> Prompts);
+
 /// <summary>Connect 시 세션에 전달되는 연결 정보. UI와 Core가 공유하는 계약.</summary>
 public sealed class SshConnectionInfo
 {
@@ -27,6 +51,7 @@ public sealed class SshConnectionInfo
     public bool Compression { get; set; }
     public bool X11Forwarding { get; set; }
     public List<string> Tags { get; set; } = [];
+    public List<SshPortForwardingRule> PortForwardings { get; set; } = [];
 
     /// <summary>Network route shared by this session's SSH and SFTP transports.</summary>
     public ConnectionRoute Route { get; set; } = new();
@@ -61,6 +86,14 @@ public sealed class SshConnectionInfo
     /// </summary>
     public Func<HostKeyVerification, CancellationToken, Task<HostKeyDecision>>?
         HostKeyPromptAsync
+    { get; set; }
+
+    /// <summary>
+    /// Supplies answers for each keyboard-interactive challenge. A server can raise this
+    /// repeatedly for password, OTP, and other MFA steps.
+    /// </summary>
+    public Func<KeyboardInteractiveChallenge, CancellationToken, Task<IReadOnlyList<string>?>>?
+        KeyboardInteractivePromptAsync
     { get; set; }
 
     /// <summary>탭 헤더 등에 쓸 표시 이름. DisplayName이 없으면 user@host.</summary>

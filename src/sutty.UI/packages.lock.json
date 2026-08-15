@@ -225,6 +225,14 @@
           "Microsoft.Extensions.Logging.Abstractions": "8.0.3"
         }
       },
+      "SshNet.Agent": {
+        "type": "Transitive",
+        "resolved": "2024.2.0.5",
+        "contentHash": "Q7f1HCLmRUTkUtBgvooTw5H12uLN6oMUfGPADlKHXZtBq79C2q6T9DDuBecug4FhXl9Di1tTh4dIrOAwb6jutQ==",
+        "dependencies": {
+          "SSH.NET": "[2024.2.0, 2026.0.0)"
+        }
+      },
       "System.Numerics.Tensors": {
         "type": "Transitive",
         "resolved": "9.0.0",
@@ -241,11 +249,8 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[8.0.3, )",
-<<<<<<< HEAD
-          "SSH.NET": "[2026.0.0, )"
-=======
-          "SSH.NET": "[2025.1.0, )"
->>>>>>> e47dd3e633b929266266b8bb37b277af3130f013
+          "SSH.NET": "[2026.0.0, )",
+          "SshNet.Agent": "[2024.2.0.5, )"
         }
       },
       "sutty.setting": {

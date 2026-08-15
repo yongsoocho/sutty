@@ -1,5 +1,6 @@
 using Renci.SshNet;
 using Renci.SshNet.Common;
+using SshNet.Agent;
 using sutty.Core.Commands;
 using sutty.Core.Diagnostics;
 using sutty.Core.Models;
@@ -15,7 +16,7 @@ namespace sutty.Core.Sessions;
 /// SSH.NET(Renci.SshNet) 기반 실제 SSH 세션.
 /// SSH transport를 먼저 연결하고, 선택적 SFTP subsystem은 별도 상태로 연다.
 /// </summary>
-public sealed class SshNetSession : ISshSession
+public sealed partial class SshNetSession : ISshSession
 {
     private SshClient? _ssh;
     private SftpClient? _sftpClient;
@@ -30,6 +31,11 @@ public sealed class SshNetSession : ISshSession
     private readonly SemaphoreSlim _terminalResizeGate = new(1, 1);
     private readonly object _terminalReadGate = new();
     private CancellationTokenSource? _terminalLifetimeCts;
+    private HostKeyTrustContext? _activeTrustContext;
+    private string _password;
+    private string _passphrase;
+    private string _routePassword;
+    private string _routePassphrase;
 
     public Guid Id { get; } = Guid.NewGuid();
     public SshConnectionInfo Info { get; }
@@ -53,7 +59,14 @@ public sealed class SshNetSession : ISshSession
     public SshNetSession(SshConnectionInfo info)
     {
         Info = info;
-        _sftpService = new SshNetSftpService(() => _sftpClient);
+        _password = info.Password;
+        _passphrase = info.Passphrase;
+        _routePassword = info.Route?.Password ?? "";
+        _routePassphrase = info.Route?.Passphrase ?? "";
+        _sftpService = new SshNetSftpService(
+            () => _sftpClient,
+            checkpointScope: $"{info.Username}@{info.Host}:{info.Port}",
+            reconnectAsync: ReconnectSftpForTransferAsync);
         _hostEndpoint = HostEndpointIdentity.Create(info.Host, info.Port);
         _route = RouteResolver.Resolve(info.Route, info.RoutePolicy);
         AuditContext = AuditContext.Create(info, _route);
@@ -88,11 +101,14 @@ public sealed class SshNetSession : ISshSession
             // SFTP transport share this context, but a failed/disconnected reconnect must
             // start unknown again instead of inheriting an earlier in-memory decision.
             var trustContext = new HostKeyTrustContext();
+            _activeTrustContext = trustContext;
             SetSftpState(SftpConnectionState.NotConnected);
             SetState(SessionState.Connecting);
             try
             {
+                await PrepareConnectionRouteAsync(trustContext, ct);
                 _ssh = await ConnectSshClientAsync(trustContext, ct);
+                StartConfiguredForwardings(_ssh);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -426,6 +442,7 @@ public sealed class SshNetSession : ISshSession
     {
         CloseTerminalCore();
         await CleanUpSftpAsync();
+        StopConfiguredForwardings(_ssh);
         await Task.Run(() =>
         {
             var ssh = _ssh;
@@ -433,6 +450,12 @@ public sealed class SshNetSession : ISshSession
             try { ssh?.Disconnect(); } catch { /* 이미 끊겼으면 무시 */ }
             ssh?.Dispose();
         });
+        await CleanUpRouteAsync();
+        _activeTrustContext = null;
+        _password = "";
+        _passphrase = "";
+        _routePassword = "";
+        _routePassphrase = "";
     }
 
     private Task CleanUpSftpAsync() => _sftpService.ShutdownAsync(() =>
@@ -590,7 +613,7 @@ public sealed class SshNetSession : ISshSession
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var client = new SshClient(BuildConnectionInfo());
+            var client = new SshClient(BuildConnectionInfo(ct));
             if (Info.KeepAliveSeconds > 0)
                 client.KeepAliveInterval = TimeSpan.FromSeconds(Info.KeepAliveSeconds);
             var verifier = new SshNetHostKeyVerifier(_hostEndpoint, trustContext);
@@ -599,13 +622,14 @@ public sealed class SshNetSession : ISshSession
             try
             {
                 using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
-                await client.ConnectAsync(ct);
+                await Task.Run(() => client.ConnectAsync(ct), ct).ConfigureAwait(false);
                 return client;
             }
             catch (Exception ex)
             {
                 client.Dispose();
-                if (await HandleHostKeyConnectFailureAsync(verifier, ex, mayPrompt, ct))
+                if (await HandleHostKeyConnectFailureAsync(
+                    verifier, _hostEndpoint, ex, mayPrompt, ct))
                 {
                     mayPrompt = false;
                     continue;
@@ -623,20 +647,21 @@ public sealed class SshNetSession : ISshSession
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var client = new SftpClient(BuildConnectionInfo());
+            var client = new SftpClient(BuildConnectionInfo(ct));
             var verifier = new SshNetHostKeyVerifier(_hostEndpoint, trustContext);
             client.HostKeyReceived += verifier.HandleHostKeyReceived;
 
             try
             {
                 using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
-                await client.ConnectAsync(ct);
+                await Task.Run(() => client.ConnectAsync(ct), ct).ConfigureAwait(false);
                 return client;
             }
             catch (Exception ex)
             {
                 client.Dispose();
-                if (await HandleHostKeyConnectFailureAsync(verifier, ex, mayPrompt, ct))
+                if (await HandleHostKeyConnectFailureAsync(
+                    verifier, _hostEndpoint, ex, mayPrompt, ct))
                 {
                     mayPrompt = false;
                     continue;
@@ -654,6 +679,7 @@ public sealed class SshNetSession : ISshSession
     /// </summary>
     private async Task<bool> HandleHostKeyConnectFailureAsync(
         SshNetHostKeyVerifier verifier,
+        HostEndpointIdentity endpoint,
         Exception connectError,
         bool mayPrompt,
         CancellationToken ct)
@@ -662,7 +688,7 @@ public sealed class SshNetSession : ISshSession
         {
             LogFailure("Host key", verificationError, ConnectionLogSeverity.Error);
             throw new System.Security.SecurityException(
-                $"Host-key verification failed for {_hostEndpoint.Value}: {verificationError.Message}",
+                $"Host-key verification failed for {endpoint.Value}: {verificationError.Message}",
                 verificationError);
         }
 
@@ -695,14 +721,14 @@ public sealed class SshNetSession : ISshSession
         if (!mayPrompt)
         {
             throw new System.Security.SecurityException(
-                $"Host key for {_hostEndpoint.Value} remained untrusted after approval.",
+                $"Host key for {endpoint.Value} remained untrusted after approval.",
                 connectError);
         }
 
         if (Info.HostKeyPromptAsync is null)
         {
             throw new System.Security.SecurityException(
-                $"Unknown host key for {_hostEndpoint.Value}: " +
+                $"Unknown host key for {endpoint.Value}: " +
                 $"{verification.PresentedKey.Algorithm} {verification.PresentedKey.Sha256Fingerprint}. " +
                 "Connection cancelled because no trust prompt is available.",
                 connectError);
@@ -718,7 +744,7 @@ public sealed class SshNetSession : ISshSession
                 "사용자가 서버 호스트 키를 신뢰하지 않아 연결을 취소했습니다.",
                 "The connection was cancelled because the server host key was not trusted.");
             throw new System.Security.SecurityException(
-                $"Host key for {_hostEndpoint.Value} was not trusted. Connection cancelled.",
+                $"Host key for {endpoint.Value} was not trusted. Connection cancelled.",
                 connectError);
         }
 
@@ -735,41 +761,25 @@ public sealed class SshNetSession : ISshSession
         return true;
     }
 
-    private Renci.SshNet.ConnectionInfo BuildConnectionInfo()
+    private Renci.SshNet.ConnectionInfo BuildConnectionInfo(CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(Info.Username))
             throw new InvalidOperationException("Username을 입력하세요.");
 
         var user = Info.Username;
-        var methods = new List<AuthenticationMethod>();
-
-        switch (Info.AuthMethod)
-        {
-            case SshAuthMethod.Password:
-                methods.Add(new PasswordAuthenticationMethod(user, Info.Password));
-                // 서버가 password 대신 keyboard-interactive만 받는 경우가 흔해서 폴백 추가
-                methods.Add(BuildKeyboardInteractive(user));
-                break;
-
-            case SshAuthMethod.PublicKey:
-                methods.Add(new PrivateKeyAuthenticationMethod(user, LoadPrivateKey()));
-                // 비밀번호도 입력돼 있으면 키 실패 시 폴백으로 시도
-                if (!string.IsNullOrEmpty(Info.Password))
-                    methods.Add(new PasswordAuthenticationMethod(user, Info.Password));
-                break;
-
-            case SshAuthMethod.KeyboardInteractive:
-                methods.Add(BuildKeyboardInteractive(user));
-                break;
-
-            default:
-                throw new NotSupportedException("SSH agent 인증은 아직 지원하지 않습니다.");
-        }
+        var methods = BuildAuthenticationMethods(
+            user,
+            Info.AuthMethod,
+            _password,
+            Info.PrivateKeyPath,
+            _passphrase,
+            ct);
+        var (transportHost, transportPort) = GetTargetTransportEndpoint();
 
         var connectionInfo = _route.Type switch
         {
             ConnectionRouteType.Direct =>
-                new Renci.SshNet.ConnectionInfo(Info.Host, Info.Port, user, methods.ToArray()),
+                new Renci.SshNet.ConnectionInfo(transportHost, transportPort, user, methods.ToArray()),
             ConnectionRouteType.HttpConnect or ConnectionRouteType.Socks4 or ConnectionRouteType.Socks5 =>
                 new Renci.SshNet.ConnectionInfo(
                     Info.Host,
@@ -787,6 +797,12 @@ public sealed class SshNetSession : ISshSession
                     _route.Username,
                     _route.Password,
                     methods.ToArray()),
+            ConnectionRouteType.SshJump or ConnectionRouteType.ExternalProxyCommand =>
+                new Renci.SshNet.ConnectionInfo(
+                    transportHost,
+                    transportPort,
+                    user,
+                    methods.ToArray()),
             _ => throw new NotSupportedException(
                 $"The {_route.Type} route requires a configured enterprise route adapter."),
         };
@@ -797,26 +813,24 @@ public sealed class SshNetSession : ISshSession
     }
 
     /// <summary>
-    /// PEM / OpenSSH 형식의 RSA·ECDSA·Ed25519 키를 로드한다 (SSH.NET 지원 범위).
-    /// 레거시 .ppk 컨테이너는 지원하지 않으므로 미리 안내한다.
+    /// PEM, OpenSSH, PKCS#8, PuTTY PPK v2/v3 형식의 키를 로드한다.
     /// </summary>
-    private PrivateKeyFile LoadPrivateKey()
-    {
-        var path = Info.PrivateKeyPath;
+    private PrivateKeyFile LoadPrivateKey() => LoadPrivateKey(
+        Info.PrivateKeyPath,
+        _passphrase);
 
+    private static PrivateKeyFile LoadPrivateKey(string path, string passphrase)
+    {
         if (string.IsNullOrWhiteSpace(path))
             throw new InvalidOperationException("Private key 파일을 선택하세요.");
         if (!File.Exists(path))
             throw new FileNotFoundException($"키 파일을 찾을 수 없습니다: {path}");
-        if (path.EndsWith(".ppk", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException(
-                "레거시 .ppk 형식은 지원되지 않습니다. 키를 OpenSSH 형식으로 내보낸 뒤 사용하세요.");
 
         try
         {
-            return string.IsNullOrEmpty(Info.Passphrase)
+            return string.IsNullOrEmpty(passphrase)
                 ? new PrivateKeyFile(path)
-                : new PrivateKeyFile(path, Info.Passphrase);
+                : new PrivateKeyFile(path, passphrase);
         }
         catch (Renci.SshNet.Common.SshPassPhraseNullOrEmptyException)
         {
@@ -829,17 +843,103 @@ public sealed class SshNetSession : ISshSession
         }
     }
 
-    // 2FA/OTP 프롬프트 중 password 요청에는 입력된 비밀번호로 응답
-    private KeyboardInteractiveAuthenticationMethod BuildKeyboardInteractive(string user)
+    private List<AuthenticationMethod> BuildAuthenticationMethods(
+        string user,
+        SshAuthMethod method,
+        string password,
+        string privateKeyPath,
+        string passphrase,
+        CancellationToken ct)
+    {
+        var methods = new List<AuthenticationMethod>();
+        switch (method)
+        {
+            case SshAuthMethod.Password:
+                methods.Add(new PasswordAuthenticationMethod(user, password));
+                methods.Add(BuildKeyboardInteractive(user, password, ct));
+                break;
+            case SshAuthMethod.PublicKey:
+                methods.Add(new PrivateKeyAuthenticationMethod(
+                    user,
+                    LoadPrivateKey(privateKeyPath, passphrase)));
+                if (!string.IsNullOrEmpty(password))
+                    methods.Add(new PasswordAuthenticationMethod(user, password));
+                break;
+            case SshAuthMethod.Agent:
+                IPrivateKeySource[] keys;
+                try
+                {
+                    keys = new SshAgent(TimeSpan.FromSeconds(3))
+                        .RequestIdentities()
+                        .Cast<IPrivateKeySource>()
+                        .ToArray();
+                }
+                catch (Exception ex) when (ex is SshAgentException or TimeoutException or IOException)
+                {
+                    throw new InvalidOperationException(
+                        "Windows SSH Agent에 연결할 수 없습니다. OpenSSH Authentication Agent 서비스를 시작하고 ssh-add로 키를 등록하세요.",
+                        ex);
+                }
+                if (keys.Length == 0)
+                    throw new InvalidOperationException(
+                        "Windows OpenSSH Agent에 사용할 수 있는 키가 없습니다. ssh-add로 키를 추가하세요.");
+                methods.Add(new PrivateKeyAuthenticationMethod(user, keys));
+                break;
+            case SshAuthMethod.KeyboardInteractive:
+                methods.Add(BuildKeyboardInteractive(user, password, ct));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(method));
+        }
+        return methods;
+    }
+
+    // Password prompts are filled automatically. OTP and additional MFA prompts are
+    // delegated to the UI and can occur more than once during one authentication.
+    private KeyboardInteractiveAuthenticationMethod BuildKeyboardInteractive(
+        string user,
+        string password,
+        CancellationToken ct)
     {
         var kbi = new KeyboardInteractiveAuthenticationMethod(user);
         kbi.AuthenticationPrompt += (_, e) =>
         {
+            var unanswered = new List<Renci.SshNet.Common.AuthenticationPrompt>();
             foreach (var prompt in e.Prompts)
             {
-                if (prompt.Request.Contains("password", StringComparison.OrdinalIgnoreCase))
-                    prompt.Response = Info.Password;
+                if (!string.IsNullOrEmpty(password) &&
+                    prompt.Request.Contains("password", StringComparison.OrdinalIgnoreCase))
+                {
+                    prompt.Response = password;
+                }
+                else
+                {
+                    unanswered.Add(prompt);
+                }
             }
+
+            if (unanswered.Count == 0)
+                return;
+            if (Info.KeyboardInteractivePromptAsync is null)
+                return;
+
+            ct.ThrowIfCancellationRequested();
+            var challenge = new KeyboardInteractiveChallenge(
+                e.Instruction ?? "",
+                e.Language ?? "",
+                unanswered.Select(prompt => new KeyboardInteractivePrompt(
+                    prompt.Request,
+                    prompt.IsEchoed)).ToArray());
+            var answers = Info.KeyboardInteractivePromptAsync(challenge, ct)
+                .GetAwaiter()
+                .GetResult();
+            if (answers is null)
+                throw new OperationCanceledException("Keyboard-interactive authentication was cancelled.", ct);
+            if (answers.Count != unanswered.Count)
+                throw new InvalidOperationException(
+                    "Keyboard-interactive response count did not match the server prompts.");
+            for (var index = 0; index < unanswered.Count; index++)
+                unanswered[index].Response = answers[index] ?? "";
         };
         return kbi;
     }
