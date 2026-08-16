@@ -175,10 +175,41 @@ public sealed partial class SshNetSftpService : ISftpService
         {
             ct.ThrowIfCancellationRequested();
             var client = Client;
-            if (client.Exists(destinationPath))
-                throw new IOException($"Remote path already exists: {destinationPath}");
-            client.RenameFile(sourcePath, destinationPath);
+            var source = NormalizeRemoteMovePath(sourcePath);
+            var destination = NormalizeRemoteMovePath(destinationPath);
+            if (source == "/")
+                throw new IOException("The remote root cannot be moved.");
+            if (source == destination)
+                throw new IOException("The source and destination paths are the same.");
+            if (!client.Exists(source))
+                throw new FileNotFoundException($"Remote path does not exist: {source}", source);
+            if (client.Exists(destination))
+                throw new IOException($"Remote path already exists: {destination}");
+
+            var destinationParent = RemotePath.GetDirectory(destination);
+            if (!client.Exists(destinationParent) ||
+                !client.GetAttributes(destinationParent).IsDirectory)
+            {
+                throw new DirectoryNotFoundException(
+                    $"Remote destination directory does not exist: {destinationParent}");
+            }
+            if (IsDirectoryNotLink(client, source) &&
+                destination.StartsWith(source + "/", StringComparison.Ordinal))
+            {
+                throw new IOException("A remote directory cannot be moved inside itself.");
+            }
+
+            client.RenameFile(source, destination);
         }, ct);
+
+    private static string NormalizeRemoteMovePath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var normalized = RemotePath.Normalize(path);
+        foreach (var segment in normalized.Split('/', StringSplitOptions.RemoveEmptyEntries))
+            ValidateRemotePathSegment(segment);
+        return normalized;
+    }
 
     public Task DeleteFileAsync(string path, CancellationToken ct = default)
         => SerializedAsync(() => { ct.ThrowIfCancellationRequested(); Client.DeleteFile(path); }, ct);

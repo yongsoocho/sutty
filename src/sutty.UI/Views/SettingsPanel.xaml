@@ -410,7 +410,29 @@
                         x:Name="WindowPane"
                         Spacing="10"
                         Visibility="Collapsed">
-                        <TextBlock Style="{StaticResource SettingsHeading}" Text="Window size" />
+                        <TextBlock Style="{StaticResource SettingsHeading}" Text="{x:Bind h:Loc.T('창과 작업공간', 'Window and workspace')}" />
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Style="{StaticResource SettingsLabel}" Text="{x:Bind h:Loc.T('작업공간 복원', 'WORKSPACE RESTORE')}" />
+                                <ToggleSwitch
+                                    x:Name="RestoreWorkspaceToggle"
+                                    Header="{x:Bind h:Loc.T('종료할 때 열린 탭 기억', 'Remember tabs open at exit')}"
+                                    OffContent="{x:Bind h:Loc.T('기억 안 함', 'Do not remember')}"
+                                    OnContent="{x:Bind h:Loc.T('최대 16개 기억', 'Remember up to 16')}"
+                                    Toggled="WorkspaceToggle_Toggled" />
+                                <ToggleSwitch
+                                    x:Name="ConfirmWorkspaceRestoreToggle"
+                                    Header="{x:Bind h:Loc.T('SSH 탭 재연결 전에 확인', 'Confirm before reconnecting SSH tabs')}"
+                                    OffContent="{x:Bind h:Loc.T('자동 복원', 'Restore automatically')}"
+                                    OnContent="{x:Bind h:Loc.T('시작할 때 확인', 'Ask at startup')}"
+                                    Toggled="WorkspaceToggle_Toggled" />
+                                <TextBlock
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('로컬 탭과 저장 Host ID만 기록합니다. 비밀번호·키 암호·명령은 저장하거나 재실행하지 않습니다.', 'Only local tabs and Saved Host IDs are recorded. Passwords, key passphrases, and commands are never stored or replayed.')}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel Spacing="10">
                                 <TextBlock

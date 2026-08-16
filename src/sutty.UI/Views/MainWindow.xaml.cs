@@ -47,6 +47,12 @@ namespace sutty.UI.Views
         private string? _lastMultiSftpQueueJobId;
         private SftpTransferOptions? _lastMultiSftpOptions;
         private int _multiSftpInProgress;
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer? _workspaceSaveTimer;
+        private readonly sutty.Command.SuttyLaunchRequest _launchRequest;
+        private bool _startupWorkspaceHandled;
+        private bool _restoringWorkspace;
+        private bool _windowClosing;
+        private bool _suppressWorkspacePersistence;
 
         private enum MultiSftpOperation
         {
@@ -56,7 +62,13 @@ namespace sutty.UI.Views
         }
 
         public MainWindow()
+            : this(sutty.Command.SuttyLaunchRequest.Default)
         {
+        }
+
+        public MainWindow(sutty.Command.SuttyLaunchRequest? launchRequest)
+        {
+            _launchRequest = launchRequest ?? sutty.Command.SuttyLaunchRequest.Default;
             ViewModel = new sutty.UI.ViewModels.MainViewModel();
             InitializeComponent();
 
@@ -76,6 +88,8 @@ namespace sutty.UI.Views
             // sutty를 닫으면 설정 창도 같이 닫고, 저장 안 된 패널 폭이 있으면 마저 저장
             Closed += (_, _) =>
             {
+                _windowClosing = true;
+                FlushWorkspaceSnapshot();
                 FlushRightPanelWidth();
                 _settingWindow?.Close();
                 foreach (var localView in GetOpenLocalTerminalViews())
@@ -91,8 +105,321 @@ namespace sutty.UI.Views
                 (s, size) => { s.MainWindowWidth = size.Width; s.MainWindowHeight = size.Height; });
 
             RestoreRightPanelWidth();
+            InitializeWorkspacePersistence();
+            Root.Loaded += Root_Loaded;
 
             LeftNav.SelectedItem = LeftNav.MenuItems[0];
+        }
+
+        private void InitializeWorkspacePersistence()
+        {
+            _workspaceSaveTimer = DispatcherQueue.CreateTimer();
+            _workspaceSaveTimer.Interval = TimeSpan.FromMilliseconds(500);
+            _workspaceSaveTimer.IsRepeating = false;
+            _workspaceSaveTimer.Tick += (_, _) => SaveWorkspaceSnapshotNow();
+        }
+
+        private async void Root_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (_startupWorkspaceHandled)
+                return;
+
+            _startupWorkspaceHandled = true;
+            Root.Loaded -= Root_Loaded;
+            try
+            {
+                if (_launchRequest.Action == sutty.Command.SuttyLaunchAction.Default)
+                {
+                    await RestoreWorkspaceAsync();
+                }
+                else
+                {
+                    // An explicit process launch must not replace the normal window's
+                    // persisted workspace when multiple Sutty instances are open.
+                    _suppressWorkspacePersistence = true;
+                    await HandleLaunchRequestAsync(_launchRequest);
+                }
+            }
+            catch (Exception error)
+            {
+                _restoringWorkspace = false;
+                Debug.WriteLine($"Workspace restore failed: {error.GetType().Name}");
+            }
+        }
+
+        private void QueueWorkspaceSnapshot()
+        {
+            if (_restoringWorkspace || _windowClosing || _suppressWorkspacePersistence ||
+                !SettingsService.Current.RestoreWorkspaceOnStartup ||
+                _workspaceSaveTimer is null)
+            {
+                return;
+            }
+
+            _workspaceSaveTimer.Stop();
+            _workspaceSaveTimer.Start();
+        }
+
+        private void FlushWorkspaceSnapshot()
+        {
+            _workspaceSaveTimer?.Stop();
+            if (_suppressWorkspacePersistence)
+                return;
+            if (SettingsService.Current.RestoreWorkspaceOnStartup)
+                SaveWorkspaceSnapshotNow();
+            else
+                WorkspaceStateStore.Clear();
+        }
+
+        private void SaveWorkspaceSnapshotNow()
+        {
+            if (_restoringWorkspace || _suppressWorkspacePersistence ||
+                !SettingsService.Current.RestoreWorkspaceOnStartup)
+                return;
+
+            var tabs = new List<WorkspaceTabState>(MaxSessions);
+            var selectedIndex = -1;
+            foreach (var item in TitleTabs.TabItems)
+            {
+                if (item is not TabViewItem tab)
+                    continue;
+
+                WorkspaceTabState? state = tab.DataContext switch
+                {
+                    LocalTerminalView => new WorkspaceTabState
+                    {
+                        Kind = WorkspaceTabKinds.LocalTerminal,
+                    },
+                    SessionView sessionView when
+                        !string.IsNullOrWhiteSpace(sessionView.Session.Info.SavedHostId) =>
+                        new WorkspaceTabState
+                        {
+                            Kind = WorkspaceTabKinds.SavedHost,
+                            SavedHostId = sessionView.Session.Info.SavedHostId!,
+                        },
+                    _ => null,
+                };
+                if (state is null)
+                    continue;
+
+                if (ReferenceEquals(TitleTabs.SelectedItem, tab))
+                    selectedIndex = tabs.Count;
+                tabs.Add(state);
+            }
+
+            if (selectedIndex < 0 && tabs.Count > 0)
+                selectedIndex = 0;
+            var result = WorkspaceStateStore.Save(new WorkspaceSnapshot
+            {
+                Tabs = tabs,
+                SelectedIndex = selectedIndex,
+                SavedAtUtc = DateTimeOffset.UtcNow,
+            });
+            if (!result.Succeeded)
+                Debug.WriteLine($"Workspace save failed: {result.Error?.GetType().Name}");
+        }
+
+        private async Task RestoreWorkspaceAsync()
+        {
+            var settings = SettingsService.Current;
+            if (!settings.RestoreWorkspaceOnStartup)
+                return;
+
+            var snapshot = WorkspaceStateStore.Load();
+            if (snapshot.Tabs.Count == 0)
+                return;
+
+            var localCount = snapshot.Tabs.Count(tab =>
+                tab.Kind == WorkspaceTabKinds.LocalTerminal);
+            var sshCount = snapshot.Tabs.Count - localCount;
+            if (settings.ConfirmWorkspaceRestore)
+            {
+                var dialog = new ContentDialog
+                {
+                    XamlRoot = Content.XamlRoot,
+                    Title = Helpers.Loc.T("이전 작업공간 복원", "Restore previous workspace"),
+                    Content = Helpers.Loc.T(
+                        $"로컬 탭 {localCount}개와 SSH 탭 {sshCount}개를 복원할까요?\n\nSSH 탭은 저장 Host로 다시 연결하지만 이전 명령은 재실행하지 않습니다.",
+                        $"Restore {localCount} local tab(s) and {sshCount} SSH tab(s)?\n\nSSH tabs reconnect through Saved Hosts, but previous commands are never replayed."),
+                    PrimaryButtonText = Helpers.Loc.T("복원", "Restore"),
+                    CloseButtonText = Helpers.Loc.T("새로 시작", "Start fresh"),
+                    DefaultButton = ContentDialogButton.Close,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    WorkspaceStateStore.Clear();
+                    return;
+                }
+            }
+
+            _restoringWorkspace = true;
+            try
+            {
+                var restoredSnapshotIndices = new List<int>(snapshot.Tabs.Count);
+                var snapshotTabs = snapshot.Tabs.Take(MaxSessions).ToList();
+                for (var snapshotIndex = 0; snapshotIndex < snapshotTabs.Count; snapshotIndex++)
+                {
+                    var tab = snapshotTabs[snapshotIndex];
+                    var tabCountBeforeRestore = TitleTabs.TabItems.Count;
+                    if (tab.Kind == WorkspaceTabKinds.LocalTerminal)
+                    {
+                        await OpenLocalTerminalTabAsync();
+                    }
+                    else if (tab.Kind == WorkspaceTabKinds.SavedHost &&
+                             !string.IsNullOrWhiteSpace(tab.SavedHostId))
+                    {
+                        try
+                        {
+                            if (sutty.Command.HostProfileStore.GetById(tab.SavedHostId) is { } profile)
+                                await OpenHistoryDraftAsync(CreateHostInfo(profile));
+                        }
+                        catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                                                      Microsoft.Data.Sqlite.SqliteException or ArgumentException)
+                        {
+                            Debug.WriteLine($"Workspace Saved Host restore failed: {error.GetType().Name}");
+                        }
+                    }
+
+                    if (TitleTabs.TabItems.Count > tabCountBeforeRestore)
+                        restoredSnapshotIndices.Add(snapshotIndex);
+                }
+
+                if (restoredSnapshotIndices.Count > 0)
+                {
+                    var selectedIndex = restoredSnapshotIndices.FindIndex(
+                        index => index == snapshot.SelectedIndex);
+                    if (selectedIndex < 0)
+                    {
+                        selectedIndex = restoredSnapshotIndices.FindLastIndex(
+                            index => index < snapshot.SelectedIndex);
+                    }
+                    if (selectedIndex < 0)
+                        selectedIndex = 0;
+                    TitleTabs.SelectedItem = TitleTabs.TabItems[selectedIndex];
+                }
+            }
+            finally
+            {
+                _restoringWorkspace = false;
+                SaveWorkspaceSnapshotNow();
+            }
+        }
+
+        private static ViewModels.HostInfoModel CreateHostInfo(sutty.Command.HostProfile profile) => new()
+        {
+            ProfileId = profile.Id,
+            IsSavedProfile = true,
+            CredentialId = profile.CredentialId,
+            Alias = profile.DisplayName,
+            Hostname = profile.Host,
+            LastConnected = profile.LastConnectedAtUtc?.LocalDateTime,
+            IsPinned = profile.IsFavorite,
+            Username = profile.Username,
+            Port = profile.Port,
+            AuthMethod = profile.AuthMethod,
+            PrivateKeyPath = profile.PrivateKeyPath,
+            Tags = [.. profile.Tags],
+            GroupName = profile.GroupName,
+            Environment = profile.Environment,
+            Route = profile.Route,
+            Tunnels = [.. profile.Tunnels],
+        };
+
+        private async Task HandleLaunchRequestAsync(sutty.Command.SuttyLaunchRequest request)
+        {
+            if (request.Action == sutty.Command.SuttyLaunchAction.ShowHelp)
+            {
+                await ShowLaunchDialogAsync(
+                    Helpers.Loc.T("Sutty 명령줄", "Sutty command line"),
+                    Helpers.Loc.T(
+                        "저장 Host 열기:\n\nsutty.exe --host <저장 Host ID 또는 정확한 이름>\n\n비밀번호와 개인키 암호는 명령줄 인자로 받지 않습니다.",
+                        "Open a Saved Host:\n\nsutty.exe --host <Saved Host ID or exact name>\n\nPasswords and private-key passphrases are not accepted as command-line arguments."));
+                return;
+            }
+
+            if (request.Action == sutty.Command.SuttyLaunchAction.Invalid)
+            {
+                await ShowLaunchDialogAsync(
+                    Helpers.Loc.T("명령줄 확인", "Check command line"),
+                    Helpers.Loc.T(
+                        "지원하지 않는 실행 인자입니다.\n\n사용법: sutty.exe --host <저장 Host ID 또는 정확한 이름>",
+                        "The launch arguments are unsupported.\n\nUsage: sutty.exe --host <Saved Host ID or exact name>"));
+                return;
+            }
+
+            if (request.Action != sutty.Command.SuttyLaunchAction.OpenSavedHost)
+                return;
+
+            try
+            {
+                var profile = ResolveLaunchProfile(request.SavedHostReference, out var ambiguous);
+                if (profile is null)
+                {
+                    await ShowLaunchDialogAsync(
+                        Helpers.Loc.T("저장 Host를 찾을 수 없음", "Saved Host not found"),
+                        ambiguous
+                            ? Helpers.Loc.T(
+                                "같은 이름의 저장 Host가 여러 개입니다. 고유한 Host ID를 사용하세요.",
+                                "More than one Saved Host has that name. Use its unique Host ID.")
+                            : Helpers.Loc.T(
+                                $"'{request.SavedHostReference}' 저장 Host가 없습니다.",
+                                $"Saved Host '{request.SavedHostReference}' does not exist."));
+                    return;
+                }
+
+                await OpenHistoryDraftAsync(CreateHostInfo(profile));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                                          Microsoft.Data.Sqlite.SqliteException or ArgumentException)
+            {
+                Debug.WriteLine($"Command-line Saved Host open failed: {error.GetType().Name}");
+                await ShowLaunchDialogAsync(
+                    Helpers.Loc.T("저장 Host 열기 실패", "Could not open Saved Host"),
+                    Helpers.Loc.T(
+                        "저장 Host 데이터베이스를 읽을 수 없습니다.",
+                        "The Saved Host database could not be read."));
+            }
+        }
+
+        private static sutty.Command.HostProfile? ResolveLaunchProfile(
+            string reference,
+            out bool ambiguous)
+        {
+            ambiguous = false;
+            if (reference.Length <= 128 && reference.All(character =>
+                    char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
+            {
+                if (sutty.Command.HostProfileStore.GetById(reference) is { } byId)
+                    return byId;
+            }
+
+            var exactMatches = sutty.Command.HostProfileStore.GetAll(reference, 100)
+                .Where(profile => string.Equals(
+                    profile.DisplayName,
+                    reference,
+                    StringComparison.OrdinalIgnoreCase))
+                .Take(2)
+                .ToList();
+            ambiguous = exactMatches.Count > 1;
+            return exactMatches.Count == 1 ? exactMatches[0] : null;
+        }
+
+        private async Task ShowLaunchDialogAsync(string title, string message)
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Content.XamlRoot,
+                Title = title,
+                Content = new TextBlock
+                {
+                    Text = message,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                },
+                CloseButtonText = "OK",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            await dialog.ShowAsync();
         }
 
         // ── 오른쪽 패널 폭: 스플리터 드래그 → 디바운스 저장 ──
@@ -1441,6 +1768,7 @@ namespace sutty.UI.Views
             TitleTabs.TabItems.Add(tab);
             TitleTabs.SelectedItem = tab;
             UpdateSessionArea();
+            QueueWorkspaceSnapshot();
         }
 
         private async Task OpenSessionTabAsync(SshConnectionInfo info)
@@ -1580,6 +1908,7 @@ namespace sutty.UI.Views
             TitleTabs.TabItems.Add(tab);
             TitleTabs.SelectedItem = tab;
             UpdateSessionArea();
+            QueueWorkspaceSnapshot();
 
             var timer = Stopwatch.StartNew();
             var outcome = "Failed";
@@ -2161,7 +2490,10 @@ namespace sutty.UI.Views
         private void TitleTabs_SelectionChanged(
             object sender,
             SelectionChangedEventArgs e)
-            => UpdateSessionArea();
+        {
+            UpdateSessionArea();
+            QueueWorkspaceSnapshot();
+        }
 
         private void UpdateSessionArea()
         {
@@ -2231,6 +2563,7 @@ namespace sutty.UI.Views
 
             sender.TabItems.Remove(args.Tab);
             UpdateSessionArea();
+            QueueWorkspaceSnapshot();
 
             // 탭은 먼저 닫고, 연결 정리는 백그라운드로 (UI가 안 막히게)
             if (args.Tab.DataContext is SessionView view)
@@ -2339,6 +2672,17 @@ namespace sutty.UI.Views
 
             if (changes.HasFlag(SettingChangeKind.Window))
                 ApplyWindowSizesFromSettings();
+
+            if (changes.HasFlag(SettingChangeKind.Workspace))
+            {
+                if (SettingsService.Current.RestoreWorkspaceOnStartup)
+                    SaveWorkspaceSnapshotNow();
+                else
+                {
+                    _workspaceSaveTimer?.Stop();
+                    WorkspaceStateStore.Clear();
+                }
+            }
         }
 
         // 설정 패널에서 저장한 창 크기 숫자를 즉시 반영

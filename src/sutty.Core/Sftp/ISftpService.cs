@@ -16,6 +16,16 @@ public interface ISftpService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Performs a bounded recursive filename search without reading remote file contents
+    /// or following symbolic links.
+    /// </summary>
+    Task<IReadOnlyList<RemoteTreeEntry>> SearchByNameAsync(
+        string path,
+        string query,
+        int maximumResults = 500,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Uploads a file or directory to an exact remote destination. Directory transfers
     /// preserve the complete tree and use resumable per-file checkpoints.
     /// </summary>

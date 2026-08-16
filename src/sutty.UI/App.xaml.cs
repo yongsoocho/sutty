@@ -94,7 +94,8 @@ namespace sutty.UI
 
             // Create the main window (its constructor sets the title bar, icon,
             // navigation, etc. — see MainWindow.xaml.cs).
-            _window = new MainWindow();
+            var launchRequest = sutty.Command.SuttyLaunchRequestParser.Parse(args.Arguments);
+            _window = new MainWindow(launchRequest);
 
             // Show the window and give it focus. Without Activate() the window
             // is created but never appears on screen.

@@ -112,6 +112,22 @@ public sealed class LocalFileService : ISftpService
         }
     }, ct);
 
+    public async Task<IReadOnlyList<RemoteTreeEntry>> SearchByNameAsync(
+        string path,
+        string query,
+        int maximumResults = 500,
+        CancellationToken ct = default)
+    {
+        var normalized = SftpSearchRules.Normalize(query, maximumResults);
+        var entries = await EnumerateTreeAsync(path, ct).ConfigureAwait(false);
+        return entries
+            .Where(entry => entry.Entry.Name.Contains(
+                normalized.Query,
+                StringComparison.OrdinalIgnoreCase))
+            .Take(normalized.MaximumResults)
+            .ToList();
+    }
+
     public Task<SftpTransferResult> UploadPathAsync(
         string localPath,
         string remotePath,
@@ -154,10 +170,34 @@ public sealed class LocalFileService : ISftpService
         => Task.Run(() =>
         {
             ct.ThrowIfCancellationRequested();
-            if (File.Exists(destinationPath) || Directory.Exists(destinationPath))
-                throw new IOException($"Path already exists: {destinationPath}");
-            if (Directory.Exists(sourcePath)) Directory.Move(sourcePath, destinationPath);
-            else File.Move(sourcePath, destinationPath);
+            var source = Path.GetFullPath(sourcePath);
+            var destination = Path.GetFullPath(destinationPath);
+            var sourceRoot = Path.GetPathRoot(source);
+            if (!string.IsNullOrEmpty(sourceRoot) && string.Equals(
+                    source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    sourceRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new IOException("A filesystem root cannot be moved.");
+            }
+            if (string.Equals(source, destination, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("The source and destination paths are the same.");
+            if (!File.Exists(source) && !Directory.Exists(source))
+                throw new FileNotFoundException($"Path does not exist: {source}", source);
+            if (File.Exists(destination) || Directory.Exists(destination))
+                throw new IOException($"Path already exists: {destination}");
+            var destinationParent = Path.GetDirectoryName(destination);
+            if (string.IsNullOrEmpty(destinationParent) || !Directory.Exists(destinationParent))
+                throw new DirectoryNotFoundException(destinationParent);
+            if (Directory.Exists(source) && destination.StartsWith(
+                    source.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new IOException("A directory cannot be moved inside itself.");
+            }
+
+            if (Directory.Exists(source)) Directory.Move(source, destination);
+            else File.Move(source, destination);
         }, ct);
 
     public Task DeleteFileAsync(string path, CancellationToken ct = default)

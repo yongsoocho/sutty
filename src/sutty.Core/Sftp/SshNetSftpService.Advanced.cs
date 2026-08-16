@@ -21,6 +21,21 @@ public sealed partial class SshNetSftpService
         () => EnumerateRemoteTreeCore(Client, path, ct),
         ct);
 
+    public Task<IReadOnlyList<RemoteTreeEntry>> SearchByNameAsync(
+        string path,
+        string query,
+        int maximumResults = 500,
+        CancellationToken ct = default) => SerializedAsync<IReadOnlyList<RemoteTreeEntry>>(() =>
+    {
+        var normalized = SftpSearchRules.Normalize(query, maximumResults);
+        return EnumerateRemoteTreeCore(Client, path, ct)
+            .Where(entry => entry.Entry.Name.Contains(
+                normalized.Query,
+                StringComparison.OrdinalIgnoreCase))
+            .Take(normalized.MaximumResults)
+            .ToList();
+    }, ct);
+
     public Task<SftpDeletePreview> PreviewDeleteAsync(
         string path,
         CancellationToken ct = default) => SerializedAsync(

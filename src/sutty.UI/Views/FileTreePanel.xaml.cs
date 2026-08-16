@@ -337,6 +337,150 @@ public sealed partial class FileTreePanel : UserControl
     private async void Refresh_Click(object sender, RoutedEventArgs e)
         => await NavigateToPathAsync(_currentPath);
 
+    private async void Search_Click(object sender, RoutedEventArgs e)
+    {
+        var sftp = _sftp;
+        if (sftp is null || !_isAvailable)
+            return;
+
+        var queryBox = new TextBox
+        {
+            Header = Loc.T("파일 또는 폴더 이름", "File or folder name"),
+            PlaceholderText = Loc.T("예: nginx, .log, config", "For example: nginx, .log, config"),
+            MinWidth = 300,
+            MaxLength = 128,
+        };
+        var queryDialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = Loc.T("원격 파일명 검색", "Search remote filenames"),
+            Content = queryBox,
+            PrimaryButtonText = Loc.T("검색", "Search"),
+            CloseButtonText = Loc.T("취소", "Cancel"),
+            DefaultButton = ContentDialogButton.Primary,
+            IsPrimaryButtonEnabled = false,
+        };
+        queryBox.TextChanged += (_, _) =>
+            queryDialog.IsPrimaryButtonEnabled = IsValidSearchQuery(queryBox.Text);
+        queryDialog.Opened += (_, _) => queryBox.Focus(FocusState.Programmatic);
+        if (await ShowDialogSafelyAsync(queryDialog) != ContentDialogResult.Primary)
+            return;
+
+        var query = queryBox.Text.Trim();
+        CancelNavigation();
+        var cts = new CancellationTokenSource();
+        _navigationCts = cts;
+        var sessionVersion = _sessionVersion;
+        var navigationVersion = ++_navigationVersion;
+        LoadingRing.IsActive = true;
+        FileTree.IsEnabled = false;
+        ShowStatus(Loc.T(
+            $"'{query}' 파일명을 검색하는 중…",
+            $"Searching filenames for '{query}'…"));
+        try
+        {
+            var matches = await sftp.SearchByNameAsync(_currentPath, query, 500, cts.Token);
+            if (!IsCurrent(sftp, sessionVersion, navigationVersion, cts.Token))
+                return;
+            if (matches.Count == 0)
+            {
+                ShowStatus(Loc.T(
+                    $"'{query}'과(와) 일치하는 파일명이 없습니다.",
+                    $"No filenames match '{query}'."));
+                return;
+            }
+
+            var choices = matches.Select(match => new RemoteSearchChoice(
+                match,
+                $"[{(match.Entry.IsDirectory ? Loc.T("폴더", "DIR") : Loc.T("파일", "FILE"))}]  {match.RelativePath}"))
+                .ToList();
+            var results = new ListView
+            {
+                ItemsSource = choices,
+                DisplayMemberPath = nameof(RemoteSearchChoice.Display),
+                SelectionMode = ListViewSelectionMode.Single,
+                MinWidth = 420,
+                MaxHeight = 420,
+            };
+            var content = new StackPanel { Spacing = 8 };
+            content.Children.Add(new TextBlock
+            {
+                Text = Loc.T(
+                    $"{_currentPath} 아래에서 {matches.Count:N0}개를 찾았습니다. 열 항목을 선택하세요.",
+                    $"Found {matches.Count:N0} item(s) below {_currentPath}. Select one to open."),
+                Foreground = ThemeResources.Brush(this, "TextMuted"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(results);
+            if (matches.Count == 500)
+            {
+                content.Children.Add(new TextBlock
+                {
+                    Text = Loc.T(
+                        "처음 500개 결과만 표시합니다. 검색어를 더 구체적으로 입력하세요.",
+                        "Only the first 500 results are shown. Use a more specific query."),
+                    Foreground = ThemeResources.Brush(this, "StatusAmber"),
+                    FontSize = 10.5,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+            }
+
+            var resultDialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = Loc.T("검색 결과", "Search results"),
+                Content = content,
+                PrimaryButtonText = Loc.T("위치 열기", "Open location"),
+                CloseButtonText = Loc.T("닫기", "Close"),
+                DefaultButton = ContentDialogButton.Primary,
+                IsPrimaryButtonEnabled = false,
+            };
+            var openRequestedByDoubleTap = false;
+            results.SelectionChanged += (_, _) =>
+                resultDialog.IsPrimaryButtonEnabled = results.SelectedItem is RemoteSearchChoice;
+            results.DoubleTapped += (_, args) =>
+            {
+                if (results.SelectedItem is RemoteSearchChoice)
+                {
+                    args.Handled = true;
+                    openRequestedByDoubleTap = true;
+                    resultDialog.Hide();
+                }
+            };
+            var dialogResult = await ShowDialogSafelyAsync(resultDialog);
+            if ((dialogResult == ContentDialogResult.Primary || openRequestedByDoubleTap) &&
+                results.SelectedItem is RemoteSearchChoice selected &&
+                IsCurrent(sftp, sessionVersion, navigationVersion, cts.Token))
+            {
+                var destination = selected.Result.Entry.IsDirectory
+                    ? selected.Result.Entry.FullPath
+                    : RemotePath.GetDirectory(selected.Result.Entry.FullPath);
+                await NavigateToPathAsync(destination);
+            }
+            else if (IsCurrent(sftp, sessionVersion, navigationVersion, cts.Token))
+            {
+                ShowStatus(null);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Session changes and newer navigation requests supersede this search.
+        }
+        catch (Exception error)
+        {
+            if (IsCurrent(sftp, sessionVersion, navigationVersion, CancellationToken.None))
+                ShowOperationError(Loc.T("원격 검색 실패", "Remote search failed"), error);
+        }
+        finally
+        {
+            if (navigationVersion == _navigationVersion)
+            {
+                LoadingRing.IsActive = false;
+                FileTree.IsEnabled = _isAvailable && RootNodes.Count > 0 && _sftp is not null;
+            }
+        }
+    }
+
     private async void PathBox_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != Windows.System.VirtualKey.Enter) return;
@@ -785,6 +929,38 @@ public sealed partial class FileTreePanel : UserControl
         {
             if (ReferenceEquals(_sftp, sftp) && version == _sessionVersion)
                 ShowOperationError(Loc.T("삭제 실패", "Delete failed"), ex);
+        }
+    }
+
+    private async void MoveTo_Click(object sender, RoutedEventArgs e)
+    {
+        if (NodeFrom(sender) is not { CanModify: true } node || !IsNodeCurrent(node) ||
+            _sftp is not { } sftp)
+        {
+            return;
+        }
+
+        var version = _sessionVersion;
+        var token = _sessionCts.Token;
+        var destination = await PromptForRemotePathAsync(node.FullPath);
+        if (destination is null || destination == RemotePath.Normalize(node.FullPath) ||
+            !_isAvailable || token.IsCancellationRequested ||
+            !ReferenceEquals(_sftp, sftp) || version != _sessionVersion)
+        {
+            return;
+        }
+
+        try
+        {
+            await sftp.MoveAsync(node.FullPath, destination, token);
+            if (ReferenceEquals(_sftp, sftp) && version == _sessionVersion)
+                await NavigateToPathAsync(_currentPath);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (ReferenceEquals(_sftp, sftp) && version == _sessionVersion)
+                ShowOperationError(Loc.T("원격 이동 실패", "Remote move failed"), error);
         }
     }
 
@@ -1347,6 +1523,51 @@ public sealed partial class FileTreePanel : UserControl
         return await ShowDialogSafelyAsync(dialog) == ContentDialogResult.Primary ? input.Text.Trim() : null;
     }
 
+    private async Task<string?> PromptForRemotePathAsync(string initial)
+    {
+        var input = new TextBox
+        {
+            Text = initial,
+            Header = Loc.T("이동할 전체 원격 경로", "Full remote destination path"),
+            PlaceholderText = "/var/archive/name",
+            MinWidth = 360,
+            MaxLength = 4_096,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas"),
+        };
+        var help = new TextBlock
+        {
+            Text = Loc.T(
+                "대상 상위 폴더가 서버에 이미 있어야 하며 기존 항목을 덮어쓰지 않습니다.",
+                "The destination parent must already exist; existing entries are never overwritten."),
+            Foreground = ThemeResources.Brush(this, "TextMuted"),
+            FontSize = 10.5,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(input);
+        content.Children.Add(help);
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = Loc.T("다른 원격 폴더로 이동", "Move to another remote folder"),
+            Content = content,
+            PrimaryButtonText = Loc.T("이동", "Move"),
+            CloseButtonText = Loc.T("취소", "Cancel"),
+            DefaultButton = ContentDialogButton.Primary,
+            IsPrimaryButtonEnabled = IsValidAbsoluteRemotePath(initial),
+        };
+        input.TextChanged += (_, _) =>
+            dialog.IsPrimaryButtonEnabled = IsValidAbsoluteRemotePath(input.Text);
+        dialog.Opened += (_, _) =>
+        {
+            input.Focus(FocusState.Programmatic);
+            input.SelectAll();
+        };
+        return await ShowDialogSafelyAsync(dialog) == ContentDialogResult.Primary
+            ? RemotePath.Normalize(input.Text)
+            : null;
+    }
+
     private async Task<ContentDialogResult> ShowDialogSafelyAsync(ContentDialog dialog)
     {
         try
@@ -1366,6 +1587,20 @@ public sealed partial class FileTreePanel : UserControl
         var value = name?.Trim();
         return !string.IsNullOrEmpty(value) && value is not "." and not ".." &&
                !value.Contains('/') && !value.Contains('\\');
+    }
+
+    private static bool IsValidSearchQuery(string? query)
+    {
+        var value = query?.Trim() ?? "";
+        return value.Length is > 0 and <= 128 && !value.Any(char.IsControl);
+    }
+
+    private static bool IsValidAbsoluteRemotePath(string? path)
+    {
+        var value = path?.Trim() ?? "";
+        return value.Length is > 1 and <= 4_096 && value.StartsWith('/') &&
+               !value.Contains('\0') && !value.Any(char.IsControl) &&
+               RemotePath.Normalize(value) != "/";
     }
 
     private static bool TryParseUnixMode(string? value, out int unixMode)
@@ -1395,6 +1630,8 @@ public sealed partial class FileTreePanel : UserControl
 
     private static FileNode? NodeFrom(object sender) =>
         (sender as FrameworkElement)?.Tag as FileNode;
+
+    private sealed record RemoteSearchChoice(RemoteTreeEntry Result, string Display);
 
     private bool IsNodeCurrent(FileNode node) =>
         _isAvailable && FileTree.IsEnabled &&

@@ -52,6 +52,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="30" />
                 <ColumnDefinition Width="30" />
+                <ColumnDefinition Width="30" />
             </Grid.ColumnDefinitions>
             <Button
                 Padding="0"
@@ -93,6 +94,17 @@
                 CornerRadius="6"
                 ToolTipService.ToolTip="{x:Bind h:Loc.T('새로 고침', 'Refresh')}">
                 <FontIcon FontSize="12" Glyph="&#xE72C;" />
+            </Button>
+            <Button
+                Grid.Column="4"
+                Padding="0"
+                AutomationProperties.Name="{x:Bind h:Loc.T('원격 파일명 검색', 'Search remote filenames')}"
+                Background="{ThemeResource InputBg}"
+                BorderBrush="{ThemeResource InputBorder}"
+                Click="Search_Click"
+                CornerRadius="6"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('현재 폴더 아래에서 파일명 검색', 'Search filenames below the current folder')}">
+                <FontIcon FontSize="12" Glyph="&#xE721;" />
             </Button>
         </Grid>
 
@@ -139,6 +151,12 @@
                                     Icon="Rename"
                                     Tag="{x:Bind}"
                                     Text="{x:Bind h:Loc.T('이름 바꾸기…', 'Rename…')}"
+                                    Visibility="{x:Bind CanModify}" />
+                                <MenuFlyoutItem
+                                    Click="MoveTo_Click"
+                                    Icon="Forward"
+                                    Tag="{x:Bind}"
+                                    Text="{x:Bind h:Loc.T('다른 폴더로 이동…', 'Move to another folder…')}"
                                     Visibility="{x:Bind CanModify}" />
                                 <MenuFlyoutItem
                                     Click="ChangePermissions_Click"

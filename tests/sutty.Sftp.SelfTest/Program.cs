@@ -94,6 +94,41 @@ try
                                       entry.RelativePath.EndsWith("empty")),
         "folder tree enumeration includes empty folders");
 
+    var filenameMatches = await files.SearchByNameAsync(uploadedTree, "CHILD");
+    Assert(filenameMatches.Count == 1 &&
+           filenameMatches[0].RelativePath.EndsWith("child.yaml", StringComparison.OrdinalIgnoreCase),
+        "bounded recursive filename search is case insensitive");
+    Assert((await files.SearchByNameAsync(uploadedTree, ".", maximumResults: 1)).Count == 1,
+        "remote filename search honors its result limit");
+    await AssertThrowsAsync<ArgumentException>(
+        () => files.SearchByNameAsync(uploadedTree, "\u0001"),
+        "remote filename search rejects control characters");
+
+    var moveRoot = Path.Combine(remote, "move-root");
+    var moveSourceFolder = Path.Combine(moveRoot, "source");
+    var moveDestinationFolder = Path.Combine(moveRoot, "destination");
+    Directory.CreateDirectory(moveSourceFolder);
+    Directory.CreateDirectory(moveDestinationFolder);
+    var moveSourceFile = Path.Combine(moveSourceFolder, "move.txt");
+    await File.WriteAllTextAsync(moveSourceFile, "move me");
+    var movedFile = Path.Combine(moveDestinationFolder, "moved.txt");
+    await files.MoveAsync(moveSourceFile, movedFile);
+    Assert(!File.Exists(moveSourceFile) && await File.ReadAllTextAsync(movedFile) == "move me",
+        "cross-directory file move preserves contents");
+    var moveDirectory = Path.Combine(moveSourceFolder, "tree");
+    Directory.CreateDirectory(moveDirectory);
+    await File.WriteAllTextAsync(Path.Combine(moveDirectory, "nested.txt"), "nested");
+    var movedDirectory = Path.Combine(moveDestinationFolder, "tree");
+    await files.MoveAsync(moveDirectory, movedDirectory);
+    Assert(File.Exists(Path.Combine(movedDirectory, "nested.txt")),
+        "cross-directory folder move preserves descendants");
+    await AssertThrowsAsync<IOException>(
+        () => files.MoveAsync(movedDirectory, Path.Combine(movedDirectory, "inside")),
+        "folder move rejects moving a directory inside itself");
+    await AssertThrowsAsync<IOException>(
+        () => files.MoveAsync(Path.GetPathRoot(scratch)!, Path.Combine(scratch, "moved-root")),
+        "folder move rejects a filesystem root");
+
     var downloadedTree = Path.Combine(downloads, "downloaded-tree");
     var downloadTreeResult = await files.DownloadPathAsync(uploadedTree, downloadedTree);
     Assert(downloadTreeResult.FilesTransferred == 2, "recursive download transfers every file");
@@ -413,6 +448,12 @@ sealed class RecordingSftpService(string? downloadSource = null, bool failFirstU
 
     public Task<IReadOnlyList<RemoteTreeEntry>> EnumerateTreeAsync(
         string path,
+        CancellationToken ct = default) => throw new NotSupportedException();
+
+    public Task<IReadOnlyList<RemoteTreeEntry>> SearchByNameAsync(
+        string path,
+        string query,
+        int maximumResults = 500,
         CancellationToken ct = default) => throw new NotSupportedException();
 
     public Task<SftpTransferResult> DownloadPathAsync(

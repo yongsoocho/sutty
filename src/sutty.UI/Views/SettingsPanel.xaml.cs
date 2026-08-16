@@ -30,8 +30,9 @@ namespace sutty.UI.Views
         TerminalFeatures = 1 << 8,
         Sftp = 1 << 9,
         HostProfiles = 1 << 10,
+        Workspace = 1 << 11,
         All = Language | Theme | TerminalAppearance | TerminalMode | TerminalFeatures |
-              Connection | History | Window | Sftp | HostProfiles,
+              Connection | History | Window | Sftp | HostProfiles | Workspace,
     }
 
     public sealed class SettingsChangedEventArgs : EventArgs
@@ -119,6 +120,9 @@ namespace sutty.UI.Views
                 ?? SftpConflictPolicyCombo.Items[0];
             HistoryDaysBox.Value = settings.HistoryRetentionDays;
             HistoryTopHostCountBox.Value = settings.HistoryTopHostCount;
+            RestoreWorkspaceToggle.IsOn = settings.RestoreWorkspaceOnStartup;
+            ConfirmWorkspaceRestoreToggle.IsOn = settings.ConfirmWorkspaceRestore;
+            ConfirmWorkspaceRestoreToggle.IsEnabled = settings.RestoreWorkspaceOnStartup;
 
             MainWidthBox.Value = PositiveOrNaN(settings.MainWindowWidth);
             MainHeightBox.Value = PositiveOrNaN(settings.MainWindowHeight);
@@ -295,6 +299,18 @@ namespace sutty.UI.Views
             SettingsService.Current.SftpRetryEnabled = SftpRetryToggle.IsOn;
             SftpRetryCountBox.IsEnabled = SftpRetryToggle.IsOn;
             CommitChangesNow(SettingChangeKind.Sftp);
+        }
+
+        private void WorkspaceToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading)
+                return;
+
+            var settings = SettingsService.Current;
+            settings.RestoreWorkspaceOnStartup = RestoreWorkspaceToggle.IsOn;
+            settings.ConfirmWorkspaceRestore = ConfirmWorkspaceRestoreToggle.IsOn;
+            ConfirmWorkspaceRestoreToggle.IsEnabled = RestoreWorkspaceToggle.IsOn;
+            CommitChangesNow(SettingChangeKind.Workspace);
         }
 
         private void SftpVerificationCombo_SelectionChanged(

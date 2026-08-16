@@ -99,4 +99,10 @@ public sealed class AppSettings
 
     /// <summary>오른쪽 패널 폭 (스플리터 드래그로 조절, 논리 px).</summary>
     public int RightPanelWidth { get; set; } = 316;
+
+    /// <summary>Remember local tabs and Saved Host ids for the next launch.</summary>
+    public bool RestoreWorkspaceOnStartup { get; set; } = true;
+
+    /// <summary>Ask before restored Saved Host tabs reconnect to their servers.</summary>
+    public bool ConfirmWorkspaceRestore { get; set; } = true;
 }

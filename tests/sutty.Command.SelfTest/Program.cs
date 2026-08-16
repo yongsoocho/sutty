@@ -6,6 +6,23 @@ Db.PathOverride = Path.Combine(scratch, "sutty.db");
 
 try
 {
+    Assert(SuttyLaunchRequestParser.Parse("").Action == SuttyLaunchAction.Default,
+        "empty launch arguments open the default workspace");
+    var launchById = SuttyLaunchRequestParser.Parse("--host saved-host-42");
+    Assert(launchById.Action == SuttyLaunchAction.OpenSavedHost &&
+           launchById.SavedHostReference == "saved-host-42",
+        "command line opens a Saved Host id");
+    var launchByName = SuttyLaunchRequestParser.Parse("--host=\"Production API\"");
+    Assert(launchByName.Action == SuttyLaunchAction.OpenSavedHost &&
+           launchByName.SavedHostReference == "Production API",
+        "command line accepts a quoted exact Saved Host name");
+    Assert(SuttyLaunchRequestParser.Parse("--host server --password secret").Action ==
+           SuttyLaunchAction.Invalid,
+        "command line rejects credential arguments");
+    Assert(SuttyLaunchRequestParser.Parse("--host \"unfinished").Action ==
+           SuttyLaunchAction.Invalid,
+        "command line rejects unterminated quotes");
+
     Assert(!File.Exists(Db.PathOverride), "no bundled local database");
     Assert(HostHistoryStore.GetRecent().Count == 0, "new history store has no bundled rows");
 

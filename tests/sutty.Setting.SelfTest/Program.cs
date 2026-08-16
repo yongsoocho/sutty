@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 var scratch = Path.Combine(Path.GetTempPath(), $"sutty-setting-self-test-{Guid.NewGuid():N}");
 Directory.CreateDirectory(scratch);
 SettingsService.PathOverride = Path.Combine(scratch, "settings.json");
+WorkspaceStateStore.PathOverride = Path.Combine(scratch, "workspace.json");
 
 try
 {
@@ -39,7 +40,9 @@ try
           "MainWindowHeight": 850,
           "SettingWindowWidth": 520,
           "SettingWindowHeight": 660,
-          "RightPanelWidth": 316
+          "RightPanelWidth": 316,
+          "RestoreWorkspaceOnStartup": true,
+          "ConfirmWorkspaceRestore": true
         }
         """);
 
@@ -62,6 +65,8 @@ try
     Assert(!loaded.TerminalCursorBlink, "terminal cursor-blink setting load");
     Assert(loaded.TerminalScreenReaderMode, "terminal accessibility setting load");
     Assert(!loaded.LoadLocalShellProfile, "local shell-profile setting load");
+    Assert(loaded.RestoreWorkspaceOnStartup && loaded.ConfirmWorkspaceRestore,
+        "workspace restore settings load");
 
     loaded.HistoryTopHostCount = 4;
     loaded.RightPanelWidth = 420;
@@ -89,6 +94,49 @@ try
     Assert(json["SftpConflictPolicy"]?.GetValue<string>() == "Rename",
         "SFTP conflict policy persistence");
 
+    var workspaceTabs = Enumerable.Range(0, 20)
+        .Select(index => index % 2 == 0
+            ? new WorkspaceTabState
+            {
+                Kind = WorkspaceTabKinds.LocalTerminal,
+            }
+            : new WorkspaceTabState
+            {
+                Kind = WorkspaceTabKinds.SavedHost,
+                SavedHostId = $"host-{index}",
+            })
+        .ToList();
+    workspaceTabs.Insert(0, new WorkspaceTabState
+    {
+        Kind = WorkspaceTabKinds.SavedHost,
+        SavedHostId = "../../unsafe",
+    });
+    var workspaceSaved = WorkspaceStateStore.Save(new WorkspaceSnapshot
+    {
+        Tabs = workspaceTabs,
+        SelectedIndex = 99,
+    });
+    Assert(workspaceSaved.Succeeded, "workspace atomic save");
+    var workspace = WorkspaceStateStore.Load();
+    Assert(workspace.Tabs.Count == 16, "workspace tab limit");
+    Assert(workspace.Tabs.All(tab => tab.Kind != WorkspaceTabKinds.SavedHost ||
+                                     !tab.SavedHostId.Contains("..", StringComparison.Ordinal)),
+        "workspace invalid Saved Host id rejection");
+    Assert(workspace.SelectedIndex == 15, "workspace selected-index normalization");
+    workspace.Tabs.Insert(0, new WorkspaceTabState { Kind = "UnknownTabKind" });
+    Assert(WorkspaceStateStore.Save(workspace).Succeeded, "unknown workspace kind save");
+    workspace = WorkspaceStateStore.Load();
+    Assert(workspace.Tabs.All(tab => tab.Kind != "UnknownTabKind"),
+        "unknown workspace kind rejection");
+    var workspaceJson = File.ReadAllText(WorkspaceStateStore.WorkspacePath);
+    Assert(!workspaceJson.Contains("Password", StringComparison.OrdinalIgnoreCase) &&
+           !workspaceJson.Contains("Passphrase", StringComparison.OrdinalIgnoreCase) &&
+           !workspaceJson.Contains("DisplayName", StringComparison.OrdinalIgnoreCase) &&
+           !workspaceJson.Contains("Command", StringComparison.OrdinalIgnoreCase),
+        "workspace schema excludes credential fields");
+    Assert(WorkspaceStateStore.Clear().Succeeded && !File.Exists(WorkspaceStateStore.WorkspacePath),
+        "workspace clear");
+
     File.WriteAllText(SettingsService.SettingsPath, "{broken");
     SettingsService.ResetForTests();
     var recovered = SettingsService.Load();
@@ -104,6 +152,7 @@ finally
 {
     SettingsService.PathOverride = null;
     SettingsService.ResetForTests();
+    WorkspaceStateStore.PathOverride = null;
     Directory.Delete(scratch, recursive: true);
 }
 
