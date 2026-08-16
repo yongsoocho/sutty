@@ -5,6 +5,7 @@ public enum SuttyLaunchAction
     Default,
     OpenSavedHost,
     ShowHelp,
+    ShowVersion,
     Invalid,
 }
 
@@ -33,6 +34,8 @@ public static class SuttyLaunchRequestParser
 
         if (tokens.Count == 1 && tokens[0] is "--help" or "-h" or "/?")
             return new SuttyLaunchRequest(SuttyLaunchAction.ShowHelp);
+        if (tokens.Count == 1 && tokens[0] is "--version" or "-v")
+            return new SuttyLaunchRequest(SuttyLaunchAction.ShowVersion);
 
         string reference;
         if (tokens.Count == 2 && string.Equals(tokens[0], "--host", StringComparison.OrdinalIgnoreCase))

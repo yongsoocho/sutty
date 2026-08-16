@@ -327,13 +327,24 @@ namespace sutty.UI.Views
 
         private async Task HandleLaunchRequestAsync(sutty.Command.SuttyLaunchRequest request)
         {
+            if (request.Action == sutty.Command.SuttyLaunchAction.ShowVersion)
+            {
+                await ShowLaunchDialogAsync(
+                    Helpers.Loc.T("Sutty 버전", "Sutty version"),
+                    Helpers.AppReleaseInfo.DisplayVersion +
+                    (string.IsNullOrWhiteSpace(Helpers.AppReleaseInfo.BuildMetadata)
+                        ? ""
+                        : $"\nBuild {Helpers.AppReleaseInfo.BuildMetadata}"));
+                return;
+            }
+
             if (request.Action == sutty.Command.SuttyLaunchAction.ShowHelp)
             {
                 await ShowLaunchDialogAsync(
                     Helpers.Loc.T("Sutty 명령줄", "Sutty command line"),
                     Helpers.Loc.T(
-                        "저장 Host 열기:\n\nsutty.exe --host <저장 Host ID 또는 정확한 이름>\n\n비밀번호와 개인키 암호는 명령줄 인자로 받지 않습니다.",
-                        "Open a Saved Host:\n\nsutty.exe --host <Saved Host ID or exact name>\n\nPasswords and private-key passphrases are not accepted as command-line arguments."));
+                        "저장 Host 열기:\n\nsutty.exe --host <저장 Host ID 또는 정확한 이름>\n\n버전 확인:\n\nsutty.exe --version\n\n비밀번호와 개인키 암호는 명령줄 인자로 받지 않습니다.",
+                        "Open a Saved Host:\n\nsutty.exe --host <Saved Host ID or exact name>\n\nShow version:\n\nsutty.exe --version\n\nPasswords and private-key passphrases are not accepted as command-line arguments."));
                 return;
             }
 

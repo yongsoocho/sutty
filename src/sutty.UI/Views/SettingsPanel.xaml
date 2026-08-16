@@ -49,24 +49,29 @@
             PaneDisplayMode="Left"
             SelectionChanged="SettingsNav_SelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Appearance" FontSize="12.5" Tag="Appearance">
+                <NavigationViewItem Content="{x:Bind h:Loc.T('모양', 'Appearance')}" FontSize="12.5" Tag="Appearance">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE790;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Terminal" FontSize="12.5" Tag="Terminal">
+                <NavigationViewItem Content="{x:Bind h:Loc.T('터미널', 'Terminal')}" FontSize="12.5" Tag="Terminal">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE756;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Connection" FontSize="12.5" Tag="Connection">
+                <NavigationViewItem Content="{x:Bind h:Loc.T('연결', 'Connection')}" FontSize="12.5" Tag="Connection">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE968;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Window" FontSize="12.5" Tag="Window">
+                <NavigationViewItem Content="{x:Bind h:Loc.T('창', 'Window')}" FontSize="12.5" Tag="Window">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE740;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="{x:Bind h:Loc.T('정보', 'About')}" FontSize="12.5" Tag="About">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE946;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
@@ -499,6 +504,90 @@
                                         ValueChanged="NumberBox_ValueChanged"
                                         Style="{StaticResource SettingsNumber}" />
                                 </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!--  ── About / Alpha release identity ──  -->
+                    <StackPanel
+                        x:Name="AboutPane"
+                        Spacing="10"
+                        Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsHeading}" Text="{x:Bind h:Loc.T('Sutty 정보', 'About Sutty')}" />
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="12">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border
+                                        Width="64"
+                                        Height="64"
+                                        Background="{ThemeResource AccentTint}"
+                                        CornerRadius="14">
+                                        <Image
+                                            Width="48"
+                                            Height="48"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Source="ms-appx:///Assets/sutty.targetsize-48.png"
+                                            Stretch="Uniform" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                        <TextBlock
+                                            x:Name="ReleaseVersionText"
+                                            FontSize="17"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource TextPrimary}" />
+                                        <Border
+                                            HorizontalAlignment="Left"
+                                            Padding="8,3"
+                                            Background="{ThemeResource AccentTint}"
+                                            CornerRadius="10">
+                                            <TextBlock
+                                                FontSize="9.5"
+                                                FontWeight="Bold"
+                                                Foreground="{ThemeResource AccentTeal}"
+                                                Text="ALPHA" />
+                                        </Border>
+                                        <TextBlock
+                                            x:Name="ReleaseBuildText"
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="10"
+                                            Foreground="{ThemeResource TextMuted}" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('Windows 11 24H2 이상 · x64 / ARM64 · 로컬 우선 SSH/SFTP 작업공간', 'Windows 11 24H2 or later · x64 / ARM64 · Local-first SSH/SFTP workspace')}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="9">
+                                <TextBlock Style="{StaticResource SettingsLabel}" Text="ALPHA NOTICE / 알림" />
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="{ThemeResource StatusAmber}"
+                                    Text="{x:Bind h:Loc.T('현재 Alpha ZIP은 코드 서명되지 않은 시험 배포물입니다.', 'The current Alpha ZIP is an unsigned evaluation build.')}"
+                                    TextWrapping="Wrap" />
+                                <TextBlock
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('공식 Release의 SHA-256을 확인하고 개발·테스트 환경에서 먼저 사용하세요. 실서버 호환성 및 서명 설치 인수는 아직 진행 중입니다.', 'Verify SHA-256 from the official Release and evaluate it in development or test environments first. Live-server compatibility and signed-install acceptance are still pending.')}"
+                                    TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <HyperlinkButton
+                                        Padding="0"
+                                        Content="{x:Bind h:Loc.T('Alpha 다운로드', 'Download Alpha')}"
+                                        NavigateUri="https://github.com/yongsoocho/sutty/releases" />
+                                    <HyperlinkButton
+                                        Padding="0"
+                                        Content="{x:Bind h:Loc.T('보안 정책', 'Security policy')}"
+                                        NavigateUri="https://github.com/yongsoocho/sutty/security/policy" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </StackPanel>

@@ -1,0 +1,222 @@
+name: Alpha release
+
+on:
+  push:
+    tags:
+      - 'v*-alpha.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alpha-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  ContinuousIntegrationBuild: true
+
+jobs:
+  package-and-release:
+    name: Validate and publish Alpha archives
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Validate tag, source version, and release notes
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$') {
+            throw "Unsupported Alpha tag: $tag"
+          }
+
+          [xml]$versionDocument = Get-Content -LiteralPath .\Directory.Build.props -Raw
+          $versionPrefix = [string]$versionDocument.Project.PropertyGroup.VersionPrefix
+          $versionSuffix = [string]$versionDocument.Project.PropertyGroup.VersionSuffix
+          $expectedTag = "v$versionPrefix-$versionSuffix"
+          if ($tag -cne $expectedTag) {
+            throw "Tag $tag does not match source version $expectedTag."
+          }
+
+          $notesPath = ".\docs\releases\$tag.md"
+          if (-not (Test-Path -LiteralPath $notesPath)) {
+            throw "Release notes are missing: $notesPath"
+          }
+
+      - name: Restore locked x64 dependencies
+        run: >-
+          dotnet restore .\sutty.slnx
+          --locked-mode
+          -p:Platform=x64
+          -p:Configuration=Release
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Build x64 Release
+        run: >-
+          dotnet build .\sutty.slnx
+          --configuration Release
+          --no-restore
+          -p:Platform=x64
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Run security self-tests
+        run: dotnet .\tests\sutty.Core.Security.SelfTest\bin\Release\net10.0\sutty.Core.Security.SelfTest.dll
+
+      - name: Run saved-host and history self-tests
+        run: dotnet .\tests\sutty.Command.SelfTest\bin\Release\net10.0\sutty.Command.SelfTest.dll
+
+      - name: Run terminal self-tests
+        run: dotnet .\tests\sutty.Terminal.SelfTest\bin\Release\net10.0\sutty.Terminal.SelfTest.dll
+
+      - name: Run settings self-tests
+        run: dotnet .\tests\sutty.Setting.SelfTest\bin\Release\net10.0\sutty.Setting.SelfTest.dll
+
+      - name: Run SFTP self-tests
+        run: dotnet .\tests\sutty.Sftp.SelfTest\bin\Release\net10.0\sutty.Sftp.SelfTest.dll
+
+      - name: Publish unsigned x64 Alpha
+        run: >-
+          dotnet publish .\src\sutty.UI\sutty.UI.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          --output .\artifacts\alpha-win-x64
+          -p:Platform=x64
+          -p:GenerateAppxPackageOnBuild=false
+          -p:AppxPackageSigningEnabled=false
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+          -p:DebugSymbols=false
+          -p:DebugType=None
+
+      - name: Restore locked ARM64 dependencies
+        run: >-
+          dotnet restore .\sutty.slnx
+          --locked-mode
+          -p:Platform=ARM64
+          -p:Configuration=Release
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Build ARM64 Release
+        run: >-
+          dotnet build .\sutty.slnx
+          --configuration Release
+          --no-restore
+          -p:Platform=ARM64
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Publish unsigned ARM64 Alpha
+        run: >-
+          dotnet publish .\src\sutty.UI\sutty.UI.csproj
+          --configuration Release
+          --runtime win-arm64
+          --self-contained true
+          --no-restore
+          --output .\artifacts\alpha-win-arm64
+          -p:Platform=ARM64
+          -p:GenerateAppxPackageOnBuild=false
+          -p:AppxPackageSigningEnabled=false
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+          -p:DebugSymbols=false
+          -p:DebugType=None
+
+      - name: Add release identity and installation guide
+        shell: pwsh
+        run: |
+          $metadata = @(
+            "Sutty $env:GITHUB_REF_NAME",
+            "Commit: $env:GITHUB_SHA",
+            "Channel: Alpha",
+            "Signing: unsigned ZIP evaluation build",
+            "Minimum OS: Windows 11 24H2"
+          )
+          foreach ($architecture in @('x64', 'arm64')) {
+            $path = ".\artifacts\alpha-win-$architecture"
+            [System.IO.File]::WriteAllLines(
+              (Join-Path $path 'BUILDINFO.txt'),
+              $metadata + "Architecture: $architecture",
+              [System.Text.UTF8Encoding]::new($false))
+            Copy-Item -LiteralPath .\LICENSE -Destination (Join-Path $path 'LICENSE.txt')
+            Copy-Item -LiteralPath .\docs\ALPHA_INSTALL.md -Destination (Join-Path $path 'ALPHA_INSTALL.md')
+          }
+
+      - name: Validate x64 Alpha payload policy
+        shell: pwsh
+        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\alpha-win-x64
+
+      - name: Validate ARM64 Alpha payload policy
+        shell: pwsh
+        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\alpha-win-arm64
+
+      - name: Package archives and SHA-256 checksums
+        shell: pwsh
+        run: |
+          $packageDirectory = New-Item -ItemType Directory -Force -Path .\artifacts\packages
+          $tag = $env:GITHUB_REF_NAME
+          $x64Archive = Join-Path $packageDirectory.FullName "Sutty-$tag-win-x64.zip"
+          $arm64Archive = Join-Path $packageDirectory.FullName "Sutty-$tag-win-arm64.zip"
+          Compress-Archive -Path .\artifacts\alpha-win-x64\* -DestinationPath $x64Archive -CompressionLevel Optimal
+          Compress-Archive -Path .\artifacts\alpha-win-arm64\* -DestinationPath $arm64Archive -CompressionLevel Optimal
+
+          $hashLines = @(Get-ChildItem -LiteralPath $packageDirectory.FullName -File -Filter *.zip |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            })
+          [System.IO.File]::WriteAllLines(
+            (Join-Path $packageDirectory.FullName 'SHA256SUMS.txt'),
+            $hashLines,
+            [System.Text.UTF8Encoding]::new($false))
+
+      - name: Upload immutable Alpha workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sutty-${{ github.ref_name }}-unsigned
+          path: artifacts/packages/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create or refresh GitHub prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $repository = $env:GITHUB_REPOSITORY
+          $notesPath = ".\docs\releases\$tag.md"
+          $titleVersion = $tag.TrimStart('v') -replace '-alpha\.', ' Alpha '
+          $title = "Sutty $titleVersion"
+          $assets = @(
+            ".\artifacts\packages\Sutty-$tag-win-x64.zip",
+            ".\artifacts\packages\Sutty-$tag-win-arm64.zip",
+            '.\artifacts\packages\SHA256SUMS.txt'
+          )
+
+          & gh release view $tag --repo $repository *> $null
+          if ($LASTEXITCODE -eq 0) {
+            & gh release edit $tag --repo $repository --title $title --notes-file $notesPath --prerelease
+            if ($LASTEXITCODE -ne 0) { throw 'Could not refresh Alpha release metadata.' }
+            & gh release upload $tag @assets --repo $repository --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Could not refresh Alpha release assets.' }
+          }
+          else {
+            & gh release create $tag @assets --repo $repository --verify-tag --prerelease --title $title --notes-file $notesPath
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the Alpha prerelease.' }
+          }

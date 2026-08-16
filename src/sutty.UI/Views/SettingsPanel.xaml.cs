@@ -130,6 +130,11 @@ namespace sutty.UI.Views
             SettingHeightBox.Value = PositiveOrNaN(settings.SettingWindowHeight);
             PanelWidthBox.Value = PositiveOrNaN(settings.RightPanelWidth);
 
+            ReleaseVersionText.Text = AppReleaseInfo.DisplayVersion;
+            ReleaseBuildText.Text = string.IsNullOrWhiteSpace(AppReleaseInfo.BuildMetadata)
+                ? Loc.T("로컬 빌드", "Local build")
+                : $"Build {AppReleaseInfo.BuildMetadata}";
+
             SettingsNav.SelectedItem = SettingsNav.MenuItems.First();
             _loading = false;
             _ = LoadInstalledFontsAsync();
@@ -190,6 +195,7 @@ namespace sutty.UI.Views
             TerminalPane.Visibility = tag == "Terminal" ? Visibility.Visible : Visibility.Collapsed;
             ConnectionPane.Visibility = tag == "Connection" ? Visibility.Visible : Visibility.Collapsed;
             WindowPane.Visibility = tag == "Window" ? Visibility.Visible : Visibility.Collapsed;
+            AboutPane.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void ThemeRadios_SelectionChanged(object sender, SelectionChangedEventArgs e)

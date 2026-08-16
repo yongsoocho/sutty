@@ -8,6 +8,8 @@ try
 {
     Assert(SuttyLaunchRequestParser.Parse("").Action == SuttyLaunchAction.Default,
         "empty launch arguments open the default workspace");
+    Assert(SuttyLaunchRequestParser.Parse("--version").Action == SuttyLaunchAction.ShowVersion,
+        "version launch argument");
     var launchById = SuttyLaunchRequestParser.Parse("--host saved-host-42");
     Assert(launchById.Action == SuttyLaunchAction.OpenSavedHost &&
            launchById.SavedHostReference == "saved-host-42",

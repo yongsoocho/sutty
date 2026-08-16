@@ -14,6 +14,8 @@
 
 > **알파, GA 아님.** Sutty는 개발 중인 엔지니어링 빌드입니다. 중요한 시스템에 사용하기 전에 현재 한계를 확인해야 합니다.
 
+> **Current / 현재:** [`v0.1.0-alpha.1`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.1) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
+
 ## English
 
 Sutty brings everyday **local terminals, SSH, SFTP, reusable commands, and multi-session operations** into one Windows-local workspace. That is a product goal, not a statement that every planned capability is complete.
@@ -38,7 +40,7 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - A compact per-panel transfer queue with queued/running state, an explicit `0%`–`100%` value, progress bar, speed, ETA, cancellation, and an eight-job cap. Transfers support resumable deterministic partial files, persisted non-secret checkpoints, configurable transient-failure retries, and user-selectable final-size or SHA-256 verification (safe SHA-256 by default).
 - Safe file-transfer staging. Uploads use a remote temporary name and preserve an existing destination during promotion; downloads use an adjacent local temporary file. Multi supports 1→N upload and N→1 download for explicitly checked sessions, with per-server progress/results, deterministic local isolation, and failed/incomplete-target-only retry. A credential-free atomic job queue restores incomplete single and Multi transfers after restart.
 - Append-only connection-attempt history plus explicit Saved Host profiles, groups, environments, favorites, and search in SQLite.
-- Credential-free Saved Host launcher: `sutty.exe --host <id or exact name>` opens an existing profile while rejecting password/passphrase arguments.
+- Credential-free Saved Host launcher: `sutty.UI.exe --host <id or exact name>` opens an existing profile while rejecting password/passphrase arguments; `sutty.UI.exe --version` reports the Alpha build.
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
 - Up to 16 mixed local/SSH tabs, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged SSH sessions.
 - Optional restart-safe Workspace restoration remembers only local tabs and opaque Saved Host ids. SSH reconnection asks first by default, and previous commands are never stored or replayed.
@@ -153,7 +155,7 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - 대기·실행 상태, 명시적인 `0%`–`100%` 숫자, 진행 막대, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. 결정적인 partial 파일, 비밀정보 없는 영속 체크포인트, 설정 가능한 일시 오류 재시도, 사용자가 선택하는 최종 크기 또는 SHA-256 검증(기본값은 안전한 SHA-256)으로 전송을 재개할 수 있습니다.
 - 안전한 파일 전송 준비 단계. 업로드는 원격 임시 이름을 사용하고 기존 대상을 보존한 채 승격하며, 다운로드는 같은 로컬 디렉터리의 임시 파일을 사용합니다. Multi는 명시적으로 체크한 세션의 1→N 업로드와 N→1 다운로드, 서버별 진행률·결과, 결정적인 로컬 경로 분리, 실패·미완료 대상만 재시도를 지원합니다. 자격증명 없는 atomic job queue가 재실행 후 Single·Multi 미완료 전송을 복원합니다.
 - SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·그룹·환경·즐겨찾기·검색
-- 자격증명 없는 저장 Host 실행: `sutty.exe --host <ID 또는 정확한 이름>`으로 기존 프로필을 열며 비밀번호·키 암호 인자는 거부
+- 자격증명 없는 저장 Host 실행: `sutty.UI.exe --host <ID 또는 정확한 이름>`으로 기존 프로필을 열며 비밀번호·키 암호 인자는 거부하고, `sutty.UI.exe --version`으로 Alpha 버전을 확인
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
 - 로컬/SSH 혼합 최대 16개 탭, 기본 선택 0개의 Multi 대상, PROD 태그 SSH 세션이 포함된 브로드캐스트의 추가 확인
 - 선택형 Workspace 복원은 로컬 탭과 불투명 저장 Host ID만 기억합니다. SSH 재연결은 기본적으로 먼저 확인하며 이전 명령은 저장하거나 재실행하지 않습니다.
