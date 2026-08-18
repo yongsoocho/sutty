@@ -19,7 +19,7 @@ Local-first is a product boundary, not a temporary implementation detail:
 - settings, history, saved hosts, trust records, and transfer recovery stay on the current Windows device;
 - shareable definitions must be credential-free and require local credential binding after import.
 
-### Supported product surfaces
+### Five primary workspaces
 
 | Surface | Alpha contract |
 | --- | --- |
@@ -27,9 +27,16 @@ Local-first is a product boundary, not a temporary implementation detail:
 | Terminal | Persistent interactive SSH PTY with resize, keyboard, mouse, Unicode/IME, search, and clipboard handling. |
 | REPL | Structured non-interactive commands with distinct input/output blocks, status, timing, and cancellation. |
 | Files | Session-bound SFTP tree and safe upload/download workflows with explicit collision handling. |
-| Commands | Local reusable command templates with parameter substitution. |
 | Multi | Structured commands and SFTP operations sent only to explicitly selected sessions; default selection is zero. |
+
+### Two common capabilities
+
+| Capability | Alpha contract |
+| --- | --- |
 | Saved Hosts | Local profiles, tags, groups, environments, favorites, routes, tunnels, and optional encrypted credential references. |
+| Commands | Local reusable command templates with parameter substitution, available across session workflows. |
+
+Small-team support means credential-free, file/Git-based sharing of host, route, tunnel, and command definitions. Each user binds local credentials after import. It does not mean accounts, shared credentials, RBAC, central administration, or live collaboration.
 
 An Alpha implementation is not a GA support claim. A capability becomes supported only when its normal, failure, cancellation, shutdown, migration, and relevant live-server paths have evidence.
 
@@ -37,7 +44,7 @@ An Alpha implementation is not a GA support claim. A capability becomes supporte
 
 - FTP/FTPS, Telnet, Serial, RDP, VNC, and a built-in X server
 - cloud accounts, cloud sync, hosted vaults, or a central control plane
-- centralized identity, access policy, audit collection, or remote configuration enforcement
+- centralized identity, access policy, activity collection, or remote configuration enforcement
 - terminal collaboration, mobile clients, and non-Windows desktop clients
 - a built-in IDE, autonomous command generation, or a plugin marketplace
 
@@ -76,7 +83,7 @@ Local-first는 임시 구현 방식이 아니라 제품 경계입니다.
 - 설정, 기록, 저장 Host, 신뢰 정보, 전송 복구 상태는 현재 Windows 장치에 둡니다.
 - 공유 정의에는 자격증명을 넣지 않으며 가져온 뒤 각 사용자가 로컬 자격증명을 연결해야 합니다.
 
-### 지원 제품 화면
+### 주 작업 공간 5개
 
 | 화면 | Alpha 계약 |
 | --- | --- |
@@ -84,9 +91,16 @@ Local-first는 임시 구현 방식이 아니라 제품 경계입니다.
 | Terminal | 크기 변경, 키보드, 마우스, Unicode/IME, 검색, clipboard를 처리하는 지속형 SSH PTY |
 | REPL | 입력·출력 블록, 상태, 실행 시간, 취소를 구분하는 구조화 비대화형 명령 |
 | Files | 세션에 연결된 SFTP tree와 명시적 충돌 정책을 사용하는 안전한 업로드·다운로드 |
-| Commands | 매개변수 치환을 지원하는 로컬 재사용 명령 템플릿 |
 | Multi | 사용자가 명시적으로 선택한 세션에만 보내는 구조화 명령·SFTP 작업. 기본 선택은 0개 |
+
+### 공통 기능 2개
+
+| 기능 | Alpha 계약 |
+| --- | --- |
 | Saved Hosts | 로컬 프로필, 태그, 그룹, 환경, 즐겨찾기, 경로, 터널, 선택형 암호화 자격증명 참조 |
+| Commands | 매개변수 치환을 지원하고 세션 작업 흐름 전반에서 사용하는 로컬 재사용 명령 템플릿 |
+
+소규모 팀 지원은 자격증명 없는 Host·route·tunnel·command 정의를 파일 또는 Git으로 공유하고, 가져온 뒤 각 사용자가 로컬 자격증명을 연결한다는 뜻입니다. 계정, 공유 자격증명, RBAC, 중앙 관리, 실시간 협업은 의미하지 않습니다.
 
 Alpha에 코드가 있다는 사실은 GA 지원을 뜻하지 않습니다. 정상·실패·취소·종료·마이그레이션과 필요한 실서버 경로에 증거가 있어야 지원 완료로 판정합니다.
 
@@ -94,7 +108,7 @@ Alpha에 코드가 있다는 사실은 GA 지원을 뜻하지 않습니다. 정�
 
 - FTP/FTPS, Telnet, Serial, RDP, VNC, 내장 X Server
 - 클라우드 계정·동기화, 호스팅 Vault, 중앙 제어면
-- 중앙 사용자 관리·접근 정책·감사 수집·원격 설정 강제
+- 중앙 사용자 관리·접근 정책·활동 수집·원격 설정 강제
 - 터미널 협업, 모바일 클라이언트, Windows 이외 데스크톱 클라이언트
 - 내장 IDE, 자율 명령 생성, plugin marketplace
 

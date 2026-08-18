@@ -521,17 +521,12 @@ public static class HostProfileStore
     private static HostRouteProfile NormalizeRoute(HostRouteProfile? route)
     {
         route ??= new HostRouteProfile();
-        var type = (route.Type?.Trim() ?? "").ToLowerInvariant() switch
-        {
-            "" or "direct" => "Direct",
-            "httpconnect" => "HttpConnect",
-            "socks4" => "Socks4",
-            "socks5" => "Socks5",
-            "sshjump" => "SshJump",
-            "externalproxycommand" => "ExternalProxyCommand",
-            _ => throw new ArgumentException(
-                "The saved route type is not supported.", nameof(route)),
-        };
+        if (route.State != SavedRouteState.Valid)
+            throw new ArgumentException(
+                "Select and save a supported connection route before connecting.", nameof(route));
+        if (!TryNormalizeRouteType(route.Type, out var type))
+            throw new ArgumentException(
+                "The saved route type is not supported.", nameof(route));
         var usesHost = type is "HttpConnect" or "Socks4" or "Socks5" or
             "SshJump";
         var host = usesHost ? LimitClean(route.Host, 255, "route host") : "";
@@ -564,6 +559,21 @@ public static class HostProfileStore
             ProxyDns = route.ProxyDns,
             DisableDirect = route.DisableDirect || route.LegacyDisableDirect == true,
         };
+    }
+
+    private static bool TryNormalizeRouteType(string? value, out string type)
+    {
+        type = (value?.Trim() ?? "").ToLowerInvariant() switch
+        {
+            "" or "direct" => "Direct",
+            "httpconnect" => "HttpConnect",
+            "socks4" => "Socks4",
+            "socks5" => "Socks5",
+            "sshjump" => "SshJump",
+            "externalproxycommand" => "ExternalProxyCommand",
+            _ => "",
+        };
+        return type.Length > 0;
     }
 
     private static List<HostTunnelProfile> NormalizeTunnels(IEnumerable<HostTunnelProfile>? tunnels)
@@ -618,22 +628,57 @@ public static class HostProfileStore
     private static HostRouteProfile DeserializeRoute(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return new HostRouteProfile();
+        HostRouteProfile? route;
         try
         {
-            return NormalizeRoute(JsonSerializer.Deserialize(
-                value, CommandJsonContext.Default.HostRouteProfile));
+            route = JsonSerializer.Deserialize(value, CommandJsonContext.Default.HostRouteProfile);
         }
-        catch (Exception error) when (error is JsonException or ArgumentException)
+        catch (JsonException)
         {
-            // Corrupt or unsupported route metadata must never become a usable Direct
-            // connection. The editor can recover this sentinel by choosing a new route.
-            return new HostRouteProfile
-            {
-                Id = "invalid-route",
-                Type = "Direct",
-                DisableDirect = true,
-            };
+            return CreateInvalidRoute(SavedRouteState.Corrupt, "");
         }
+
+        if (route is null)
+            return CreateInvalidRoute(SavedRouteState.Corrupt, "");
+
+        // Recognize the opaque sentinel emitted in memory by the previous Alpha. It was
+        // never intended to be connectable, but could have been written by an edit flow.
+        if (string.Equals(route.Id, "invalid-route", StringComparison.Ordinal) &&
+            string.Equals(route.Type, "Direct", StringComparison.OrdinalIgnoreCase) &&
+            route.DisableDirect)
+        {
+            return CreateInvalidRoute(SavedRouteState.Corrupt, route.Type);
+        }
+
+        if (!TryNormalizeRouteType(route.Type, out _))
+            return CreateInvalidRoute(SavedRouteState.Unsupported, route.Type);
+
+        try
+        {
+            return NormalizeRoute(route);
+        }
+        catch (ArgumentException)
+        {
+            return CreateInvalidRoute(SavedRouteState.Corrupt, route.Type);
+        }
+    }
+
+    private static HostRouteProfile CreateInvalidRoute(SavedRouteState state, string? sourceType)
+    {
+        var cleanSourceType = string.Concat((sourceType ?? "")
+            .Where(character => !char.IsControl(character))
+            .Take(64));
+        return new HostRouteProfile
+        {
+            Id = "invalid-route",
+            Type = "Direct",
+            DisableDirect = true,
+            State = state,
+            ErrorCode = state == SavedRouteState.Unsupported
+                ? SavedRouteErrorCodes.Unsupported
+                : SavedRouteErrorCodes.Corrupt,
+            SourceType = cleanSourceType,
+        };
     }
 
     private static string SerializeTunnels(IEnumerable<HostTunnelProfile>? tunnels) => JsonSerializer.Serialize(

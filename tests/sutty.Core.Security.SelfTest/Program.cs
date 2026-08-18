@@ -86,6 +86,18 @@ AssertThrows<RoutePolicyViolationException>(
         new ConnectionRoute(),
         new ConnectionRoutePolicy { DisableDirect = true }),
     "strict route policy blocks direct fallback");
+try
+{
+    _ = RouteResolver.Resolve(
+        new ConnectionRoute(),
+        new ConnectionRoutePolicy { DisableDirect = true });
+    throw new InvalidOperationException("Expected strict-route rejection.");
+}
+catch (RoutePolicyViolationException error)
+{
+    Assert(error.Code == ConnectionRouteErrorCodes.StrictRouteDirectBlocked,
+        "strict route rejection exposes a stable error code");
+}
 
 var proxyCommandRoute = RouteResolver.Resolve(
     new ConnectionRoute
@@ -131,7 +143,7 @@ Assert(jumpRoute.Type == ConnectionRouteType.SshJump &&
        jumpRoute.AuthMethod == SshAuthMethod.Agent,
     "SSH jump route retains its authentication method");
 
-var auditContext = AuditContext.Create(
+var correlationContext = ConnectionCorrelationContext.Create(
     new SshConnectionInfo
     {
         Host = "server.internal",
@@ -139,10 +151,10 @@ var auditContext = AuditContext.Create(
         Username = "operator",
     },
     proxyRoute);
-Assert(auditContext.RouteId == "corp-proxy", "audit context carries route id");
-Assert(auditContext.CorrelationId.Length == 32, "audit context correlation id");
-Assert(!auditContext.ToString().Contains(proxyPassword, StringComparison.Ordinal),
-    "audit context excludes proxy credentials");
+Assert(correlationContext.RouteId == "corp-proxy", "correlation context carries route id");
+Assert(correlationContext.CorrelationId.Length == 32, "correlation context id");
+Assert(!correlationContext.ToString().Contains(proxyPassword, StringComparison.Ordinal),
+    "correlation context excludes proxy credentials");
 
 var scratch = Path.Combine(
     Path.GetTempPath(),

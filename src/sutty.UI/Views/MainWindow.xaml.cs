@@ -670,6 +670,12 @@ namespace sutty.UI.Views
                 PortForwardings = tunnelProfiles.Select(RestoreTunnel).ToList(),
             };
 
+            if (!routeProfile.CanConnect)
+            {
+                await ShowSavedRouteIssueAsync(routeProfile, draft);
+                return;
+            }
+
             // History cards execute a connection instead of returning to the editor.
             // Secrets never live in SQLite, so request only a missing password in place.
             draft.SaveProfile = false;
@@ -681,6 +687,46 @@ namespace sutty.UI.Views
             }
 
             await OpenSessionTabAsync(draft);
+        }
+
+        private async Task ShowSavedRouteIssueAsync(
+            sutty.Command.HostRouteProfile route,
+            SshConnectionInfo draft)
+        {
+            var source = string.IsNullOrWhiteSpace(route.SourceType)
+                ? ""
+                : $" ({route.SourceType})";
+            var message = route.State == sutty.Command.SavedRouteState.Unsupported
+                ? Helpers.Loc.T(
+                    $"이 저장 Host는 더 이상 지원하지 않는 연결 경로{source}를 사용합니다. " +
+                    "Host를 편집하여 Direct, Proxy 또는 SSH Jump 경로를 다시 선택하세요.",
+                    $"This Saved Host uses a connection route{source} that is no longer supported. " +
+                    "Edit the host and select Direct, Proxy, or SSH Jump again.")
+                : Helpers.Loc.T(
+                    "이 저장 Host의 연결 경로 정보가 손상되었습니다. " +
+                    "Host를 편집하여 Direct, Proxy 또는 SSH Jump 경로를 다시 선택하세요.",
+                    "This Saved Host has corrupt connection-route data. " +
+                    "Edit the host and select Direct, Proxy, or SSH Jump again.");
+            var dialog = new ContentDialog
+            {
+                Title = Helpers.Loc.T("저장된 연결 경로 확인", "Saved route needs attention"),
+                Content = $"{message}\n\n{Helpers.Loc.T("오류 코드", "Error code")}: {route.ErrorCode}",
+                PrimaryButtonText = Helpers.Loc.T("Host 편집", "Edit host"),
+                CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                return;
+
+            // Preserve the fail-closed choice in the editor. The user must either choose
+            // a supported indirect route or deliberately turn Strict route off for Direct.
+            draft.Route = new ConnectionRoute();
+            draft.RoutePolicy = new ConnectionRoutePolicy { DisableDirect = true };
+            draft.SaveProfile = !string.IsNullOrWhiteSpace(draft.SavedHostId);
+            SelectNavigationItem("Home");
+            if (RightPanel.Content is HomePanel editor)
+                editor.ApplyConnectionDraft(draft);
         }
 
         private async Task<bool> PromptForHistoryPasswordAsync(SshConnectionInfo draft)
@@ -1840,6 +1886,11 @@ namespace sutty.UI.Views
             }
             catch (RoutePolicyViolationException error)
             {
+                var reason = error.Code == ConnectionRouteErrorCodes.StrictRouteDirectBlocked
+                    ? Helpers.Loc.T(
+                        "엄격 경로가 Direct 연결을 차단했습니다. Proxy 또는 SSH Jump를 선택하거나 Host 설정에서 엄격 경로를 해제하세요.",
+                        "Strict route blocked a Direct connection. Select Proxy or SSH Jump, or turn off Strict route in the host settings.")
+                    : error.Message;
                 ConnectionLogStore.Append(
                     Guid.Empty,
                     info.Title,
@@ -1848,11 +1899,11 @@ namespace sutty.UI.Views
                     "Route policy",
                     "연결 경로 정책이 SSH 연결을 차단했습니다.",
                     "The connection route policy blocked this SSH connection.",
-                    error.Message);
+                    $"{error.Code}: {error.Message}");
                 var routeDialog = new ContentDialog
                 {
                     Title = Helpers.Loc.T("연결 경로 정책", "Connection route policy"),
-                    Content = error.Message,
+                    Content = $"{reason}\n\n{Helpers.Loc.T("오류 코드", "Error code")}: {error.Code}",
                     CloseButtonText = "OK",
                     XamlRoot = Content.XamlRoot,
                 };

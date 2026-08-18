@@ -1,8 +1,8 @@
 # Sutty Product Direction / Sutty 제품 방향
 
-> A modern SSH workspace for Windows. Alpha, not GA.
+> A local-first SSH/SFTP operations workspace for Windows. Alpha, not GA.
 >
-> Windows를 위한 현대적인 SSH 워크스페이스. Alpha이며 GA가 아닙니다.
+> Windows local-first SSH/SFTP operations workspace. Alpha이며 GA가 아닙니다.
 
 [English](#english) · [한국어](#한국어)
 
@@ -16,18 +16,24 @@ Sutty combines everyday **local terminals, SSH, SFTP, reusable commands, and mul
 - It is a target for a future GA release, not a claim that the current Alpha is complete.
 - It does not include FTP/FTPS, Telnet/Serial, RDP/VNC/X11, cloud/mobile, or team collaboration.
 
-Therefore the replacement target is the established **Windows SSH and SFTP administrator workflow**, not every protocol or platform available in unrelated client categories. Sutty must not claim full-product parity until that scope changes and the corresponding compatibility gates pass.
+The target is the established **Windows SSH and SFTP administrator workflow**, not every protocol or platform available in unrelated client categories. Sutty claims support only for capabilities whose compatibility gates have passed.
 
 Sutty remains local-first: no account, no cloud backend, and no team control plane.
 
-### Product surfaces
+### Five primary workspaces
 
 1. **Local** — tabbed Windows PowerShell sessions backed by Windows ConPTY.
 2. **Terminal** — a persistent, interactive SSH PTY for shells and terminal applications.
 3. **REPL** — structured non-interactive commands with separate results, timing, history, and reuse.
 4. **Files** — session-aware SFTP navigation and safe transfers.
-5. **Commands** — reusable operational templates that can grow into typed snippets/runbooks.
-6. **Multi** — selected-session command execution with production safeguards and structured per-host results.
+5. **Multi** — selected-session command execution with production safeguards and structured per-host results.
+
+### Two common capabilities
+
+1. **Saved Hosts** — local connection, route, tunnel, tag, and optional encrypted credential-reference profiles.
+2. **Commands** — reusable local operational templates available to session workflows.
+
+Small-team support is credential-free file/Git sharing of these definitions with local credential binding after import. It does not add accounts, shared credentials, RBAC, central administration, or live collaboration.
 
 Terminal and REPL are complementary. The REPL remains Sutty's differentiator; it is not a substitute for terminal compatibility.
 
@@ -44,7 +50,7 @@ Terminal and REPL are complementary. The REPL remains Sutty's differentiator; it
 
 ### Current Alpha baseline
 
-The current working tree contains tabbed local PowerShell through Windows ConPTY, a real SSH.NET `ShellStream` PTY with runtime server-side resize, a bounded native VT screen model, fail-closed known-host verification, password/key/Agent/OTP authentication, direct/proxy/jump/ProxyCommand routes, session-scoped forwarding, separated SSH/Terminal/SFTP state, structured command results, recursive resumable verified SFTP operations, per-target Multi SFTP, a compact transfer queue with explicit percentage, Files/Terminal path integration, Saved Hosts with a local encrypted credential vault, append-only connection outcomes, live settings, and a zero-default-target Multi view with a PROD confirmation.
+The current working tree contains tabbed local PowerShell through Windows ConPTY, a real SSH.NET `ShellStream` PTY with runtime server-side resize, a package-local xterm.js/WebView2 renderer, fail-closed known-host verification, password/key/Agent/OTP authentication, direct/proxy/jump/ProxyCommand routes, session-scoped forwarding, separated SSH/Terminal/SFTP state, structured command results, recursive resumable verified SFTP operations, per-target Multi SFTP, a compact transfer queue with explicit percentage, Files/Terminal path integration, Saved Hosts with a local encrypted credential vault, append-only connection outcomes, live settings, and a zero-default-target Multi view with a PROD confirmation.
 
 This baseline is useful for development and controlled testing. It has not passed the compatibility, security, accessibility, packaging, large-transfer, or soak gates required for GA.
 
@@ -54,7 +60,7 @@ This baseline is useful for development and controlled testing. It has not passe
 | --- | --- |
 | Terminal compatibility | The hardened package-local xterm.js/WebView2 renderer and server PTY resize contract are integrated; pass and record the remaining shell/TUI/input/Unicode/security/soak matrix before GA. |
 | Secure host and credentials | Saved Host separation, a local encrypted Vault, and OTP/multi-prompt UI now exist; complete duplicate/bulk UX, live authentication-provider coverage, and broader secret-lifetime/redaction tests. |
-| Host identity | Keep current unknown/trusted/changed enforcement, then add changed-key UX, rotation/management, audit, and integration coverage. |
+| Host identity | Keep current unknown/trusted/changed enforcement, then add changed-key UX, rotation/management, local security activity records, and integration coverage. |
 | SFTP correctness | Recursive transfer and symlink non-traversal exist; complete collision/permission policy, recursive delete, and large-file/deep-path/multi-host tests remain. |
 | Transfer integrity | Retry/resume/checkpoint/checksum and safe promotion exist; add pause, automatic job discovery, fault injection, and evidence that cancel/disconnect cannot corrupt an existing destination. |
 | Command correctness | Finish cancellation UX and failure-path regression coverage across REPL and Multi. |
@@ -67,7 +73,7 @@ This baseline is useful for development and controlled testing. It has not passe
 - Complete the live Windows Agent, PPK, OTP, jump-host, ProxyCommand, and HTTP/SOCKS route matrix; add full reconnect policy and negotiated-algorithm information.
 - Complete persistent transfer management with pause, automatic job discovery, configurable concurrency, and large-transfer evidence.
 - Complete local, remote, and dynamic forwarding with safe bind warnings and a post-connect manager.
-- Streaming REPL output, typed snippet parameters, durable/exportable per-host Multi results, timeouts, and audit events.
+- Streaming REPL output, typed snippet parameters, durable/exportable per-host Multi results, timeouts, and local activity records.
 - OpenSSH configuration and legacy SSH/SFTP profile import, encrypted Sutty export, and conflict preview.
 - Credential-free sharing packs, import preview, diagnostics/support bundle, and redacted local activity logging.
 - Keyboard, High Contrast, text scaling, Narrator, Korean/English, Windows 11 x64/ARM64, signed MSIX, update, and rollback validation.
@@ -79,7 +85,7 @@ GA requires the relevant P0 and P1 rows in [Requirements Traceability](REQUIREME
 1. **Foundation** — supported runtime/platforms, empty production data, architecture boundaries, migrations, and repeatable builds.
 2. **Secure SSH Alpha** — Saved Hosts, Vault, Known Hosts, authentication matrix, and GA evidence for the integrated terminal renderer.
 3. **SFTP Beta** — two-way file workflows, directory transfers, safe queue/retry/resume, and integrity/failure testing.
-4. **Operations Beta** — REPL/snippets, forwarding, jump/proxy, Multi results, production safeguards, and audit.
+4. **Operations Beta** — REPL/snippets, forwarding, jump/proxy, Multi results, production safeguards, and local activity records.
 5. **Reliability RC** — import, diagnostics, accessibility, signed MSIX, update, rollback, and clean-install validation.
 6. **GA** — P0/P1 complete, no unresolved Critical/High security issue, support policy published, and release evidence retained.
 
@@ -107,18 +113,24 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - 미래 GA의 목표이며 현재 Alpha가 완성됐다는 뜻은 아닙니다.
 - FTP/FTPS, Telnet/Serial, RDP/VNC/X11, 클라우드·모바일·팀 협업은 포함하지 않습니다.
 
-따라서 대체 목표는 Windows에서 널리 쓰이는 **SSH·SFTP 서버 관리 흐름**이며 관련 없는 클라이언트 범주의 모든 프로토콜·플랫폼이 아닙니다. 범위를 바꾸고 해당 호환성 게이트를 통과하기 전에는 전체 제품 동등성을 주장하지 않습니다.
+목표는 Windows에서 널리 쓰이는 **SSH·SFTP 서버 관리 흐름**이며 관련 없는 클라이언트 범주의 모든 프로토콜·플랫폼이 아닙니다. 호환성 게이트를 통과한 기능만 지원한다고 표시합니다.
 
 Sutty는 로컬 우선 원칙을 유지합니다. 계정, 클라우드 백엔드, 팀 제어면을 만들지 않습니다.
 
-### 제품 작업 화면
+### 주 작업 공간 5개
 
 1. **Local** — Windows ConPTY 기반의 탭형 Windows PowerShell 세션
 2. **Terminal** — 셸과 터미널 앱을 위한 지속 대화형 SSH PTY
 3. **REPL** — 결과·시간·히스토리·재사용을 구조화하는 비대화형 명령
 4. **Files** — 세션과 연동되는 SFTP 탐색과 안전한 전송
-5. **Commands** — 향후 typed snippet/runbook으로 확장할 재사용 운영 템플릿
-6. **Multi** — 운영 환경 보호와 구조화된 호스트별 결과를 갖춘 선택 세션 명령 실행
+5. **Multi** — 운영 환경 보호와 구조화된 호스트별 결과를 갖춘 선택 세션 명령 실행
+
+### 공통 기능 2개
+
+1. **Saved Hosts** — 로컬 연결·route·tunnel·tag·선택형 암호화 자격증명 참조 프로필
+2. **Commands** — 세션 작업 흐름에서 사용할 수 있는 재사용 로컬 운영 템플릿
+
+소규모 팀 지원은 자격증명 없는 정의를 파일·Git으로 공유하고 가져온 뒤 로컬 자격증명을 연결하는 방식입니다. 계정, 공유 자격증명, RBAC, 중앙 관리, 실시간 협업은 추가하지 않습니다.
 
 Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터미널 호환성을 대신하지 않습니다.
 
@@ -145,7 +157,7 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 | --- | --- |
 | 터미널 호환성 | 보안 설정한 패키지 내부 xterm.js/WebView2 렌더러와 서버 PTY resize 계약을 통합했습니다. GA 전에 남은 셸·TUI·입력·Unicode·보안·장시간 실행 매트릭스를 통과하고 기록해야 합니다. |
 | 안전한 Host와 자격 증명 | Saved Host 분리, 로컬 암호화 Vault, OTP·다중 prompt UI를 구현했으며 프로필 복제·일괄 UX, 실제 인증 제공자 범위, 더 넓은 비밀정보 수명·redaction 테스트가 필요합니다. |
-| 호스트 신원 | 현재 unknown/trusted/changed 강제를 유지하고, 변경 키 UX, rotation/관리, audit, 통합 검증을 추가해야 합니다. |
+| 호스트 신원 | 현재 unknown/trusted/changed 강제를 유지하고, 변경 키 UX, rotation/관리, 로컬 보안 활동 기록, 통합 검증을 추가해야 합니다. |
 | SFTP 정확성 | 재귀 전송과 symlink 비추적은 구현했으며 전체 충돌·권한 정책, 재귀 삭제, 대용량·깊은 경로·다중 Host 테스트가 필요합니다. |
 | 전송 무결성 | 재시도·재개·checkpoint·checksum·안전 승격은 구현했으며 일시정지, 자동 job 검색, fault injection, 취소·연결 종료가 기존 대상을 손상시키지 않는다는 증거가 필요합니다. |
 | 명령 정확성 | REPL·Multi의 취소 UX와 실패 경로 회귀 검증을 완성해야 합니다. |
@@ -158,7 +170,7 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 - Windows Agent·PPK·OTP·점프 호스트·ProxyCommand·HTTP/SOCKS 실제 매트릭스 완성, 전체 재연결 정책, 협상 알고리즘 정보
 - 일시정지·자동 job 검색·설정 가능한 동시성·대용량 검증을 갖춘 영속 전송 관리자 완성
 - 안전한 bind 경고와 연결 후 관리자를 포함한 Local·Remote·Dynamic 포트 포워딩 완성
-- 스트리밍 REPL 출력, typed snippet parameter, 영속·export 가능한 호스트별 Multi 결과, timeout, audit event
+- 스트리밍 REPL 출력, typed snippet parameter, 영속·export 가능한 호스트별 Multi 결과, timeout, 로컬 활동 기록
 - OpenSSH 설정과 레거시 SSH/SFTP 프로필 가져오기, 암호화 Sutty 내보내기, 충돌 미리보기
 - 자격증명 없는 공유 pack, 가져오기 미리보기, 진단/support bundle, redaction된 로컬 activity logging
 - 키보드, High Contrast, 텍스트 확대, Narrator, 한국어/영어, Windows 11 x64/ARM64, 서명 MSIX, 업데이트, rollback 검증
@@ -170,7 +182,7 @@ GA가 되려면 [요구사항 추적표](REQUIREMENTS.md)의 해당 P0·P1 항�
 1. **Foundation** — 지원 runtime/platform, 빈 production 데이터, 구조 경계, migration, 반복 가능한 빌드
 2. **Secure SSH Alpha** — Saved Hosts, Vault, Known Hosts, 인증 매트릭스, 통합된 터미널 렌더러의 GA 증거
 3. **SFTP Beta** — 양방향 파일 작업, 디렉터리 전송, 안전한 queue/retry/resume, 무결성·실패 테스트
-4. **Operations Beta** — REPL/snippet, forwarding, jump/proxy, Multi 결과, 운영 환경 보호, audit
+4. **Operations Beta** — REPL/snippet, forwarding, jump/proxy, Multi 결과, 운영 환경 보호, 로컬 활동 기록
 5. **Reliability RC** — 가져오기, 진단, 접근성, 서명 MSIX, 업데이트, rollback, clean install 검증
 6. **GA** — P0/P1 완료, 미해결 Critical/High 보안 문제 0건, 지원 정책 공개, 릴리스 증거 보존
 

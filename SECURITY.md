@@ -49,14 +49,14 @@ Sutty makes no FIPS, security-certification, hardened-deployment, or complete te
 
 ### Credential rules
 
-- The enabled Alpha authentication methods are Password and supported OpenSSH/PEM private-key files. Password mode includes a non-interactive fallback that answers password-like keyboard-interactive prompts.
+- The enabled Alpha authentication methods are Password, supported OpenSSH/PEM/PKCS#8/PPK private-key files, Windows SSH Agent, and repeated multi-prompt keyboard-interactive challenges. Their complete live compatibility matrix remains unfinished.
 - Passwords and private-key passphrases are not written to `settings.json`, `sutty.db`, `known-hosts.json`, or crash messages.
 - By default a password or passphrase must be entered again. If **Remember credentials** is explicitly enabled for a Saved Host, the secret is stored in `vault.json` with AES-256-GCM; the random master key in `vault.key` is protected by Windows DPAPI for the current user. SQLite and settings contain only an opaque credential reference.
 - A decrypted secret still exists as managed strings during authentication; complete memory zeroing cannot be guaranteed. Same-user malware, debuggers, process dumps, or a compromised Windows account remain outside the vault boundary.
 - `settings.json` may contain recent private-key **paths** and tags.
 - `sutty.db` may contain host, alias, username, port, authentication method, private-key path, tags, command templates, usage data, history, and pins. These are plaintext operational metadata.
 - Sutty reads the selected private-key file in place. It does not copy the key into its database, but protection of that file and its ACL remains the user's responsibility.
-- SSH agent and OTP/multi-prompt keyboard-interactive UI are unavailable; the password fallback is not a general interactive or MFA flow. Disabled controls must not be treated as security fallbacks.
+- Windows SSH Agent and OTP/multi-prompt keyboard-interactive flows are implemented, but an individual server or Agent combination is not considered supported until its live acceptance slice passes. Authentication failure never falls back to a weaker method silently.
 - Do not place passwords, tokens, or private keys in command templates, tags, host display names, or diagnostic text.
 
 ### Known-host rules
@@ -68,20 +68,20 @@ Sutty makes no FIPS, security-certification, hardened-deployment, or complete te
 - **Trust and save** atomically writes the public key to `%LOCALAPPDATA%\sutty\known-hosts.json`.
 - A changed saved key is blocked. It cannot be silently replaced or bypassed with **Connect once**.
 - Corrupt or unreadable known-host storage fails closed.
-- Known-host management, rotation approval, OpenSSH import/export, per-host strict-trust policy, and security audit events are not implemented yet.
+- Known-host management, rotation approval, OpenSSH import/export, per-host strict-trust policy, and local security activity records are not implemented yet.
 
 Verify an unknown fingerprint through an independent channel controlled by the server owner. Do not trust a fingerprint copied from the same possibly compromised connection path.
 
 ### Terminal and remote-file data
 
-The current terminal uses a bounded native parser, not WebView2. Remote output is still untrusted. The parser can contain correctness or denial-of-service defects, and it is not a complete terminal isolation boundary. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
+The current terminal uses package-local xterm.js inside a hardened WebView2 surface. Remote output is still untrusted. The renderer and bridge can contain correctness or denial-of-service defects, and WebView2 is not a terminal isolation boundary. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
 
-Remote names, paths, metadata, symlinks, and file contents are server-controlled. Current Files operations do not support recursive directory delete, but file deletion and overwrite are destructive after confirmation. Review the target host and path before approval.
+Remote names, paths, metadata, symlinks, and file contents are server-controlled. Files supports preview-confirmed recursive deletion without following symbolic links; deletion and overwrite remain destructive. Review the target host and path before approval.
 
 ### Logs and diagnostics
 
 - `crash.log` stores only timestamp, exception type, and HRESULT. It does not persist the exception message or stack trace. This deliberately limits crash diagnostics to avoid recording hosts, usernames, paths, commands, or secrets.
-- There is no production audit log, transcript system, support bundle, crash upload, or telemetry upload today.
+- There is no immutable compliance log, transcript system, support bundle, crash upload, or telemetry upload today.
 - Before sharing a log, search for hosts, IP addresses, usernames, local/remote paths, commands, tokens, key headers, and customer data. Prefer a minimal reproduction over a full data-directory archive.
 
 ### Safe use during Alpha
@@ -138,14 +138,14 @@ Sutty는 FIPS, 보안 인증, hardened deployment, 완전한 터미널 격리를
 
 ### 자격 증명 규칙
 
-- Alpha에서 활성화된 인증 방식은 Password와 지원되는 OpenSSH/PEM 개인키 파일입니다. 비밀번호 방식에는 password 형태의 keyboard-interactive prompt에 답하는 비대화형 fallback이 있습니다.
+- Alpha에서 활성화된 인증 방식은 Password, 지원되는 OpenSSH/PEM/PKCS#8/PPK 개인키, Windows SSH Agent, 반복 다중 prompt keyboard-interactive입니다. 전체 실환경 호환성 매트릭스는 아직 미완성입니다.
 - 비밀번호와 개인키 passphrase는 `settings.json`, `sutty.db`, `known-hosts.json`, crash 메시지에 쓰지 않습니다.
 - 기본적으로 비밀번호·passphrase는 다시 입력해야 합니다. 저장 호스트에서 **자격 증명 기억**을 명시적으로 켠 경우에만 비밀을 AES-256-GCM으로 `vault.json`에 저장하고, `vault.key`의 임의 master key는 현재 Windows 사용자의 DPAPI로 보호합니다. SQLite와 설정에는 불투명 자격 증명 참조만 둡니다.
 - 복호화한 비밀은 인증 중 managed string으로 존재하므로 완전한 memory zeroing을 보장할 수 없습니다. 같은 사용자 권한 malware·debugger·process dump 또는 침해된 Windows 계정은 보관소의 보호 경계 밖입니다.
 - `settings.json`에는 최근 개인키 **경로**와 태그가 있을 수 있습니다.
 - `sutty.db`에는 host, alias, username, port, 인증 방식, 개인키 경로, 태그, 명령 템플릿, 사용 정보, 히스토리, pin이 있을 수 있습니다. 모두 평문 운영 메타데이터입니다.
 - Sutty는 선택한 개인키 파일을 그 위치에서 읽습니다. 키를 DB에 복사하지 않지만 파일과 ACL 보호는 사용자의 책임입니다.
-- SSH agent와 OTP·다중 prompt keyboard-interactive UI는 지원하지 않습니다. 비밀번호 fallback은 일반 interactive 또는 MFA 흐름이 아닙니다. 비활성 컨트롤을 보안 fallback으로 취급하면 안 됩니다.
+- Windows SSH Agent와 OTP·다중 prompt keyboard-interactive 흐름을 구현했지만 개별 서버·Agent 조합은 해당 실환경 인수 Slice가 통과해야 지원 완료로 봅니다. 인증 실패 시 더 약한 방식으로 조용히 우회하지 않습니다.
 - 명령 템플릿, 태그, Host 표시 이름, 진단 텍스트에 비밀번호·token·개인키를 넣지 마세요.
 
 ### Known-host 규칙
@@ -157,20 +157,20 @@ Sutty는 FIPS, 보안 인증, hardened deployment, 완전한 터미널 격리를
 - **신뢰하고 저장**은 공개키를 `%LOCALAPPDATA%\sutty\known-hosts.json`에 원자적으로 저장합니다.
 - 변경된 저장 키는 차단합니다. 조용히 교체하거나 **이번만 연결**로 우회할 수 없습니다.
 - 손상되거나 읽을 수 없는 known-host 저장소는 기본 차단합니다.
-- Known-host 관리, rotation 승인, OpenSSH 가져오기·내보내기, Host별 엄격 신뢰 정책, 보안 audit event는 아직 구현하지 않았습니다.
+- Known-host 관리, rotation 승인, OpenSSH 가져오기·내보내기, Host별 엄격 신뢰 정책, 로컬 보안 활동 기록은 아직 구현하지 않았습니다.
 
 알 수 없는 지문은 서버 소유자가 통제하는 독립 경로로 확인하세요. 동일하게 침해되었을 수 있는 연결 경로에서 복사한 지문을 신뢰하면 안 됩니다.
 
 ### 터미널과 원격 파일 데이터
 
-현재 터미널은 WebView2가 아니라 제한된 네이티브 parser를 사용합니다. 그래도 원격 출력은 신뢰하지 않는 데이터입니다. Parser에는 정확성·서비스 거부 결함이 있을 수 있으며 완전한 터미널 격리 경계가 아닙니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
+현재 터미널은 보안 설정한 WebView2 surface 안에서 패키지 내부 xterm.js를 사용합니다. 그래도 원격 출력은 신뢰하지 않는 데이터입니다. Renderer와 bridge에는 정확성·서비스 거부 결함이 있을 수 있으며 WebView2는 터미널 격리 경계가 아닙니다. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
 
-원격 이름·경로·메타데이터·symlink·파일 내용은 서버가 제어합니다. 현재 Files 작업은 재귀 디렉터리 삭제를 지원하지 않지만 확인 뒤의 파일 삭제·덮어쓰기는 파괴적입니다. 승인 전에 대상 Host와 경로를 확인하세요.
+원격 이름·경로·메타데이터·symlink·파일 내용은 서버가 제어합니다. Files는 symbolic link를 따라가지 않는 미리보기 확인형 재귀 삭제를 지원하며 삭제·덮어쓰기는 여전히 파괴적입니다. 승인 전에 대상 Host와 경로를 확인하세요.
 
 ### 로그와 진단
 
 - `crash.log`는 시각, 예외 type, HRESULT만 저장합니다. 예외 원문과 stack trace를 영구 기록하지 않아 host·username·경로·명령·secret이 들어갈 가능성을 의도적으로 제한합니다.
-- 현재 production audit log, transcript 시스템, support bundle, crash upload, telemetry upload가 없습니다.
+- 현재 불변 규정 준수 로그, transcript 시스템, support bundle, crash upload, telemetry upload가 없습니다.
 - 로그 공유 전에 host, IP 주소, username, local/remote 경로, 명령, token, key header, 고객 데이터를 검색하세요. 전체 데이터 디렉터리보다 최소 재현 정보를 우선하세요.
 
 ### Alpha 안전 사용

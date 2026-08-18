@@ -6,19 +6,45 @@ This roadmap follows reliability gates, not calendar promises. Each stage must s
 
 ## Now — Daily-driver Alpha hardening / 일상 사용 Alpha 안정화
 
-- Complete and record live authentication coverage for password, private key formats, Windows Agent, and repeated keyboard-interactive prompts.
-- Validate Direct, HTTP/SOCKS, Jump, ProxyCommand, and forwarding failure/shutdown paths without silent fallback.
-- Add known-host management and changed-key recovery guidance without weakening fail-closed behavior.
-- Finish terminal shell/TUI/Unicode/IME/resize/soak evidence and expose useful connection information.
-- Produce a redacted local support bundle with an explicit inclusion manifest and exclusion tests.
-- Complete signed x64/ARM64 MSIX, clean install, upgrade, rollback, and update evidence.
+### Milestone A — Authentication and Route Matrix / 인증·경로 매트릭스
 
-- 비밀번호, 개인키 형식, Windows Agent, 반복 keyboard-interactive prompt의 실환경 인증 증거를 완성합니다.
-- Direct, HTTP/SOCKS, Jump, ProxyCommand, forwarding의 실패·종료 경로를 조용한 우회 없이 검증합니다.
-- 기본 차단 정책을 약화하지 않는 Known Host 관리와 변경 Key 복구 안내를 추가합니다.
-- Terminal shell/TUI/Unicode/IME/resize/soak 증거와 유용한 연결 정보를 완성합니다.
-- 포함 항목 manifest와 제외 테스트를 갖춘 redaction된 로컬 support bundle을 만듭니다.
-- x64/ARM64 서명 MSIX, clean install, upgrade, rollback, update 증거를 완성합니다.
+- Record one independently reviewable live acceptance slice for password, each supported private-key format, Windows Agent, and repeated keyboard-interactive prompts.
+- Record Direct, HTTP/SOCKS, Jump, ProxyCommand, and forwarding normal/failure/cancellation/shutdown slices with proof that no failed indirect route opens Direct.
+- Surface negotiated connection information and stable route failure codes without credentials.
+
+- 비밀번호, 지원 개인키 형식별, Windows Agent, 반복 keyboard-interactive prompt를 독립적으로 리뷰 가능한 실환경 인수 Slice로 기록합니다.
+- Direct, HTTP/SOCKS, Jump, ProxyCommand, forwarding의 정상·실패·취소·종료를 Slice로 검증하고 실패한 간접 경로가 Direct를 열지 않음을 증명합니다.
+- 자격증명 없이 협상 연결 정보와 안정적인 경로 오류 코드를 표시합니다.
+
+### Milestone B — Terminal Compatibility Evidence / 터미널 호환성 증거
+
+- Complete shell and TUI slices for PowerShell, bash/zsh, vim, tmux, and htop with resize, alternate-screen, mouse, and shutdown evidence.
+- Complete Korean IME, CJK/emoji/combining text, clipboard, keyboard, search, and accessibility slices.
+- Record bounded output, latency, reconnect, and long-running soak evidence.
+
+- PowerShell, bash/zsh, vim, tmux, htop의 resize·alternate screen·mouse·종료 Slice를 완성합니다.
+- 한글 IME, CJK·emoji·결합 문자, clipboard, keyboard, search, 접근성 Slice를 완성합니다.
+- 제한된 출력, latency, 재연결, 장시간 soak 증거를 기록합니다.
+
+### Milestone C — Known Host and Connection Diagnostics / Known Host·연결 진단
+
+- Add known-host list, inspect, remove, changed-key explanation, and deliberate rotation slices without weakening fail-closed behavior.
+- Produce a user-created redacted local support bundle with an explicit inclusion manifest and exclusion tests.
+- Correlate local connection activity by session while excluding credentials, terminal transcripts, and command output.
+
+- 기본 차단 정책을 약화하지 않는 Known Host 목록·확인·삭제·변경 Key 설명·명시적 rotation Slice를 추가합니다.
+- 포함 항목 manifest와 제외 테스트를 갖춘 사용자 생성형 redaction 로컬 support bundle을 만듭니다.
+- 자격증명·terminal transcript·command output을 제외하고 세션별 로컬 연결 활동을 연결합니다.
+
+### Milestone D — Signed MSIX and Update Recovery / 서명 MSIX·업데이트 복구
+
+- Produce and verify signed x64/ARM64 packages from reviewed source and retained build provenance.
+- Record clean install, upgrade, failed update, rollback, uninstall, and local-data preservation slices.
+- Publish support boundaries and reproducible release evidence before changing the GA status.
+
+- 검토한 소스와 보존된 build provenance로 서명한 x64/ARM64 package를 생성·검증합니다.
+- Clean install, upgrade, update 실패, rollback, uninstall, 로컬 데이터 보존 Slice를 기록합니다.
+- GA 상태를 바꾸기 전에 지원 경계와 재현 가능한 release 증거를 공개합니다.
 
 ## Next — SFTP workspace / SFTP 작업 공간
 

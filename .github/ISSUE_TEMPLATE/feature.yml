@@ -1,0 +1,55 @@
+name: Feature slice / 기능 Slice
+description: Propose one testable, reviewable user outcome / 테스트·리뷰 가능한 사용자 결과 하나를 제안합니다
+title: "feat: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep this issue to one vertical slice. Read `docs/PRODUCT_SCOPE.md` and `docs/DEVELOPMENT_PLAYBOOK.md` first.
+        하나의 vertical slice만 다룹니다. 먼저 제품 범위와 개발 Playbook을 확인하세요.
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem / 사용자 문제
+      description: What task, mistake, or failure should become easier or safer?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Observable outcome / 확인 가능한 결과
+      description: Describe behavior a user and a test can observe.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and exclusions / 범위와 제외 항목
+    validations:
+      required: true
+  - type: textarea
+    id: lifecycle
+    attributes:
+      label: Failure, cancellation, and cleanup / 실패·취소·정리
+      description: Include timeout, dispose, restart, and migration behavior where applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Secret and data-integrity impact / Secret·데이터 무결성 영향
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Test and live evidence / 테스트·실환경 증거
+      description: List focused tests and any server, shell, network, or architecture matrix needed.
+    validations:
+      required: true
+  - type: input
+    id: requirements
+    attributes:
+      label: Requirement IDs / 요구사항 ID
+      placeholder: "Example: SSH-004, XFER-006"

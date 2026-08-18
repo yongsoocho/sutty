@@ -1,0 +1,65 @@
+name: Bug report / 버그 신고
+description: Report a reproducible defect without secrets / 비밀정보 없이 재현 가능한 결함을 신고합니다
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never include credentials, private keys, OTP answers, production hosts, customer data, or unredacted logs.
+        자격증명, 개인키, OTP 답변, 운영 Host, 고객 데이터, redaction하지 않은 로그를 넣지 마세요.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary / 요약
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction / 재현 절차
+      description: Use synthetic hosts and data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / 기대 동작
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / 실제 동작
+    validations:
+      required: true
+  - type: dropdown
+    id: exit_path
+    attributes:
+      label: Affected exit path / 영향 경로
+      options:
+        - Normal / 정상
+        - Failure / 실패
+        - Cancellation or timeout / 취소 또는 timeout
+        - Shutdown or reconnect / 종료 또는 재연결
+        - Migration or restart restore / migration 또는 재시작 복원
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version / Commit 또는 버전
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows build and architecture / Windows 빌드·아키텍처
+      placeholder: "Windows 11 24H2, x64"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics / Redaction한 진단 정보
+      description: Include only the minimum needed to reproduce the issue.

@@ -7,7 +7,7 @@
 
 Every SSH session resolves one immutable connection route before a network client is created. The
 same resolved route is used to construct both the SSH terminal client and the SFTP client. The
-session also creates one credential-free `AuditContext` containing a correlation id, target,
+session also creates one credential-free `ConnectionCorrelationContext` containing a correlation id, target,
 target identity, route id, and route type.
 
 The Alpha implements real Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and external
@@ -15,18 +15,18 @@ ProxyCommand routes through SSH.NET and a loopback process bridge. No
 automatic fallback is attempted. When strict route policy disables Direct, route
 resolution fails before the SSH or SFTP client is created.
 
-Unknown, retired, or corrupt saved-route metadata is loaded as a non-connectable
-Direct sentinel with Direct disabled. The user must explicitly choose and save a
-supported route before another connection can start.
+Unknown or retired saved-route metadata is loaded as an explicit non-connectable
+`Unsupported` state with `SAVED_ROUTE_UNSUPPORTED`; malformed metadata becomes `Corrupt`
+with `SAVED_ROUTE_CORRUPT`. The UI explains the cause and opens the Host editor. The user
+must explicitly choose and save a supported route before another connection can start.
 
 Proxy username and password are transient connection values. They are not added to JSON settings,
-saved-host SQLite rows, connection history, or `AuditContext`.
+saved-host SQLite rows, connection history, or `ConnectionCorrelationContext`.
 
 ## Deliberately incomplete
 
-Centrally audited gateways remain a domain value without an adapter. SSH jump and ProxyCommand
-now have Alpha adapters, but still require live compatibility, lifecycle, process-containment,
-and failure-path evidence. GA also requires managed gateway profiles, explicit proxy-DNS behavior
-and tests, policy distribution, route timeline UI, central audit evidence, support bundles, and
-proof that a failed gateway never opens a direct target connection.
+SSH jump and ProxyCommand have Alpha adapters but still require live compatibility, lifecycle,
+process-containment, and failure-path evidence. GA also requires explicit proxy-DNS behavior and
+tests, actionable local route diagnostics, support bundles, and proof that a failed indirect route
+never opens a direct target connection.
 

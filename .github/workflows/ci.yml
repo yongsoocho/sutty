@@ -40,6 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test product-scope guard
+        if: matrix.configuration == 'Debug'
+        shell: pwsh
+        run: .\tests\product-scope\Assert-ProductScope.Tests.ps1
+
       - name: Enforce product scope
         if: matrix.configuration == 'Debug'
         shell: pwsh

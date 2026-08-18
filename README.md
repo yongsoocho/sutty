@@ -4,7 +4,7 @@
 
 <h1 align="center">Sutty</h1>
 
-<p align="center"><strong>A modern SSH workspace for Windows.</strong></p>
+<p align="center"><strong>A local-first SSH/SFTP operations workspace for Windows.</strong></p>
 
 <p align="center">
   <a href="#english">English</a> · <a href="#한국어">한국어</a>
@@ -14,11 +14,11 @@
 
 > **알파, GA 아님.** Sutty는 개발 중인 엔지니어링 빌드입니다. 중요한 시스템에 사용하기 전에 현재 한계를 확인해야 합니다.
 
-> **Current / 현재:** [`v0.1.0-alpha.1`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.1) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
+> **Current / 현재:** [`v0.1.0-alpha.2`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.2) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
 
 ## English
 
-Sutty brings everyday **local terminals, SSH, SFTP, reusable commands, and multi-session operations** into one Windows-local workspace. That is a product goal, not a statement that every planned capability is complete.
+Sutty is a **Windows local-first SSH/SFTP operations workspace for individuals and small teams**. It brings everyday local terminals, SSH, SFTP, reusable commands, and multi-session operations into one workspace. That is a product goal, not a statement that every planned capability is complete.
 
 The product is local-first, Windows-only, and centered on five cooperating work surfaces:
 
@@ -27,6 +27,13 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - **REPL** — structured, non-interactive command cells.
 - **Files** — SFTP browsing, file operations, and a compact transfer queue.
 - **Multi** — deliberate command execution across selected connected sessions.
+
+Two common capabilities support every workspace:
+
+- **Saved Hosts** — local connection profiles, routes, tunnels, tags, and optional encrypted credential references.
+- **Commands** — reusable local command templates shared by REPL and explicitly selected Multi operations.
+
+Small-team support means credential-free, file/Git-based sharing of host, route, tunnel, and command definitions. It does not include accounts, shared credentials, RBAC, central administration, or live collaboration.
 
 ### Implemented Alpha baseline
 
@@ -54,17 +61,17 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 ### Why this is not GA
 
 - The package-local xterm.js/WebView2 renderer is integrated for both SSH and local ConPTY, but the required shell/TUI/Unicode/input/security/latency/soak acceptance matrix is not complete. Terminal compatibility therefore remains **Alpha, not GA**. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
-- Windows Agent, repeated OTP/multi-prompt keyboard-interactive authentication, PPK v2/v3, SSH jump, and external ProxyCommand routes are integrated, but their live-server/agent/route compatibility matrix is incomplete. Managed audited gateways, route policy distribution, and safe command replay after a full SSH reconnect remain unavailable.
+- Windows Agent, repeated OTP/multi-prompt keyboard-interactive authentication, PPK v2/v3, SSH jump, and external ProxyCommand routes are integrated, but their live-server/agent/route compatibility matrix is incomplete. Central route-policy distribution and safe command replay after a full SSH reconnect remain outside the current implementation.
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP recursive transfer, durable restart queue/checkpoints, retry/resume, pause, checksum verification, five collision policies, recursive deletion, `chmod`, filename search, cross-directory move, 1→N/N→1 Multi transfer, and failed-target-only retry are implemented. Synchronized browsing, directory comparison, and large/deep-path live multi-host acceptance remain incomplete.
-- REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent audit/export, timeout, or streaming workflow.
+- REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent local activity export, timeout, or streaming workflow.
 - Local/remote/dynamic forwarding has session lifecycle support and non-loopback binds require an explicit high-risk confirmation, but a post-connect tunnel manager and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed artifact has been supplied. Credential-free sharing packs, local support bundles, and the GA compatibility/accessibility matrices remain planned.
 
-The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with delivery order in the [Roadmap](docs/ROADMAP.md) and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
+The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with delivery order in the [Roadmap](docs/ROADMAP.md), engineering rules in [Contributing](CONTRIBUTING.md) and the [Development Playbook](docs/DEVELOPMENT_PLAYBOOK.md), and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
 
 ### Explicitly unsupported scope
 
-Sutty does not support FTP, FTPS, Telnet, Serial, RDP, VNC, X11 forwarding, cloud accounts or sync, Team Vault/RBAC/SSO, terminal collaboration, mobile, macOS, or Linux applications. These are not hidden Alpha features. Cloud and team collaboration are outside the local-first product boundary.
+Sutty does not support FTP, FTPS, Telnet, Serial, RDP, VNC, X11 forwarding, cloud accounts or sync, Team Vault/RBAC/SSO, terminal collaboration, mobile, macOS, or Linux applications. These are not hidden Alpha features. Small-team sharing is credential-free and file/Git-based; accounts, shared credentials, central administration, and live collaboration are outside the local-first product boundary.
 
 ### Trust, credentials, and local data
 
@@ -120,6 +127,8 @@ Replace `x64` and `win-x64` with `ARM64` and `win-arm64` for ARM64. The unpackag
 Focused self-tests after a Debug build:
 
 ```powershell
+.\tests\product-scope\Assert-ProductScope.Tests.ps1
+.\.github\scripts\Assert-ProductScope.ps1
 dotnet run --project tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Core.Security.SelfTest/sutty.Core.Security.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Sftp.SelfTest/sutty.Sftp.SelfTest.csproj -c Debug --no-build
@@ -133,7 +142,7 @@ Sutty is available under the [MIT License](LICENSE).
 
 ## 한국어
 
-Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 세션 운영**을 하나의 Windows 로컬 작업 공간에 통합하는 것을 목표로 합니다. 이는 제품 목표이며 계획한 모든 기능이 현재 완성됐다는 뜻은 아닙니다.
+Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/SFTP operations workspace**입니다. 일상적인 로컬 터미널, SSH, SFTP, 재사용 명령, 다중 세션 운영을 하나의 작업 공간에 통합합니다. 이는 제품 목표이며 계획한 모든 기능이 현재 완성됐다는 뜻은 아닙니다.
 
 제품은 로컬 우선·Windows 전용이며 다음 다섯 작업 화면을 함께 제공합니다.
 
@@ -142,6 +151,13 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - **REPL** — 구조화된 비대화형 명령 셀
 - **Files** — SFTP 탐색·파일 작업·간결한 전송 큐
 - **Multi** — 사용자가 선택한 연결 세션에만 실행하는 명시적 다중 명령
+
+모든 작업 화면에서 두 가지 공통 기능을 사용합니다.
+
+- **Saved Hosts** — 로컬 연결 프로필, route, tunnel, tag, 선택형 암호화 자격증명 참조
+- **Commands** — REPL과 명시적으로 선택한 Multi 작업에서 재사용하는 로컬 명령 템플릿
+
+소규모 팀 지원은 자격증명 없는 Host·route·tunnel·command 정의를 파일 또는 Git으로 공유한다는 뜻입니다. 계정, 공유 자격증명, RBAC, 중앙 관리, 실시간 협업은 포함하지 않습니다.
 
 ### 구현된 Alpha 기준선
 
@@ -169,17 +185,17 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 ### GA가 아닌 이유
 
 - 패키지 내부 xterm.js/WebView2 렌더러를 SSH와 로컬 ConPTY에 연결했지만 필수 셸·TUI·Unicode·입력·보안·지연·장시간 실행 인수 매트릭스는 아직 완성되지 않았습니다. 따라서 터미널 호환성은 계속 **Alpha이며 GA가 아닙니다**. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
-- Windows Agent, 반복 OTP·다중 prompt keyboard-interactive 인증, PPK v2/v3, SSH Jump, 외부 ProxyCommand 경로를 통합했지만 실제 서버·Agent·경로 호환성 매트릭스는 아직 미완성입니다. 관리형 감사 게이트웨이, 경로 정책 배포, 전체 SSH 재연결 뒤 안전한 명령 재실행은 지원하지 않습니다.
+- Windows Agent, 반복 OTP·다중 prompt keyboard-interactive 인증, PPK v2/v3, SSH Jump, 외부 ProxyCommand 경로를 통합했지만 실제 서버·Agent·경로 호환성 매트릭스는 아직 미완성입니다. 중앙 경로 정책 배포와 전체 SSH 재연결 뒤 안전한 명령 재실행은 현재 구현 범위 밖입니다.
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - SFTP 재귀 전송, 영속 재시작 queue·checkpoint, 재시도·재개·일시정지, checksum 검증, 다섯 충돌 정책, 재귀 삭제, `chmod`, 파일명 검색, 디렉터리 간 이동, 1→N/N→1 Multi 전송, 실패 대상만 재시도를 구현했습니다. 동기 탐색·디렉터리 비교와 대용량·깊은 경로·실제 다중 Host 인수는 미완성입니다.
-- REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 audit/export, timeout, streaming 흐름이 없습니다.
+- REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 로컬 활동 내보내기, timeout, streaming 흐름이 없습니다.
 - Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했고 loopback이 아닌 bind는 고위험 확인을 요구하지만 연결 후 tunnel 관리자와 실제 포워딩 매트릭스는 미완성입니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. 자격증명 없는 공유 pack, 로컬 support bundle, GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
-현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md), 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 개발 순서는 [로드맵](docs/ROADMAP.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.
+현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md), 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 개발 순서는 [로드맵](docs/ROADMAP.md), 개발 규칙은 [기여 가이드](CONTRIBUTING.md)와 [개발 Playbook](docs/DEVELOPMENT_PLAYBOOK.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.
 
 ### 명시적 미지원 범위
 
-Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정·동기화, Team Vault/RBAC/SSO, 터미널 협업, 모바일, macOS, Linux 앱을 지원하지 않습니다. 숨겨진 Alpha 기능이 아니며 클라우드·팀 협업은 로컬 우선 제품 경계 밖입니다.
+Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정·동기화, Team Vault/RBAC/SSO, 터미널 협업, 모바일, macOS, Linux 앱을 지원하지 않습니다. 숨겨진 Alpha 기능이 아닙니다. 소규모 팀 지원은 자격증명 없는 파일·Git 기반 정의 공유이며, 계정·공유 자격증명·중앙 관리·실시간 협업은 로컬 우선 제품 경계 밖입니다.
 
 ### 신뢰, 자격 증명, 로컬 데이터
 
@@ -235,6 +251,8 @@ ARM64에서는 `x64`와 `win-x64`을 `ARM64`와 `win-arm64`로 바꾸세요. Unp
 Debug 빌드 뒤 집중형 self-test를 실행할 수 있습니다.
 
 ```powershell
+.\tests\product-scope\Assert-ProductScope.Tests.ps1
+.\.github\scripts\Assert-ProductScope.ps1
 dotnet run --project tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Core.Security.SelfTest/sutty.Core.Security.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Sftp.SelfTest/sutty.Sftp.SelfTest.csproj -c Debug --no-build

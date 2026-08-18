@@ -5,7 +5,7 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 ## Product boundary
 
 - Windows 11 desktop application, local-first, with no account or cloud control plane.
-- SSH, interactive Terminal, structured REPL commands, SFTP Files, reusable Commands, and selected-session Multi operations.
+- Five primary workspaces: Local, Terminal, REPL, Files, and Multi. Saved Hosts and Commands are common capabilities used across those workspaces.
 - English and Korean first-party UI.
 - Fresh production storage contains no sample hosts, commands, credentials, or connection history.
 
@@ -22,7 +22,7 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 | SFTP baseline | Session-bound lazy tree plus bounded recursive enumeration and filename search, recursive file/folder upload and download, symlink non-traversal, deterministic partial files, checkpoint resume, durable pause/resume, retry, selectable final-size or SHA-256 verification, five durable conflict policies, safe promotion, cross-directory move without overwrite, preview-confirmed recursive deletion, octal permission changes, cancellation, queue limits, rename, delete, and directory creation. |
 | Multi SFTP | Explicitly checked SFTP sessions support 1→N upload and N→1 download. A preflight dialog reviews the targets, source, destination, and conflict policy; server results are isolated, name collisions use deterministic server folders, successful targets remain complete, and retry addresses only failed/incomplete targets with the original policy. |
 | Saved Hosts | Explicit SQLite profiles support create/update, delete, search, tags, group, environment, favorites, last-connected time, opaque credential references, and credential-free OpenSSH, Windows saved-session, legacy INI, and SFTP Site Manager XML import. |
-| Saved Host launcher | `sutty.exe --host <id or exact name>` resolves an existing Saved Host and enters the same secure connection flow. It rejects credential arguments and does not replace the normal window's Workspace snapshot. |
+| Saved Host launcher | `sutty.UI.exe --host <id or exact name>` resolves an existing Saved Host and enters the same secure connection flow. It rejects credential arguments and does not replace the normal window's Workspace snapshot. |
 | Credential vault | Opt-in AES-256-GCM records use a random master key protected for the current Windows user. Plaintext secrets are excluded from settings, SQLite, history, and crash messages. |
 | Connection history | Every completed attempt appends success, failure, or cancellation, bounded diagnostic code, and duration. Duplicate attempts remain separate rows. Retention and frequent-host count are settings. |
 | Desktop state | Theme, language, terminal mode, terminal palette/cursor/scrollback/accessibility/profile-loading options, window sizes, and right-panel width persist locally. A separate atomic workspace snapshot remembers local tabs and Saved Host ids only, asks before SSH reconnection by default, and never replays commands. Resize and workspace writes are debounced. |
@@ -37,9 +37,10 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 - Legacy settings compatibility, value normalization, atomic persistence, panel-width persistence, corrupt-file fallback, and credential-free 16-tab workspace snapshot normalization/clearing.
 - Existing terminal parser/input and safe SFTP path checks remain part of the solution; transfer checks now cover recursive/empty-directory copy, bounded filename search, cross-directory file/folder move and self-descendant rejection, resume offsets, checksums, conflict-policy behavior and durable policy persistence, safe recursive-delete previews, non-secret checkpoint persistence, per-target failure isolation, and failed-only retry.
 - Package-local renderer checks cover restrictive CSP, absence of remote asset URLs and `innerHTML`, input/output/resize bridge primitives, and the reviewed xterm.js SHA-256.
-- Route-policy rejection, credential-free audit context, structured-text classification, danger/warning classification, and command-suggestion ordering have focused self-tests.
-- The user-facing strict-route setting replaces organization-scale terminology. Saved profiles read the legacy boolean into `DisableDirect`, subsequent saves emit only the current field, and unknown/retired route types become a non-connectable fail-closed sentinel instead of silently falling back to Direct.
-- A product-scope check now gates CI, Alpha archives, and signed-package workflows. It rejects competitor branding, organization-scale positioning, and placeholder labels in product-facing documentation or production UI.
+- Route-policy rejection, credential-free diagnostic correlation context, structured-text classification, danger/warning classification, and command-suggestion ordering have focused self-tests.
+- The user-facing strict-route setting replaces organization-scale terminology. Saved profiles read the legacy boolean into `DisableDirect`, subsequent saves emit only the current field, and unknown/retired/corrupt route metadata becomes an explicit non-connectable `Unsupported` or `Corrupt` state with a stable recovery error code and Host-editor guidance.
+- A product-scope check gates CI, Alpha archives, and signed-package workflows. It keeps primary product documentation vendor-neutral, allows technical format names only in migration/import documentation, rejects replacement overclaims, organization-scale positioning, placeholder labels, and superseded binary plan names, and has fixture-based self-tests.
+- `CONTRIBUTING.md`, the bilingual Development Playbook, PR template, and feature/bug forms define Core → Test → UI → live-validation order, vertical slices, lifecycle and secret rules, SFTP integrity, Multi safety, and Definition of Done.
 - SSH.NET is upgraded to the security-fixed 2026.0.0 release and lock files are refreshed. The official Windows Agent adapter source is pinned in-tree, compiled directly against SSH.NET 2026, and can be made a required self-test gate; a live Agent service/key and live server matrix are still required.
 - A credential-free atomic transfer queue survives process restart, converts abandoned running work to interrupted state, preserves completed targets, and exposes explicit restore/resume actions in Files and Multi.
 - A credentialed live-server harness now covers smoke, disconnect/resume fault injection, configurable 100 GB/100,000-file scale, and 16-session soak modes. These modes are release gates and have not been run without an approved server.
@@ -51,7 +52,7 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 2. Run the live Windows Agent, repeated OTP/MFA, PPK v2/v3, SSH jump, ProxyCommand, and HTTP/SOCKS compatibility matrix; add proxy-DNS verification, full reconnect policy, and negotiated-algorithm UX.
 3. Run live-server evidence for permission changes, pause/resume, recursive delete, all collision policies, large/deep paths, and 16-target Multi transfer; restart queue discovery and deterministic N→1 collision isolation now have an Alpha baseline.
 4. Add a post-connect tunnel manager and local/remote/dynamic lifecycle and failure integration tests. Non-loopback forwarding already requires an explicit high-risk confirmation and emits a warning diagnostic.
-5. Finish streaming command output, typed named parameters, durable Multi details/export, timeouts, and redacted audit events.
+5. Finish streaming command output, typed named parameters, durable Multi details/export, timeouts, and redacted local activity records.
 6. Complete credential-free sharing/import preview, support bundles, accessibility, clean-install/upgrade/rollback, performance, and soak evidence. Signed packaging/update automation exists but has not produced a production-signed acceptance artifact.
 
 The authoritative requirement-by-requirement status remains in [Requirements Traceability](REQUIREMENTS.md). Product admission rules and explicit non-goals are fixed in [Product Scope](PRODUCT_SCOPE.md).

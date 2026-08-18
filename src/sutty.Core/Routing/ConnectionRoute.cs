@@ -69,7 +69,21 @@ public sealed record ResolvedConnectionRoute(
 
 public sealed class RoutePolicyViolationException : InvalidOperationException
 {
-    public RoutePolicyViolationException(string message) : base(message) { }
+    public RoutePolicyViolationException(string message)
+        : this(ConnectionRouteErrorCodes.PolicyViolation, message) { }
+
+    public RoutePolicyViolationException(string code, string message) : base(message)
+    {
+        Code = code;
+    }
+
+    public string Code { get; }
+}
+
+public static class ConnectionRouteErrorCodes
+{
+    public const string PolicyViolation = "ROUTE_POLICY_VIOLATION";
+    public const string StrictRouteDirectBlocked = "STRICT_ROUTE_DIRECT_BLOCKED";
 }
 
 public static class RouteResolver
@@ -90,6 +104,7 @@ public static class RouteResolver
         if (policy.DisableDirect && requested.Type == ConnectionRouteType.Direct)
         {
             throw new RoutePolicyViolationException(
+                ConnectionRouteErrorCodes.StrictRouteDirectBlocked,
                 "Direct connections are disabled by the active connection policy.");
         }
 
@@ -138,10 +153,10 @@ public static class RouteResolver
 }
 
 /// <summary>
-/// Correlation metadata shared by terminal and SFTP operations. It intentionally excludes all
-/// credential values and can be forwarded to an approved audit sink later.
+/// Local diagnostic metadata shared by terminal and SFTP operations. It intentionally excludes
+/// credential values and is used only to correlate activity inside this app instance.
 /// </summary>
-public sealed record AuditContext(
+public sealed record ConnectionCorrelationContext(
     string CorrelationId,
     DateTimeOffset StartedAtUtc,
     string TargetHost,
@@ -150,7 +165,7 @@ public sealed record AuditContext(
     string RouteId,
     ConnectionRouteType RouteType)
 {
-    public static AuditContext Create(
+    public static ConnectionCorrelationContext Create(
         SshConnectionInfo info,
         ResolvedConnectionRoute route) => new(
             Guid.NewGuid().ToString("N"),

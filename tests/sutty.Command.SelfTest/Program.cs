@@ -89,6 +89,8 @@ try
         "saved profile reload");
     Assert(created.Route.Type == "SshJump" && created.Route.Host == "jump.example",
         "saved profile route reload");
+    Assert(created.Route.State == SavedRouteState.Valid && created.Route.CanConnect,
+        "valid saved route is connectable");
     Assert(created.Route.DisableDirect, "saved profile strict route policy reload");
     Assert(created.Tunnels.Single().DestinationPort == 5432,
         "saved profile tunnel reload");
@@ -135,6 +137,10 @@ try
             "strict route policy uses the current persisted field");
         Assert(!routeJson.Contains("\"enterpriseMode\"", StringComparison.Ordinal),
             "legacy route field is not written back");
+        Assert(!routeJson.Contains("\"state\"", StringComparison.Ordinal) &&
+               !routeJson.Contains("\"errorCode\"", StringComparison.Ordinal) &&
+               !routeJson.Contains("\"sourceType\"", StringComparison.Ordinal),
+            "derived route diagnostics are not persisted");
     }
 
     using (var connection = Db.Open())
@@ -143,15 +149,51 @@ try
         unsupportedRoute.CommandText = "UPDATE host_profiles SET route_json = $route WHERE id = $id";
         unsupportedRoute.Parameters.AddWithValue("$id", created.Id);
         unsupportedRoute.Parameters.AddWithValue("$route", """
-            {"id":"retired-route","type":"AuditedGateway","host":"gateway.example","port":22}
+            {"id":"retired-route","type":"RetiredGateway","host":"gateway.example","port":22}
             """);
         Assert(unsupportedRoute.ExecuteNonQuery() == 1, "unsupported saved route fixture update");
     }
 
     var blockedUnsupportedRoute = HostProfileStore.GetById(created.Id)!;
     Assert(blockedUnsupportedRoute.Route.Type == "Direct" &&
-           blockedUnsupportedRoute.Route.DisableDirect,
-        "unsupported saved route fails closed without direct fallback");
+           blockedUnsupportedRoute.Route.DisableDirect &&
+           blockedUnsupportedRoute.Route.State == SavedRouteState.Unsupported &&
+           blockedUnsupportedRoute.Route.ErrorCode == SavedRouteErrorCodes.Unsupported &&
+           blockedUnsupportedRoute.Route.SourceType == "RetiredGateway" &&
+           !blockedUnsupportedRoute.Route.CanConnect,
+        "unsupported saved route fails closed with a recoverable diagnostic");
+    AssertThrows<ArgumentException>(() => HostProfileStore.Save(new HostProfileDraft
+    {
+        DisplayName = updated.DisplayName,
+        Host = updated.Host,
+        Port = updated.Port,
+        Username = updated.Username,
+        AuthMethod = updated.AuthMethod,
+        PrivateKeyPath = updated.PrivateKeyPath,
+        Tags = updated.Tags,
+        GroupName = updated.GroupName,
+        Environment = updated.Environment,
+        CredentialId = updated.CredentialId,
+        Route = blockedUnsupportedRoute.Route,
+        Tunnels = updated.Tunnels,
+    }, updated.Id), "an invalid saved route cannot be written back without repair");
+
+    using (var connection = Db.Open())
+    using (var corruptRoute = connection.CreateCommand())
+    {
+        corruptRoute.CommandText = "UPDATE host_profiles SET route_json = $route WHERE id = $id";
+        corruptRoute.Parameters.AddWithValue("$id", created.Id);
+        corruptRoute.Parameters.AddWithValue("$route", "{not-json");
+        Assert(corruptRoute.ExecuteNonQuery() == 1, "corrupt saved route fixture update");
+    }
+
+    var blockedCorruptRoute = HostProfileStore.GetById(created.Id)!;
+    Assert(blockedCorruptRoute.Route.Type == "Direct" &&
+           blockedCorruptRoute.Route.DisableDirect &&
+           blockedCorruptRoute.Route.State == SavedRouteState.Corrupt &&
+           blockedCorruptRoute.Route.ErrorCode == SavedRouteErrorCodes.Corrupt &&
+           !blockedCorruptRoute.Route.CanConnect,
+        "corrupt saved route fails closed with a distinct diagnostic");
 
     HostProfileStore.SetFavorite(created.Id, true);
     HostProfileStore.MarkConnected(created.Id);
@@ -299,4 +341,19 @@ static void Assert(bool condition, string name)
 {
     if (!condition)
         throw new InvalidOperationException($"Self-test failed: {name}.");
+}
+
+static void AssertThrows<TException>(Action action, string name)
+    where TException : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (TException)
+    {
+        return;
+    }
+
+    throw new InvalidOperationException($"Self-test failed: {name}.");
 }

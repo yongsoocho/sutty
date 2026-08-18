@@ -17,7 +17,7 @@ public interface ISshSession : IInteractiveTerminal
     Guid Id { get; }
     SshConnectionInfo Info { get; }
     SessionState State { get; }
-    AuditContext AuditContext { get; }
+    ConnectionCorrelationContext CorrelationContext { get; }
 
     /// <summary>State가 Failed일 때 마지막 오류 메시지.</summary>
     string? LastError { get; }

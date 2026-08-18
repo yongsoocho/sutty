@@ -90,10 +90,10 @@ namespace sutty.UI.Views
 
             TitleText.Text = $"{user}@{Session.Info.Title} · {Session.Info.Host}:{Session.Info.Port}";
             RoutePillText.Text = Session.Info.Route?.DisplayName ??
-                Session.AuditContext.RouteType.ToString().ToUpperInvariant();
+                Session.CorrelationContext.RouteType.ToString().ToUpperInvariant();
             ToolTipService.SetToolTip(
                 RoutePillText,
-                $"route={Session.AuditContext.RouteId} · correlation={Session.AuditContext.CorrelationId}");
+                $"route={Session.CorrelationContext.RouteId} · correlation={Session.CorrelationContext.CorrelationId}");
             UpdatePrompt();
 
             // 업타임 카운터 (연결 중일 때 1초마다 갱신)

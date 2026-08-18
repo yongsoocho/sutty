@@ -558,8 +558,8 @@ public sealed partial class HomePanel : UserControl
         if (strictRouteOnly && routeType == ConnectionRouteType.Direct)
         {
             SettingsSaveStatusText.Text = Loc.T(
-                "엄격 경로에서는 프록시 또는 점프 경로를 선택해야 합니다.",
-                "Strict route requires a proxy or jump route.");
+                $"엄격 경로에서는 프록시 또는 점프 경로를 선택해야 합니다. ({ConnectionRouteErrorCodes.StrictRouteDirectBlocked})",
+                $"Strict route requires a proxy or jump route. ({ConnectionRouteErrorCodes.StrictRouteDirectBlocked})");
             SettingsSaveStatusText.Visibility = Visibility.Visible;
             RouteCombo.Focus(FocusState.Programmatic);
             return;

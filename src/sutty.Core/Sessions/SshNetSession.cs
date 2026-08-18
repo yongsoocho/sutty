@@ -40,7 +40,7 @@ public sealed partial class SshNetSession : ISshSession
     public Guid Id { get; } = Guid.NewGuid();
     public SshConnectionInfo Info { get; }
     public SessionState State { get; private set; } = SessionState.Idle;
-    public AuditContext AuditContext { get; }
+    public ConnectionCorrelationContext CorrelationContext { get; }
     public string? LastError { get; private set; }
     public ISftpService Sftp => _sftpService;
     public SftpConnectionState SftpState { get; private set; } = SftpConnectionState.NotConnected;
@@ -69,7 +69,7 @@ public sealed partial class SshNetSession : ISshSession
             reconnectAsync: ReconnectSftpForTransferAsync);
         _hostEndpoint = HostEndpointIdentity.Create(info.Host, info.Port);
         _route = RouteResolver.Resolve(info.Route, info.RoutePolicy);
-        AuditContext = AuditContext.Create(info, _route);
+        CorrelationContext = ConnectionCorrelationContext.Create(info, _route);
         _diagnosticLoggerFactory = new SshNetDiagnosticLoggerFactory(
             Id,
             info.Title,
