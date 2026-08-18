@@ -12,8 +12,12 @@ target identity, route id, and route type.
 
 The Alpha implements real Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and external
 ProxyCommand routes through SSH.NET and a loopback process bridge. No
-automatic fallback is attempted. When enterprise mode or a route policy disables Direct, route
+automatic fallback is attempted. When strict route policy disables Direct, route
 resolution fails before the SSH or SFTP client is created.
+
+Unknown, retired, or corrupt saved-route metadata is loaded as a non-connectable
+Direct sentinel with Direct disabled. The user must explicitly choose and save a
+supported route before another connection can start.
 
 Proxy username and password are transient connection values. They are not added to JSON settings,
 saved-host SQLite rows, connection history, or `AuditContext`.

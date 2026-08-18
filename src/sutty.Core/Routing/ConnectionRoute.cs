@@ -9,7 +9,6 @@ public enum ConnectionRouteType
     Socks4,
     Socks5,
     SshJump,
-    AuditedGateway,
     ExternalProxyCommand,
 }
 
@@ -38,7 +37,6 @@ public sealed class ConnectionRoute
         ConnectionRouteType.Socks4 => "SOCKS4",
         ConnectionRouteType.Socks5 => "SOCKS5",
         ConnectionRouteType.SshJump => "SSH JUMP",
-        ConnectionRouteType.AuditedGateway => "AUDITED",
         ConnectionRouteType.ExternalProxyCommand => "PROXY COMMAND",
         _ => Type.ToString().ToUpperInvariant(),
     };
@@ -47,7 +45,6 @@ public sealed class ConnectionRoute
 /// <summary>Policy applied before any network client is created.</summary>
 public sealed class ConnectionRoutePolicy
 {
-    public bool EnterpriseMode { get; set; }
     public bool DisableDirect { get; set; }
     public string RequiredRouteId { get; set; } = "";
     public List<ConnectionRouteType> AllowedRouteTypes { get; set; } = [];
@@ -90,8 +87,7 @@ public static class RouteResolver
         if (routeId.Length > 128 || routeId.Any(char.IsControl))
             throw new RoutePolicyViolationException("The route id is invalid.");
 
-        if ((policy.EnterpriseMode || policy.DisableDirect) &&
-            requested.Type == ConnectionRouteType.Direct)
+        if (policy.DisableDirect && requested.Type == ConnectionRouteType.Direct)
         {
             throw new RoutePolicyViolationException(
                 "Direct connections are disabled by the active connection policy.");

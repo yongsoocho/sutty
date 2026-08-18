@@ -521,18 +521,19 @@ public static class HostProfileStore
     private static HostRouteProfile NormalizeRoute(HostRouteProfile? route)
     {
         route ??= new HostRouteProfile();
-        var type = route.Type?.Trim() switch
+        var type = (route.Type?.Trim() ?? "").ToLowerInvariant() switch
         {
-            "HttpConnect" => "HttpConnect",
-            "Socks4" => "Socks4",
-            "Socks5" => "Socks5",
-            "SshJump" => "SshJump",
-            "AuditedGateway" => "AuditedGateway",
-            "ExternalProxyCommand" => "ExternalProxyCommand",
-            _ => "Direct",
+            "" or "direct" => "Direct",
+            "httpconnect" => "HttpConnect",
+            "socks4" => "Socks4",
+            "socks5" => "Socks5",
+            "sshjump" => "SshJump",
+            "externalproxycommand" => "ExternalProxyCommand",
+            _ => throw new ArgumentException(
+                "The saved route type is not supported.", nameof(route)),
         };
         var usesHost = type is "HttpConnect" or "Socks4" or "Socks5" or
-            "SshJump" or "AuditedGateway";
+            "SshJump";
         var host = usesHost ? LimitClean(route.Host, 255, "route host") : "";
         var port = usesHost && route.Port is >= 1 and <= 65_535 ? route.Port : 0;
         if (usesHost && (string.IsNullOrWhiteSpace(host) || port == 0))
@@ -561,7 +562,7 @@ public static class HostProfileStore
             PrivateKeyPath = keyPath,
             Command = command,
             ProxyDns = route.ProxyDns,
-            EnterpriseMode = route.EnterpriseMode,
+            DisableDirect = route.DisableDirect || route.LegacyDisableDirect == true,
         };
     }
 
@@ -624,7 +625,14 @@ public static class HostProfileStore
         }
         catch (Exception error) when (error is JsonException or ArgumentException)
         {
-            return new HostRouteProfile();
+            // Corrupt or unsupported route metadata must never become a usable Direct
+            // connection. The editor can recover this sentinel by choosing a new route.
+            return new HostRouteProfile
+            {
+                Id = "invalid-route",
+                Type = "Direct",
+                DisableDirect = true,
+            };
         }
     }
 

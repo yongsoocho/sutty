@@ -45,7 +45,7 @@ Current controls do **not** protect against:
 - Compromise of the development machine, unsigned build output, NuGet supply chain, or distribution channel.
 - Data disclosure when a user shares `%LOCALAPPDATA%\sutty` without review.
 
-Sutty makes no FIPS, certification, hardened-enterprise, or complete terminal-isolation claim.
+Sutty makes no FIPS, security-certification, hardened-deployment, or complete terminal-isolation claim.
 
 ### Credential rules
 
@@ -68,7 +68,7 @@ Sutty makes no FIPS, certification, hardened-enterprise, or complete terminal-is
 - **Trust and save** atomically writes the public key to `%LOCALAPPDATA%\sutty\known-hosts.json`.
 - A changed saved key is blocked. It cannot be silently replaced or bypassed with **Connect once**.
 - Corrupt or unreadable known-host storage fails closed.
-- Known-host management, rotation approval, OpenSSH import/export, enterprise policy, and security audit events are not implemented yet.
+- Known-host management, rotation approval, OpenSSH import/export, per-host strict-trust policy, and security audit events are not implemented yet.
 
 Verify an unknown fingerprint through an independent channel controlled by the server owner. Do not trust a fingerprint copied from the same possibly compromised connection path.
 
@@ -80,7 +80,7 @@ Remote names, paths, metadata, symlinks, and file contents are server-controlled
 
 ### Logs and diagnostics
 
-- `crash.log` stores unhandled exception text and stack details locally. It is **not guaranteed to be redacted** and may contain hosts, usernames, paths, or command-related context.
+- `crash.log` stores only timestamp, exception type, and HRESULT. It does not persist the exception message or stack trace. This deliberately limits crash diagnostics to avoid recording hosts, usernames, paths, commands, or secrets.
 - There is no production audit log, transcript system, support bundle, crash upload, or telemetry upload today.
 - Before sharing a log, search for hosts, IP addresses, usernames, local/remote paths, commands, tokens, key headers, and customer data. Prefer a minimal reproduction over a full data-directory archive.
 
@@ -91,7 +91,7 @@ Remote names, paths, metadata, symlinks, and file contents are server-controlled
 - Back up remote and local files before testing overwrite, rename, or delete.
 - Treat host-key changes as a possible incident; verify out of band instead of deleting the trust file reflexively.
 - Keep Windows, .NET, Windows App SDK, and dependencies patched.
-- Do not distribute an unsigned Alpha build as an approved enterprise release.
+- Do not distribute an unsigned Alpha build as an approved production or managed deployment.
 
 ---
 
@@ -134,7 +134,7 @@ Sutty는 로컬 우선 Windows 데스크톱 클라이언트입니다. 계정, �
 - 개발 PC, 서명되지 않은 build output, NuGet 공급망, 배포 경로의 침해
 - 사용자가 `%LOCALAPPDATA%\sutty`를 검토 없이 공유할 때의 데이터 노출
 
-Sutty는 FIPS, 보안 인증, hardened enterprise, 완전한 터미널 격리를 주장하지 않습니다.
+Sutty는 FIPS, 보안 인증, hardened deployment, 완전한 터미널 격리를 주장하지 않습니다.
 
 ### 자격 증명 규칙
 
@@ -157,7 +157,7 @@ Sutty는 FIPS, 보안 인증, hardened enterprise, 완전한 터미널 격리를
 - **신뢰하고 저장**은 공개키를 `%LOCALAPPDATA%\sutty\known-hosts.json`에 원자적으로 저장합니다.
 - 변경된 저장 키는 차단합니다. 조용히 교체하거나 **이번만 연결**로 우회할 수 없습니다.
 - 손상되거나 읽을 수 없는 known-host 저장소는 기본 차단합니다.
-- Known-host 관리, rotation 승인, OpenSSH 가져오기·내보내기, 기업 정책, 보안 audit event는 아직 구현하지 않았습니다.
+- Known-host 관리, rotation 승인, OpenSSH 가져오기·내보내기, Host별 엄격 신뢰 정책, 보안 audit event는 아직 구현하지 않았습니다.
 
 알 수 없는 지문은 서버 소유자가 통제하는 독립 경로로 확인하세요. 동일하게 침해되었을 수 있는 연결 경로에서 복사한 지문을 신뢰하면 안 됩니다.
 
@@ -169,7 +169,7 @@ Sutty는 FIPS, 보안 인증, hardened enterprise, 완전한 터미널 격리를
 
 ### 로그와 진단
 
-- `crash.log`는 미처리 예외 텍스트와 stack 상세를 로컬에 저장합니다. **Redaction을 보장하지 않으며** host·username·경로·명령 관련 내용이 포함될 수 있습니다.
+- `crash.log`는 시각, 예외 type, HRESULT만 저장합니다. 예외 원문과 stack trace를 영구 기록하지 않아 host·username·경로·명령·secret이 들어갈 가능성을 의도적으로 제한합니다.
 - 현재 production audit log, transcript 시스템, support bundle, crash upload, telemetry upload가 없습니다.
 - 로그 공유 전에 host, IP 주소, username, local/remote 경로, 명령, token, key header, 고객 데이터를 검색하세요. 전체 데이터 디렉터리보다 최소 재현 정보를 우선하세요.
 
@@ -180,4 +180,4 @@ Sutty는 FIPS, 보안 인증, hardened enterprise, 완전한 터미널 격리를
 - overwrite·rename·delete 테스트 전에 원격·로컬 파일을 백업하세요.
 - 호스트키 변경은 사고 가능성으로 취급하고 trust 파일을 반사적으로 지우는 대신 독립 경로로 확인하세요.
 - Windows, .NET, Windows App SDK, 의존성을 최신 보안 patch로 유지하세요.
-- 서명되지 않은 Alpha 빌드를 승인된 기업 릴리스로 배포하지 마세요.
+- 서명되지 않은 Alpha 빌드를 승인된 운영 또는 관리형 배포물로 사용하지 마세요.

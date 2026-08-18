@@ -1,6 +1,6 @@
-# Sutty Windows Enterprise implementation status
+# Sutty Alpha implementation status
 
-This document maps the current repository to the Windows Enterprise Product Plan. It is intentionally evidence-based: **Implemented** means code and focused verification exist; it does not imply a GA release.
+This document maps the current repository to Sutty's local-first Windows SSH/SFTP product scope. It is intentionally evidence-based: **Implemented** means code and focused verification exist; it does not imply a GA release.
 
 ## Product boundary
 
@@ -26,7 +26,7 @@ This document maps the current repository to the Windows Enterprise Product Plan
 | Credential vault | Opt-in AES-256-GCM records use a random master key protected for the current Windows user. Plaintext secrets are excluded from settings, SQLite, history, and crash messages. |
 | Connection history | Every completed attempt appends success, failure, or cancellation, bounded diagnostic code, and duration. Duplicate attempts remain separate rows. Retention and frequent-host count are settings. |
 | Desktop state | Theme, language, terminal mode, terminal palette/cursor/scrollback/accessibility/profile-loading options, window sizes, and right-panel width persist locally. A separate atomic workspace snapshot remembers local tabs and Saved Host ids only, asks before SSH reconnection by default, and never replays commands. Resize and workspace writes are debounced. |
-| Route foundation | Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and ProxyCommand routes are resolved before client creation and shared by SSH/SFTP. Saved hosts restore credential-free route/tunnel definitions while route secrets remain in the Windows-user vault. Enterprise mode rejects Direct without fallback; one credential-free correlation context is created per session. |
+| Route foundation | Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and ProxyCommand routes are resolved before client creation and shared by SSH/SFTP. Saved hosts restore credential-free route/tunnel definitions while route secrets remain in the Windows-user vault. Strict route policy rejects Direct without fallback; one credential-free correlation context is created per session. |
 | Forwarding | Local, remote, and dynamic forwarding rules start after target authentication, report runtime failures, and stop before the owning SSH session is disposed. |
 | Terminal productivity | REPL JSON/YAML and severity highlighting, bounded command suggestions, Right/Tab acceptance, tab/navigation/settings shortcuts, and Insert-style copy/paste are implemented. |
 
@@ -38,6 +38,8 @@ This document maps the current repository to the Windows Enterprise Product Plan
 - Existing terminal parser/input and safe SFTP path checks remain part of the solution; transfer checks now cover recursive/empty-directory copy, bounded filename search, cross-directory file/folder move and self-descendant rejection, resume offsets, checksums, conflict-policy behavior and durable policy persistence, safe recursive-delete previews, non-secret checkpoint persistence, per-target failure isolation, and failed-only retry.
 - Package-local renderer checks cover restrictive CSP, absence of remote asset URLs and `innerHTML`, input/output/resize bridge primitives, and the reviewed xterm.js SHA-256.
 - Route-policy rejection, credential-free audit context, structured-text classification, danger/warning classification, and command-suggestion ordering have focused self-tests.
+- The user-facing strict-route setting replaces organization-scale terminology. Saved profiles read the legacy boolean into `DisableDirect`, subsequent saves emit only the current field, and unknown/retired route types become a non-connectable fail-closed sentinel instead of silently falling back to Direct.
+- A product-scope check now gates CI, Alpha archives, and signed-package workflows. It rejects competitor branding, organization-scale positioning, and placeholder labels in product-facing documentation or production UI.
 - SSH.NET is upgraded to the security-fixed 2026.0.0 release and lock files are refreshed. The official Windows Agent adapter source is pinned in-tree, compiled directly against SSH.NET 2026, and can be made a required self-test gate; a live Agent service/key and live server matrix are still required.
 - A credential-free atomic transfer queue survives process restart, converts abandoned running work to interrupted state, preserves completed targets, and exposes explicit restore/resume actions in Files and Multi.
 - A credentialed live-server harness now covers smoke, disconnect/resume fault injection, configurable 100 GB/100,000-file scale, and 16-session soak modes. These modes are release gates and have not been run without an approved server.
@@ -46,10 +48,10 @@ This document maps the current repository to the Windows Enterprise Product Plan
 ## Remaining release gates
 
 1. Run and record the full shell/TUI/Unicode/input/security/latency/soak matrix for the new package-local renderer; integration alone is not GA evidence.
-2. Run the live Windows Agent, repeated OTP/MFA, PPK v2/v3, SSH jump, and ProxyCommand compatibility matrix; add managed gateway profiles, audited route adapters, proxy-DNS verification, full reconnect policy, and algorithm-policy UX.
+2. Run the live Windows Agent, repeated OTP/MFA, PPK v2/v3, SSH jump, ProxyCommand, and HTTP/SOCKS compatibility matrix; add proxy-DNS verification, full reconnect policy, and negotiated-algorithm UX.
 3. Run live-server evidence for permission changes, pause/resume, recursive delete, all collision policies, large/deep paths, and 16-target Multi transfer; restart queue discovery and deterministic N→1 collision isolation now have an Alpha baseline.
 4. Add a post-connect tunnel manager and local/remote/dynamic lifecycle and failure integration tests. Non-loopback forwarding already requires an explicit high-risk confirmation and emits a warning diagnostic.
 5. Finish streaming command output, typed named parameters, durable Multi details/export, timeouts, and redacted audit events.
-6. Complete enterprise policy, managed host catalogs, encrypted import/export, support bundles, accessibility, clean-install/upgrade/rollback, performance, and soak evidence. Signed packaging/update automation exists but has not produced a production-signed acceptance artifact.
+6. Complete credential-free sharing/import preview, support bundles, accessibility, clean-install/upgrade/rollback, performance, and soak evidence. Signed packaging/update automation exists but has not produced a production-signed acceptance artifact.
 
-The authoritative requirement-by-requirement status remains in [Requirements Traceability](REQUIREMENTS.md).
+The authoritative requirement-by-requirement status remains in [Requirements Traceability](REQUIREMENTS.md). Product admission rules and explicit non-goals are fixed in [Product Scope](PRODUCT_SCOPE.md).

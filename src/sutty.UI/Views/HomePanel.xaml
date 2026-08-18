@@ -419,8 +419,8 @@
                                 TextWrapping="Wrap" />
                         </StackPanel>
                         <CheckBox
-                            x:Name="EnterpriseRouteCheck"
-                            Content="{x:Bind h:Loc.T('기업 모드: 직접 연결 및 자동 우회 금지', 'Enterprise mode: block direct connection and fallback')}"
+                            x:Name="StrictRouteCheck"
+                            Content="{x:Bind h:Loc.T('엄격 경로: 직접 연결 및 자동 우회 금지', 'Strict route: block direct connection and fallback')}"
                             Foreground="{ThemeResource TextMuted}" />
                         <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('연결 유지 간격 (초)', 'KEEP-ALIVE (SECONDS)')}" />
                         <NumberBox

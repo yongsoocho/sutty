@@ -69,7 +69,7 @@ try
             Username = "gateway",
             AuthMethod = "Agent",
             ProxyDns = true,
-            EnterpriseMode = true,
+            DisableDirect = true,
         },
         Tunnels =
         [
@@ -89,8 +89,25 @@ try
         "saved profile reload");
     Assert(created.Route.Type == "SshJump" && created.Route.Host == "jump.example",
         "saved profile route reload");
+    Assert(created.Route.DisableDirect, "saved profile strict route policy reload");
     Assert(created.Tunnels.Single().DestinationPort == 5432,
         "saved profile tunnel reload");
+
+    using (var connection = Db.Open())
+    using (var legacyRoute = connection.CreateCommand())
+    {
+        legacyRoute.CommandText = "UPDATE host_profiles SET route_json = $route WHERE id = $id";
+        legacyRoute.Parameters.AddWithValue("$id", created.Id);
+        legacyRoute.Parameters.AddWithValue("$route", """
+            {"id":"legacy-proxy","type":"Socks5","host":"proxy.example","port":1080,"username":"proxy-user","authMethod":"Password","proxyDns":true,"enterpriseMode":true}
+            """);
+        Assert(legacyRoute.ExecuteNonQuery() == 1, "legacy strict route fixture update");
+    }
+
+    var migratedStrictRoute = HostProfileStore.GetById(created.Id)!;
+    Assert(migratedStrictRoute.Route.Type == "Socks5" &&
+           migratedStrictRoute.Route.DisableDirect,
+        "legacy route flag migrates to strict route policy");
 
     var updated = HostProfileStore.Save(new HostProfileDraft
     {
@@ -104,10 +121,38 @@ try
         GroupName = "Platform",
         Environment = HostEnvironments.Production,
         CredentialId = "opaque-reference-2",
-        Route = created.Route,
+        Route = migratedStrictRoute.Route,
         Tunnels = created.Tunnels,
     }, created.Id);
     Assert(updated.Port == 2202 && updated.AuthMethod == "PublicKey", "saved profile update");
+    using (var connection = Db.Open())
+    using (var storedRoute = connection.CreateCommand())
+    {
+        storedRoute.CommandText = "SELECT route_json FROM host_profiles WHERE id = $id";
+        storedRoute.Parameters.AddWithValue("$id", created.Id);
+        var routeJson = Convert.ToString(storedRoute.ExecuteScalar()) ?? "";
+        Assert(routeJson.Contains("\"disableDirect\":true", StringComparison.Ordinal),
+            "strict route policy uses the current persisted field");
+        Assert(!routeJson.Contains("\"enterpriseMode\"", StringComparison.Ordinal),
+            "legacy route field is not written back");
+    }
+
+    using (var connection = Db.Open())
+    using (var unsupportedRoute = connection.CreateCommand())
+    {
+        unsupportedRoute.CommandText = "UPDATE host_profiles SET route_json = $route WHERE id = $id";
+        unsupportedRoute.Parameters.AddWithValue("$id", created.Id);
+        unsupportedRoute.Parameters.AddWithValue("$route", """
+            {"id":"retired-route","type":"AuditedGateway","host":"gateway.example","port":22}
+            """);
+        Assert(unsupportedRoute.ExecuteNonQuery() == 1, "unsupported saved route fixture update");
+    }
+
+    var blockedUnsupportedRoute = HostProfileStore.GetById(created.Id)!;
+    Assert(blockedUnsupportedRoute.Route.Type == "Direct" &&
+           blockedUnsupportedRoute.Route.DisableDirect,
+        "unsupported saved route fails closed without direct fallback");
+
     HostProfileStore.SetFavorite(created.Id, true);
     HostProfileStore.MarkConnected(created.Id);
     var marked = HostProfileStore.GetById(created.Id)!;

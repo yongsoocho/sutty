@@ -45,7 +45,7 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - Up to 16 mixed local/SSH tabs, zero default Multi targets, and an extra confirmation for broadcasts that include PROD-tagged SSH sessions.
 - Optional restart-safe Workspace restoration remembers only local tabs and opaque Saved Host ids. SSH reconnection asks first by default, and previous commands are never stored or replayed.
 - Immediately applied Korean/English settings, atomic settings persistence, dark/light themes, terminal palettes (including Ubuntu, Atom One Dark, Dracula, GitHub, and Solarized), cursor/scrollback/accessibility controls, and optional PowerShell profile loading for prompt customizers.
-- Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and external ProxyCommand routes shared by SSH and SFTP. Enterprise mode rejects direct routes instead of silently falling back.
+- Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and external ProxyCommand routes shared by SSH and SFTP. Strict route policy rejects direct routes instead of silently falling back.
 - Session-scoped local, remote, and dynamic forwarding rules that start after SSH authentication and stop with the owning session.
 - Saved Hosts restore route and tunnel definitions while route credentials remain in the encrypted vault. Settings can import credential-free OpenSSH config, Windows saved-session registry entries, and legacy INI profiles with duplicate suppression.
 - REPL JSON/YAML syntax highlighting, red critical/error and amber warning marking, and history/saved-command suggestions accepted with Right Arrow or Tab.
@@ -58,9 +58,9 @@ The product is local-first, Windows-only, and centered on five cooperating work 
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP recursive transfer, durable restart queue/checkpoints, retry/resume, pause, checksum verification, five collision policies, recursive deletion, `chmod`, filename search, cross-directory move, 1→N/N→1 Multi transfer, and failed-target-only retry are implemented. Synchronized browsing, directory comparison, and large/deep-path live multi-host acceptance remain incomplete.
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent audit/export, timeout, or streaming workflow.
-- Local/remote/dynamic forwarding has session lifecycle support and non-loopback binds require an explicit high-risk confirmation, but a post-connect tunnel manager and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed artifact has been supplied. Managed gateway policy, central audit transport, encrypted Sutty bundle export/import, support bundles, and the GA compatibility/accessibility matrices remain planned.
+- Local/remote/dynamic forwarding has session lifecycle support and non-loopback binds require an explicit high-risk confirmation, but a post-connect tunnel manager and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed artifact has been supplied. Credential-free sharing packs, local support bundles, and the GA compatibility/accessibility matrices remain planned.
 
-The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Enterprise implementation status](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md). Product gates and explicit non-goals are in [Product Direction](docs/PRODUCT_DIRECTION.md), and the current source plan is [Windows Multi SSH/SFTP Product Plan v2.0](docs/Sutty_Windows_Multi_SSH_SFTP_Product_Plan_v2.0_KO.docx).
+The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with delivery order in the [Roadmap](docs/ROADMAP.md) and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
 
 ### Explicitly unsupported scope
 
@@ -160,7 +160,7 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - 로컬/SSH 혼합 최대 16개 탭, 기본 선택 0개의 Multi 대상, PROD 태그 SSH 세션이 포함된 브로드캐스트의 추가 확인
 - 선택형 Workspace 복원은 로컬 탭과 불투명 저장 Host ID만 기억합니다. SSH 재연결은 기본적으로 먼저 확인하며 이전 명령은 저장하거나 재실행하지 않습니다.
 - 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장, 다크/라이트 테마, Ubuntu·Atom One Dark·Dracula·GitHub·Solarized 터미널 팔레트, 커서·스크롤백·접근성 설정, 프롬프트 꾸미기를 위한 선택형 PowerShell 프로필 로딩
-- SSH와 SFTP가 함께 사용하는 Direct·HTTP CONNECT·SOCKS4·SOCKS5·SSH Jump·외부 ProxyCommand 연결 경로. 기업 모드에서는 Direct 경로와 조용한 우회를 차단합니다.
+- SSH와 SFTP가 함께 사용하는 Direct·HTTP CONNECT·SOCKS4·SOCKS5·SSH Jump·외부 ProxyCommand 연결 경로. 엄격 경로 정책에서는 Direct 경로와 조용한 우회를 차단합니다.
 - SSH 인증 후 시작하고 해당 세션과 함께 종료하는 Local·Remote·Dynamic 포워딩 규칙
 - 저장 Host는 route·tunnel 정의를 복원하고 route 자격증명은 암호화 Vault에만 둡니다. 설정에서 비밀정보 없이 OpenSSH config·Windows 저장 세션 registry·레거시 INI profile을 가져오며 중복은 건너뜁니다.
 - REPL JSON/YAML 문법 강조, critical/error 빨간색·warning 노란색 표시, 최근/저장 명령 제안과 오른쪽 화살표·Tab 적용
@@ -173,9 +173,9 @@ Sutty는 일상적인 **로컬 터미널, SSH, SFTP, 재사용 명령, 다중 �
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - SFTP 재귀 전송, 영속 재시작 queue·checkpoint, 재시도·재개·일시정지, checksum 검증, 다섯 충돌 정책, 재귀 삭제, `chmod`, 파일명 검색, 디렉터리 간 이동, 1→N/N→1 Multi 전송, 실패 대상만 재시도를 구현했습니다. 동기 탐색·디렉터리 비교와 대용량·깊은 경로·실제 다중 Host 인수는 미완성입니다.
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 audit/export, timeout, streaming 흐름이 없습니다.
-- Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했고 loopback이 아닌 bind는 고위험 확인을 요구하지만 연결 후 tunnel 관리자와 실제 포워딩 매트릭스는 미완성입니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. 관리형 gateway 정책, 중앙 감사 전송, 암호화 Sutty bundle 가져오기·내보내기, 지원 번들, GA 호환성·접근성 매트릭스는 계획 상태입니다.
+- Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했고 loopback이 아닌 bind는 고위험 확인을 요구하지만 연결 후 tunnel 관리자와 실제 포워딩 매트릭스는 미완성입니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. 자격증명 없는 공유 pack, 로컬 support bundle, GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
-현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Enterprise 구현 상태](docs/ENTERPRISE_IMPLEMENTATION_STATUS.md), 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md), 제품 게이트와 명시적 비목표는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 있습니다.
+현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md), 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 개발 순서는 [로드맵](docs/ROADMAP.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.
 
 ### 명시적 미지원 범위
 

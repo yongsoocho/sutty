@@ -58,10 +58,10 @@ The evidence baseline is the source tree, not disabled UI or future-looking comm
 | SSH-001 | P0 | Partial | SSH-2 connect, cancellation, and gate-drained disconnect exist; timeout/fault compatibility acceptance is incomplete.<br>SSH-2 연결·취소·gate-drain 종료는 있지만 timeout·fault 호환성 인수가 미완성입니다. |
 | SSH-002 | P0 | Partial | Password, private key, and repeated multi-prompt keyboard-interactive OTP/MFA flows are implemented; the representative server/provider compatibility matrix is incomplete.<br>비밀번호·개인키와 반복 가능한 다중 prompt keyboard-interactive OTP/MFA 흐름을 구현했지만 대표 서버·인증 제공자 호환성 매트릭스는 미완성입니다. |
 | SSH-003 | P1 | Partial | Windows OpenSSH Agent/Pageant identities are exposed through an in-tree, upstream-pinned adapter compiled against SSH.NET 2026, with a friendly unavailable-service failure and an opt-in required live self-test; live Agent/key acceptance remains.<br>Windows OpenSSH Agent/Pageant identity를 SSH.NET 2026에 맞춰 직접 빌드하는 upstream 고정 adapter로 사용하며 서비스 미실행 안내와 선택형 필수 실환경 self-test가 있지만 실제 Agent·키 인수는 남아 있습니다. |
-| SSH-004 | P1 | Partial | SSH.NET loads OpenSSH, PEM, PKCS#8, and PuTTY PPK v2/v3 keys; encrypted/algorithm format acceptance is incomplete.<br>SSH.NET으로 OpenSSH·PEM·PKCS#8·PuTTY PPK v2/v3 키를 읽지만 암호화·알고리즘별 형식 인수는 미완성입니다. |
+| SSH-004 | P1 | Partial | SSH.NET loads OpenSSH, PEM, PKCS#8, and PPK v2/v3 keys; encrypted/algorithm format acceptance is incomplete.<br>SSH.NET으로 OpenSSH·PEM·PKCS#8·PPK v2/v3 키를 읽지만 암호화·알고리즘별 형식 인수는 미완성입니다. |
 | SSH-005 | P0 | Implemented | Unknown/trusted/changed states fail closed, both SSH and SFTP verify, changed keys block, and focused security self-tests cover persistence and concurrency.<br>Unknown/trusted/changed 상태를 기본 차단으로 처리하고 SSH·SFTP 모두 검증하며 변경 키 차단과 저장·동시성 self-test가 있습니다. |
 | SSH-006 | P1 | Partial | SSH Jump creates a separately host-key-verified jump connection and loopback forwarding shared by target SSH/SFTP; live topology and failure lifecycle tests remain.<br>SSH Jump는 별도 host-key 검증을 거친 jump 연결과 대상 SSH/SFTP가 공유하는 loopback forwarding을 만들지만 실제 topology·실패 수명주기 검증은 남아 있습니다. |
-| SSH-007 | P1 | Partial | Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH Jump, and external ProxyCommand routes create real connections and the same resolved route is used for SFTP. ProxyCommand placeholders are validated and quoted, unsafe endpoint substitutions are rejected, and the exact expanded command requires confirmation. Managed profiles, explicit proxy-DNS evidence, audited adapters, and the enterprise matrix are incomplete.<br>Direct·HTTP CONNECT·SOCKS4·SOCKS5·SSH Jump·외부 ProxyCommand 경로가 실제 연결을 만들고 SFTP도 같은 resolved route를 사용합니다. ProxyCommand 치환값을 검증·인용하고 위험한 endpoint 치환을 거부하며 실제 실행 명령을 명시적으로 확인받습니다. 관리형 프로필·명시적 proxy-DNS 증거·감사 어댑터·기업용 매트릭스는 미완성입니다. |
+| SSH-007 | P1 | Partial | Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH Jump, and external ProxyCommand routes create real connections and the same resolved route is used for SFTP. ProxyCommand placeholders are validated and quoted, unsafe endpoint substitutions are rejected, and the exact expanded command requires confirmation. Explicit proxy-DNS evidence and the full live route matrix are incomplete.<br>Direct·HTTP CONNECT·SOCKS4·SOCKS5·SSH Jump·외부 ProxyCommand 경로가 실제 연결을 만들고 SFTP도 같은 resolved route를 사용합니다. ProxyCommand 치환값을 검증·인용하고 위험한 endpoint 치환을 거부하며 실제 실행 명령을 명시적으로 확인받습니다. 명시적 proxy-DNS 증거와 전체 실환경 경로 매트릭스는 미완성입니다. |
 | SSH-008 | P1 | Partial | Keepalive is applied per connection; automatic reconnect and replay safety UX are missing.<br>연결별 keepalive는 적용하지만 자동 재연결과 replay 안전 UX가 없습니다. |
 | SSH-009 | P1 | Planned | Negotiated KEX/cipher/MAC/host-key information is not surfaced.<br>협상된 KEX/cipher/MAC/host-key 정보를 표시하지 않습니다. |
 | SSH-010 | P0 | Planned | There is no explicit product policy or tested override model for legacy algorithms.<br>Legacy 알고리즘을 위한 명시적 제품 정책과 검증된 override 모델이 없습니다. |
@@ -136,16 +136,14 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 | CMD-006 | P1 | Partial | Each host uses a structured result with stdout, stderr, exit code/signal, and duration; the UI shows a truncated combined-output preview plus exit/signal, while durable detail, export, timeout, and audit are missing.<br>각 Host는 stdout·stderr·exit code/signal·소요 시간을 가진 구조화 결과를 사용하고 UI는 잘린 합산 출력과 exit/signal을 표시하지만 영속 상세·export·timeout·audit은 없습니다. |
 | CMD-007 | P0 | Implemented | Multi uses non-interactive command execution and does not broadcast raw terminal keystrokes.<br>Multi는 비대화형 명령 실행을 사용하며 raw terminal keystroke를 broadcast하지 않습니다. |
 
-## Import, export, and policy / 가져오기, 내보내기, 정책
+## Import, export, and sharing / 가져오기, 내보내기, 공유
 
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
 | IMP-001 | P1 | Implemented | OpenSSH config import handles concrete hosts, identity files, jump/proxy routes, and forwarding rules; wildcard entries are skipped with warnings and secrets are never imported.<br>OpenSSH config 가져오기는 구체 Host·identity file·jump/proxy route·forwarding 규칙을 처리하며 wildcard는 경고와 함께 건너뛰고 비밀정보를 가져오지 않습니다. |
 | IMP-002 | P1 | Partial | Windows saved-session registry profiles are imported without credentials, including proxy and forwarding metadata. Real-machine format/version acceptance remains.<br>Windows 저장 세션 registry profile을 자격증명 없이 proxy·forwarding metadata와 함께 가져오지만 실제 PC의 형식·버전 인수 검증은 남아 있습니다. |
 | IMP-003 | P1 | Partial | Legacy INI host profiles are parsed without credentials and deduplicated before saving. Broader product/version fixtures remain.<br>레거시 INI Host profile을 자격증명 없이 분석하고 저장 전 중복 제거하지만 더 넓은 제품·버전 fixture 검증은 남아 있습니다. |
-| IMP-004 | P1 | Planned | Encrypted Sutty bundle export/import is unavailable.<br>암호화 Sutty bundle 내보내기·가져오기를 지원하지 않습니다. |
-| POL-001 | P1 | Planned | HKLM policy precedence and locked-settings UI are unavailable.<br>HKLM 정책 우선순위와 잠긴 설정 UI가 없습니다. |
-| POL-002 | P1 | Planned | Managed credential-free Host catalog is unavailable.<br>자격 증명 없는 관리형 Host catalog를 지원하지 않습니다. |
+| IMP-004 | P1 | Planned | Credential-free Sutty pack export, import preview, conflict handling, schema versioning, and per-user credential binding are unavailable. Export must reject secret material rather than trying to serialize it.<br>자격증명 없는 Sutty pack 내보내기, 가져오기 미리보기, 충돌 처리, schema version, 사용자별 자격증명 연결을 지원하지 않습니다. 내보내기는 secret을 직렬화하려 하지 말고 강제로 거부해야 합니다. |
 
 ## Host-key security / 호스트키 보안
 
@@ -153,7 +151,7 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 | --- | --- | --- | --- |
 | SEC-HK-001 | P0 | Implemented | Unknown keys default to rejection and expose full endpoint, algorithm, SHA-256 fingerprint, Trust and save, Connect once, and Cancel.<br>알 수 없는 키는 기본 거부하며 전체 endpoint·algorithm·SHA-256 지문과 신뢰하고 저장·이번만 연결·취소를 제공합니다. |
 | SEC-HK-002 | P0 | Implemented | Changed keys are blocked; the error retains trusted and presented algorithms/fingerprints and cannot be overridden by Trust once.<br>변경 키는 차단하며 오류에 기존·제시 algorithm/fingerprint가 있고 이번만 연결로 우회할 수 없습니다. |
-| SEC-HK-003 | P1 | Planned | Enterprise policy cannot disable Trust once.<br>기업 정책으로 이번만 연결을 비활성화할 수 없습니다. |
+| SEC-HK-003 | P1 | Planned | A saved-host strict-trust option cannot yet disable Connect once for that host.<br>저장 Host별 엄격 신뢰 옵션으로 해당 Host의 이번만 연결을 비활성화할 수 없습니다. |
 | SEC-HK-004 | P1 | Planned | Known-host management, rotation workflow, and audit events are unavailable.<br>Known-host 관리·rotation 흐름·audit event가 없습니다. |
 
 ## Non-functional requirements / 비기능 요구사항
@@ -168,7 +166,7 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 | NFR-006 | Availability / 가용성 | Partial | SSH/Terminal/SFTP states and failures are isolated; systematic network fault injection is missing.<br>SSH·Terminal·SFTP 상태와 실패는 분리되지만 체계적 network fault injection이 없습니다. |
 | NFR-007 | Accessibility / 접근성 | Partial | Basic WinUI accessibility exists; the required checklist and automation do not.<br>기본 WinUI 접근성은 있지만 필수 checklist와 자동화가 없습니다. |
 | NFR-008 | Localization / 지역화 | Partial | Korean/English localization infrastructure exists; hardcoded user-visible strings and full parity remain to be audited.<br>한국어/영어 지역화 구조는 있지만 사용자 표시 hardcoded 문자열과 전체 동등성을 감사해야 합니다. |
-| NFR-009 | Supportability / 지원성 | Planned | Structured diagnostic codes and correlation IDs are unavailable.<br>구조화된 진단 코드와 correlation ID가 없습니다. |
+| NFR-009 | Supportability / 지원성 | Partial | Bounded in-memory connection diagnostics, structured severities, and per-session correlation metadata exist. A user-created redacted support bundle with a reviewed inclusion manifest is unavailable.<br>제한된 메모리 연결 진단, 구조화 severity, 세션별 correlation metadata가 있습니다. 검토된 포함 manifest를 사용하는 사용자 생성형 redacted support bundle은 아직 없습니다. |
 | NFR-010 | Compatibility / 호환성 | Partial | The project targets Windows 11 24H2+ x64/ARM64; locked restore, build, publish, and package paths cover both architectures, while real-VM support evidence is not complete.<br>프로젝트는 Windows 11 24H2+ x64/ARM64를 대상으로 하고 두 아키텍처의 잠금 복원·빌드·게시·패키징 경로가 있지만 실제 VM 지원 증거는 완성되지 않았습니다. |
 
 ## Scope decisions / 범위 결정

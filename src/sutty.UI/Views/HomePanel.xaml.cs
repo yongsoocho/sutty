@@ -106,7 +106,7 @@ public sealed partial class HomePanel : UserControl
             ProxyCommandBox.Text = draft.Route.Command ?? "";
         }
         RefreshProxyCommandPreview();
-        EnterpriseRouteCheck.IsChecked = draft.RoutePolicy?.EnterpriseMode == true;
+        StrictRouteCheck.IsChecked = draft.RoutePolicy?.DisableDirect == true;
 
         var forwarding = draft.PortForwardings?.FirstOrDefault();
         SelectForwarding(forwarding?.Type);
@@ -554,12 +554,12 @@ public sealed partial class HomePanel : UserControl
             ?? "Unclassified";
 
         var routeType = SelectedRouteType();
-        var enterpriseMode = EnterpriseRouteCheck.IsChecked == true;
-        if (enterpriseMode && routeType == ConnectionRouteType.Direct)
+        var strictRouteOnly = StrictRouteCheck.IsChecked == true;
+        if (strictRouteOnly && routeType == ConnectionRouteType.Direct)
         {
             SettingsSaveStatusText.Text = Loc.T(
-                "기업 모드에서는 프록시 경로를 선택해야 합니다.",
-                "Enterprise mode requires a proxy route.");
+                "엄격 경로에서는 프록시 또는 점프 경로를 선택해야 합니다.",
+                "Strict route requires a proxy or jump route.");
             SettingsSaveStatusText.Visibility = Visibility.Visible;
             RouteCombo.Focus(FocusState.Programmatic);
             return;
@@ -727,8 +727,7 @@ public sealed partial class HomePanel : UserControl
             },
             RoutePolicy = new ConnectionRoutePolicy
             {
-                EnterpriseMode = enterpriseMode,
-                DisableDirect = enterpriseMode,
+                DisableDirect = strictRouteOnly,
             },
         });
     }

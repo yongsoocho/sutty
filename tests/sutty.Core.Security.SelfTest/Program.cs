@@ -77,15 +77,15 @@ var proxyRoute = RouteResolver.Resolve(
     },
     new ConnectionRoutePolicy
     {
-        EnterpriseMode = true,
+        DisableDirect = true,
         AllowedRouteTypes = [ConnectionRouteType.Socks5],
     });
-Assert(proxyRoute.Type == ConnectionRouteType.Socks5, "enterprise proxy route resolution");
+Assert(proxyRoute.Type == ConnectionRouteType.Socks5, "strict proxy route resolution");
 AssertThrows<RoutePolicyViolationException>(
     () => RouteResolver.Resolve(
         new ConnectionRoute(),
-        new ConnectionRoutePolicy { EnterpriseMode = true }),
-    "enterprise route policy blocks direct fallback");
+        new ConnectionRoutePolicy { DisableDirect = true }),
+    "strict route policy blocks direct fallback");
 
 var proxyCommandRoute = RouteResolver.Resolve(
     new ConnectionRoute

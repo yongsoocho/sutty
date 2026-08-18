@@ -69,8 +69,8 @@ This baseline is useful for development and controlled testing. It has not passe
 - Complete local, remote, and dynamic forwarding with safe bind warnings and a post-connect manager.
 - Streaming REPL output, typed snippet parameters, durable/exportable per-host Multi results, timeouts, and audit events.
 - OpenSSH configuration and legacy SSH/SFTP profile import, encrypted Sutty export, and conflict preview.
-- Local enterprise policy, managed host catalogs, diagnostics/support bundle, and redacted audit logging.
-- Keyboard, High Contrast, text scaling, Narrator, Korean/English, Windows 11 x64/ARM64, signed MSIX, update, and enterprise deployment validation.
+- Credential-free sharing packs, import preview, diagnostics/support bundle, and redacted local activity logging.
+- Keyboard, High Contrast, text scaling, Narrator, Korean/English, Windows 11 x64/ARM64, signed MSIX, update, and rollback validation.
 
 GA requires the relevant P0 and P1 rows in [Requirements Traceability](REQUIREMENTS.md) to be complete with tests and documentation. A code path alone is not a release gate.
 
@@ -80,7 +80,7 @@ GA requires the relevant P0 and P1 rows in [Requirements Traceability](REQUIREME
 2. **Secure SSH Alpha** — Saved Hosts, Vault, Known Hosts, authentication matrix, and GA evidence for the integrated terminal renderer.
 3. **SFTP Beta** — two-way file workflows, directory transfers, safe queue/retry/resume, and integrity/failure testing.
 4. **Operations Beta** — REPL/snippets, forwarding, jump/proxy, Multi results, production safeguards, and audit.
-5. **Enterprise RC** — local policy, import, diagnostics, accessibility, signed MSIX, update, and deployment validation.
+5. **Reliability RC** — import, diagnostics, accessibility, signed MSIX, update, rollback, and clean-install validation.
 6. **GA** — P0/P1 complete, no unresolved Critical/High security issue, support policy published, and release evidence retained.
 
 ### Explicitly dropped scope
@@ -160,8 +160,8 @@ Terminal과 REPL은 서로 보완합니다. REPL은 Sutty의 차별점이며 터
 - 안전한 bind 경고와 연결 후 관리자를 포함한 Local·Remote·Dynamic 포트 포워딩 완성
 - 스트리밍 REPL 출력, typed snippet parameter, 영속·export 가능한 호스트별 Multi 결과, timeout, audit event
 - OpenSSH 설정과 레거시 SSH/SFTP 프로필 가져오기, 암호화 Sutty 내보내기, 충돌 미리보기
-- 로컬 기업 정책, 관리형 Host catalog, 진단/support bundle, redaction된 audit logging
-- 키보드, High Contrast, 텍스트 확대, Narrator, 한국어/영어, Windows 11 x64/ARM64, 서명 MSIX, 업데이트, 기업 배포 검증
+- 자격증명 없는 공유 pack, 가져오기 미리보기, 진단/support bundle, redaction된 로컬 activity logging
+- 키보드, High Contrast, 텍스트 확대, Narrator, 한국어/영어, Windows 11 x64/ARM64, 서명 MSIX, 업데이트, rollback 검증
 
 GA가 되려면 [요구사항 추적표](REQUIREMENTS.md)의 해당 P0·P1 항목에 구현·테스트·문서가 모두 연결되어야 합니다. 코드 경로 하나만으로 릴리스 게이트를 통과한 것으로 보지 않습니다.
 
@@ -171,7 +171,7 @@ GA가 되려면 [요구사항 추적표](REQUIREMENTS.md)의 해당 P0·P1 항�
 2. **Secure SSH Alpha** — Saved Hosts, Vault, Known Hosts, 인증 매트릭스, 통합된 터미널 렌더러의 GA 증거
 3. **SFTP Beta** — 양방향 파일 작업, 디렉터리 전송, 안전한 queue/retry/resume, 무결성·실패 테스트
 4. **Operations Beta** — REPL/snippet, forwarding, jump/proxy, Multi 결과, 운영 환경 보호, audit
-5. **Enterprise RC** — 로컬 정책, 가져오기, 진단, 접근성, 서명 MSIX, 업데이트, 배포 검증
+5. **Reliability RC** — 가져오기, 진단, 접근성, 서명 MSIX, 업데이트, rollback, clean install 검증
 6. **GA** — P0/P1 완료, 미해결 Critical/High 보안 문제 0건, 지원 정책 공개, 릴리스 증거 보존
 
 ### 명시적으로 제외한 범위

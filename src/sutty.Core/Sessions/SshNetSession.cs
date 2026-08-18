@@ -804,7 +804,7 @@ public sealed partial class SshNetSession : ISshSession
                     user,
                     methods.ToArray()),
             _ => throw new NotSupportedException(
-                $"The {_route.Type} route requires a configured enterprise route adapter."),
+                $"The {_route.Type} route is not available in this build."),
         };
 
         connectionInfo.Timeout = TimeSpan.FromSeconds(15);

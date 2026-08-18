@@ -665,8 +665,7 @@ namespace sutty.UI.Views
                 Route = RestoreRoute(routeProfile, credential),
                 RoutePolicy = new ConnectionRoutePolicy
                 {
-                    EnterpriseMode = routeProfile.EnterpriseMode,
-                    DisableDirect = routeProfile.EnterpriseMode,
+                    DisableDirect = routeProfile.DisableDirect,
                 },
                 PortForwardings = tunnelProfiles.Select(RestoreTunnel).ToList(),
             };
@@ -2272,7 +2271,7 @@ namespace sutty.UI.Views
             PrivateKeyPath = info.Route.PrivateKeyPath,
             Command = info.Route.Command,
             ProxyDns = info.Route.ProxyDns,
-            EnterpriseMode = info.RoutePolicy.EnterpriseMode,
+            DisableDirect = info.RoutePolicy.DisableDirect,
         };
 
         private static sutty.Command.HostTunnelProfile PersistTunnel(

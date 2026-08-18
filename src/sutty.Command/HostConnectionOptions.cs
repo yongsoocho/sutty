@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace sutty.Command;
 
 /// <summary>Credential-free connection route persisted with a saved host.</summary>
@@ -12,7 +14,13 @@ public sealed record HostRouteProfile
     public string PrivateKeyPath { get; set; } = "";
     public string Command { get; set; } = "";
     public bool ProxyDns { get; set; } = true;
-    public bool EnterpriseMode { get; set; }
+    public bool DisableDirect { get; set; }
+
+    // Read-only compatibility bridge for profiles written before the strict-route rename.
+    // Normalized profiles never write this legacy field back to SQLite.
+    [JsonPropertyName("enterpriseMode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyDisableDirect { get; set; }
 }
 
 /// <summary>One session-scoped forwarding rule persisted with a saved host.</summary>

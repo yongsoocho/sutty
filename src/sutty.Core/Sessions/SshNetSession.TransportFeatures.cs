@@ -79,7 +79,7 @@ public sealed partial class SshNetSession
 
             default:
                 throw new NotSupportedException(
-                    $"The {_route.Type} route requires a configured enterprise route adapter.");
+                    $"The {_route.Type} route is not available in this build.");
         }
     }
 
