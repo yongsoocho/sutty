@@ -19,6 +19,13 @@ public interface ISshSession : IInteractiveTerminal
     SessionState State { get; }
     ConnectionCorrelationContext CorrelationContext { get; }
 
+    /// <summary>
+    /// Credential-free snapshot of the primary SSH transport's initial successful
+    /// handshake for the current connection. Null before connection, after failure,
+    /// and after disconnect.
+    /// </summary>
+    SshNegotiatedConnectionInfo? NegotiatedInfo { get; }
+
     /// <summary>State가 Failed일 때 마지막 오류 메시지.</summary>
     string? LastError { get; }
 

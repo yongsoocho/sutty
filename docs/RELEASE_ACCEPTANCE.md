@@ -48,6 +48,24 @@ dotnet run --project .\tests\sutty.LiveServer.SelfTest\sutty.LiveServer.SelfTest
 
 The same harness is available through the manually dispatched Windows CI workflow. Repository secrets carry credentials; repository variables control session count, soak minutes, transfer GB, file count, and fault payload size. Do not enable `scale` or `soak` on an unapproved server.
 
+### Pending SSH negotiation-information acceptance / SSH 협상 정보 인수 대기 항목
+
+This slice is not complete live evidence until it is run against an approved SSH server and the result is recorded below. Use an account/server whose SSH exec requests can be inspected when possible:
+
+1. Clear or mark the server-side SSH command audit, then connect in Sutty without opening REPL, Files, or an interactive terminal.
+2. Open **SSH connection information** and verify server/client identification, KEX, host-key algorithm and SHA-256 fingerprint, both cipher/MAC directions, and compression. Compare the fingerprint with the independently provisioned expected value.
+3. Disconnect and confirm the connection-information action is unavailable; reconnect and confirm every displayed value belongs to the new handshake rather than the prior snapshot. Separately interrupt the primary transport and confirm the action is disabled, owned terminal/SFTP/forwarding resources close, and the session reaches `Failed` with the original error retained.
+4. Confirm the connection alone issued no exec request, including `uname -a`, `pwd`, or home-directory discovery commands.
+5. Repeat for Direct and at least one approved indirect route. Record the server build, route, authentication method, Windows image, expected fingerprint, and redacted result; do not commit credentials, production hostnames, or raw host keys.
+
+승인된 SSH 서버에서 실행하고 아래 결과를 기록하기 전에는 이 Slice를 실환경 완료 증거로 보지 않습니다. 가능하면 SSH exec 요청을 확인할 수 있는 계정·서버를 사용합니다.
+
+1. 서버 측 SSH 명령 감사 기록을 비우거나 시작 지점을 표시한 뒤 REPL·Files·대화형 터미널을 열지 않고 Sutty로 연결합니다.
+2. **SSH 연결 정보**를 열어 서버·클라이언트 식별, KEX, 호스트 키 알고리즘과 SHA-256 지문, 양방향 cipher·MAC, 압축을 확인하고 지문을 독립적으로 준비한 예상값과 비교합니다.
+3. 연결을 끊으면 연결 정보 동작이 비활성화되는지 확인하고, 다시 연결해 모든 표시값이 이전 snapshot이 아니라 새 handshake에서 왔는지 확인합니다. 별도로 주 transport를 중단해 연결 정보가 비활성화되고 소유한 terminal·SFTP·forwarding resource가 닫히며 원래 오류를 보존한 `Failed` 상태에 도달하는지 확인합니다.
+4. 연결만으로 `uname -a`, `pwd`, 홈 디렉터리 탐색을 포함한 exec 요청이 발생하지 않았는지 확인합니다.
+5. Direct와 승인된 간접 route 하나 이상에서 반복합니다. 서버 build, route, 인증 방식, Windows image, 예상 지문, redaction한 결과를 기록하며 자격증명·운영 Host 이름·raw host key는 커밋하지 않습니다.
+
 ## Terminal and desktop manual matrix / 터미널·데스크톱 수동 매트릭스
 
 - vim: insert/normal/visual mode, colors, cursor, mouse, paste, and resize.

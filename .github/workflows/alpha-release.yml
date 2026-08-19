@@ -25,9 +25,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Test product-scope guard
+        shell: pwsh
+        run: .\tests\product-scope\Assert-ProductScope.Tests.ps1
+
       - name: Enforce product scope
         shell: pwsh
         run: .\.github\scripts\Assert-ProductScope.ps1
+
+      - name: Test release-metadata guard
+        shell: pwsh
+        run: .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
+
+      - name: Validate source release metadata
+        shell: pwsh
+        run: .\.github\scripts\Assert-ReleaseMetadata.ps1 -Tag $env:GITHUB_REF_NAME
+
+      - name: Reject an existing GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $repository = $env:GITHUB_REPOSITORY
+          $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          try {
+            $PSNativeCommandUseErrorActionPreference = $false
+            $lookupOutput = @(& gh api "repos/$repository/releases/tags/$tag" --method GET --silent 2>&1)
+            $lookupExitCode = $LASTEXITCODE
+          }
+          finally {
+            $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+            $global:LASTEXITCODE = 0
+          }
+
+          if ($lookupExitCode -eq 0) {
+            throw "Release already exists for $tag. Release assets are immutable; create a new tag."
+          }
+
+          $lookupMessage = $lookupOutput -join [Environment]::NewLine
+          if ($lookupMessage -notmatch '(?i)\(HTTP 404\)') {
+            throw "Could not verify release absence for $tag. GitHub API lookup failed: $lookupMessage"
+          }
 
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v4
@@ -35,27 +74,6 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
-
-      - name: Validate tag, source version, and release notes
-        shell: pwsh
-        run: |
-          $tag = $env:GITHUB_REF_NAME
-          if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$') {
-            throw "Unsupported Alpha tag: $tag"
-          }
-
-          [xml]$versionDocument = Get-Content -LiteralPath .\Directory.Build.props -Raw
-          $versionPrefix = [string]$versionDocument.Project.PropertyGroup.VersionPrefix
-          $versionSuffix = [string]$versionDocument.Project.PropertyGroup.VersionSuffix
-          $expectedTag = "v$versionPrefix-$versionSuffix"
-          if ($tag -cne $expectedTag) {
-            throw "Tag $tag does not match source version $expectedTag."
-          }
-
-          $notesPath = ".\docs\releases\$tag.md"
-          if (-not (Test-Path -LiteralPath $notesPath)) {
-            throw "Release notes are missing: $notesPath"
-          }
 
       - name: Restore locked x64 dependencies
         run: >-
@@ -189,6 +207,16 @@ jobs:
             $hashLines,
             [System.Text.UTF8Encoding]::new($false))
 
+      - name: Validate packaged release metadata
+        shell: pwsh
+        run: >-
+          .\.github\scripts\Assert-ReleaseMetadata.ps1
+          -Tag $env:GITHUB_REF_NAME
+          -Commit $env:GITHUB_SHA
+          -X64PayloadPath .\artifacts\alpha-win-x64
+          -Arm64PayloadPath .\artifacts\alpha-win-arm64
+          -PackageDirectory .\artifacts\packages
+
       - name: Upload immutable Alpha workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -197,7 +225,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Create or refresh GitHub prerelease
+      - name: Create immutable GitHub prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -213,14 +241,5 @@ jobs:
             '.\artifacts\packages\SHA256SUMS.txt'
           )
 
-          & gh release view $tag --repo $repository *> $null
-          if ($LASTEXITCODE -eq 0) {
-            & gh release edit $tag --repo $repository --title $title --notes-file $notesPath --prerelease
-            if ($LASTEXITCODE -ne 0) { throw 'Could not refresh Alpha release metadata.' }
-            & gh release upload $tag @assets --repo $repository --clobber
-            if ($LASTEXITCODE -ne 0) { throw 'Could not refresh Alpha release assets.' }
-          }
-          else {
-            & gh release create $tag @assets --repo $repository --verify-tag --prerelease --title $title --notes-file $notesPath
-            if ($LASTEXITCODE -ne 0) { throw 'Could not create the Alpha prerelease.' }
-          }
+          & gh release create $tag @assets --repo $repository --verify-tag --prerelease --title $title --notes-file $notesPath
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the immutable Alpha prerelease.' }

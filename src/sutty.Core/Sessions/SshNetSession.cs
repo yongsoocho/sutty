@@ -30,7 +30,12 @@ public sealed partial class SshNetSession : ISshSession
     private readonly SemaphoreSlim _terminalWriteGate = new(1, 1);
     private readonly SemaphoreSlim _terminalResizeGate = new(1, 1);
     private readonly object _terminalReadGate = new();
+    private readonly object _primaryTransportGate = new();
+    private readonly HashSet<SshClient> _pendingPrimaryTransportFailures =
+        new(ReferenceEqualityComparer.Instance);
     private CancellationTokenSource? _terminalLifetimeCts;
+    private SshClient? _expectedPrimaryTransportTeardown;
+    private SshNegotiatedConnectionInfo? _negotiatedInfo;
     private HostKeyTrustContext? _activeTrustContext;
     private string _password;
     private string _passphrase;
@@ -41,6 +46,7 @@ public sealed partial class SshNetSession : ISshSession
     public SshConnectionInfo Info { get; }
     public SessionState State { get; private set; } = SessionState.Idle;
     public ConnectionCorrelationContext CorrelationContext { get; }
+    public SshNegotiatedConnectionInfo? NegotiatedInfo => Volatile.Read(ref _negotiatedInfo);
     public string? LastError { get; private set; }
     public ISftpService Sftp => _sftpService;
     public SftpConnectionState SftpState { get; private set; } = SftpConnectionState.NotConnected;
@@ -84,6 +90,7 @@ public sealed partial class SshNetSession : ISshSession
             if (State is SessionState.Connecting or SessionState.Connected)
                 return;
 
+            ClearNegotiatedInfo();
             LastError = null;
             LastSftpError = null;
             var connectionStarted = Stopwatch.GetTimestamp();
@@ -107,8 +114,9 @@ public sealed partial class SshNetSession : ISshSession
             try
             {
                 await PrepareConnectionRouteAsync(trustContext, ct);
-                _ssh = await ConnectSshClientAsync(trustContext, ct);
-                StartConfiguredForwardings(_ssh);
+                var connected = await ConnectSshClientAsync(trustContext, ct);
+                PublishPrimaryTransport(connected.Client, connected.NegotiatedInfo);
+                StartConfiguredForwardings(connected.Client);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -421,6 +429,7 @@ public sealed partial class SshNetSession : ISshSession
             if (State is SessionState.Idle or SessionState.Disconnected or SessionState.Disconnecting)
                 return;
 
+            MarkPrimaryTransportTeardownExpected();
             SetState(SessionState.Disconnecting);
             await CloseTerminalAsync();
             await CleanUpAsync();
@@ -440,22 +449,83 @@ public sealed partial class SshNetSession : ISshSession
 
     private async Task CleanUpAsync()
     {
-        CloseTerminalCore();
-        await CleanUpSftpAsync();
-        StopConfiguredForwardings(_ssh);
-        await Task.Run(() =>
+        // Retire and detach the primary client before any awaited cleanup step. A queued
+        // SSH.NET error callback can then identify this as an expected/stale generation and
+        // cannot turn an explicit disconnect or failed connection attempt into a second fault.
+        var ssh = RetirePrimaryTransportForCleanup();
+        Exception? cleanupError = null;
+        try
         {
-            var ssh = _ssh;
-            _ssh = null;
-            try { ssh?.Disconnect(); } catch { /* 이미 끊겼으면 무시 */ }
-            ssh?.Dispose();
-        });
-        await CleanUpRouteAsync();
+            CloseTerminalCore();
+        }
+        catch (Exception error)
+        {
+            cleanupError = error;
+        }
+
+        try
+        {
+            await CleanUpSftpAsync();
+        }
+        catch (Exception error)
+        {
+            cleanupError ??= error;
+        }
+
+        try
+        {
+            StopConfiguredForwardings(ssh);
+        }
+        catch (Exception error)
+        {
+            cleanupError ??= error;
+        }
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                try { ssh?.Disconnect(); } catch { /* 이미 끊겼으면 무시 */ }
+                ssh?.Dispose();
+            });
+        }
+        catch (Exception error)
+        {
+            cleanupError ??= error;
+        }
+        finally
+        {
+            ClearExpectedPrimaryTransportTeardown(ssh);
+        }
+
+        try
+        {
+            await CleanUpRouteAsync();
+        }
+        catch (Exception error)
+        {
+            cleanupError ??= error;
+        }
+
         _activeTrustContext = null;
         _password = "";
         _passphrase = "";
         _routePassword = "";
         _routePassphrase = "";
+
+        if (cleanupError is not null)
+        {
+            LastError ??= cleanupError.Message;
+            try
+            {
+                LogFailure("SSH cleanup", cleanupError, ConnectionLogSeverity.Error);
+            }
+            catch
+            {
+                // Cleanup is best-effort and lifecycle callers must still publish their
+                // stable Failed/Disconnected state even if diagnostics are unavailable.
+            }
+        }
     }
 
     private Task CleanUpSftpAsync() => _sftpService.ShutdownAsync(() =>
@@ -605,7 +675,8 @@ public sealed partial class SshNetSession : ISshSession
         lifetime?.Dispose();
     }
 
-    private async Task<SshClient> ConnectSshClientAsync(
+    private async Task<(SshClient Client, SshNegotiatedConnectionInfo NegotiatedInfo)>
+        ConnectSshClientAsync(
         HostKeyTrustContext trustContext,
         CancellationToken ct)
     {
@@ -623,10 +694,16 @@ public sealed partial class SshNetSession : ISshSession
             {
                 using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
                 await Task.Run(() => client.ConnectAsync(ct), ct).ConfigureAwait(false);
-                return client;
+                var negotiatedInfo = CaptureNegotiatedInfo(client, verifier);
+                client.ErrorOccurred += PrimarySsh_ErrorOccurred;
+                if (!client.IsConnected)
+                    throw new InvalidOperationException(
+                        "The primary SSH transport disconnected before session publication.");
+                return (client, negotiatedInfo);
             }
             catch (Exception ex)
             {
+                client.ErrorOccurred -= PrimarySsh_ErrorOccurred;
                 client.Dispose();
                 if (await HandleHostKeyConnectFailureAsync(
                     verifier, _hostEndpoint, ex, mayPrompt, ct))
@@ -637,6 +714,184 @@ public sealed partial class SshNetSession : ISshSession
                 throw;
             }
         }
+    }
+
+    private void PublishPrimaryTransport(
+        SshClient client,
+        SshNegotiatedConnectionInfo negotiatedInfo)
+    {
+        lock (_primaryTransportGate)
+        {
+            _expectedPrimaryTransportTeardown = null;
+            _ssh = client;
+            Volatile.Write(ref _negotiatedInfo, negotiatedInfo);
+        }
+    }
+
+    private void ClearNegotiatedInfo() => Volatile.Write(ref _negotiatedInfo, null);
+
+    private void MarkPrimaryTransportTeardownExpected()
+    {
+        lock (_primaryTransportGate)
+        {
+            _expectedPrimaryTransportTeardown = _ssh;
+            ClearNegotiatedInfo();
+        }
+    }
+
+    private SshClient? RetirePrimaryTransportForCleanup()
+    {
+        lock (_primaryTransportGate)
+        {
+            var client = _ssh;
+            if (client is not null)
+            {
+                _expectedPrimaryTransportTeardown = client;
+                client.ErrorOccurred -= PrimarySsh_ErrorOccurred;
+            }
+
+            _ssh = null;
+            ClearNegotiatedInfo();
+            return client;
+        }
+    }
+
+    private void ClearExpectedPrimaryTransportTeardown(SshClient? client)
+    {
+        if (client is null)
+            return;
+
+        lock (_primaryTransportGate)
+        {
+            if (ReferenceEquals(_expectedPrimaryTransportTeardown, client))
+                _expectedPrimaryTransportTeardown = null;
+        }
+    }
+
+    private void PrimarySsh_ErrorOccurred(object? sender, ExceptionEventArgs args)
+    {
+        if (sender is not SshClient client)
+            return;
+
+        lock (_primaryTransportGate)
+        {
+            if (ReferenceEquals(_expectedPrimaryTransportTeardown, client) ||
+                !_pendingPrimaryTransportFailures.Add(client))
+            {
+                return;
+            }
+
+            // The public snapshot must stop describing a live connection as soon as the
+            // current primary transport reports an unexpected failure. State transition and
+            // teardown follow under the async lifecycle gate.
+            if (ReferenceEquals(_ssh, client))
+                ClearNegotiatedInfo();
+        }
+
+        _ = HandleUnexpectedPrimaryTransportFailureAsync(client, args.Exception);
+    }
+
+    private async Task HandleUnexpectedPrimaryTransportFailureAsync(
+        SshClient client,
+        Exception error)
+    {
+        var acquiredLifecycleGate = false;
+        try
+        {
+            await _lifecycleGate.WaitAsync().ConfigureAwait(false);
+            acquiredLifecycleGate = true;
+
+            lock (_primaryTransportGate)
+            {
+                if (!ReferenceEquals(_ssh, client) ||
+                    ReferenceEquals(_expectedPrimaryTransportTeardown, client))
+                {
+                    return;
+                }
+            }
+
+            LastError = error.Message;
+            try
+            {
+                LogFailure("SSH transport", error, ConnectionLogSeverity.Error);
+            }
+            catch
+            {
+                // Diagnostics must never prevent transport cleanup or fault the callback task.
+            }
+
+            // Disable command/terminal/UI actions before potentially slow SFTP, forwarding,
+            // route, and socket teardown. SetState assigns before notifying observers.
+            try { SetState(SessionState.Disconnecting); } catch { }
+
+            try
+            {
+                await CleanUpAsync().ConfigureAwait(false);
+            }
+            catch (Exception cleanupError)
+            {
+                try
+                {
+                    LogFailure("SSH cleanup", cleanupError, ConnectionLogSeverity.Error);
+                }
+                catch
+                {
+                    // Preserve the original transport failure and continue publishing states.
+                }
+            }
+
+            // Setters assign the stable state before notifying subscribers. Isolate each
+            // notification so a faulty observer cannot suppress the remaining transitions.
+            try { SetTerminalState(TerminalState.Closed); } catch { }
+            try { SetSftpState(SftpConnectionState.NotConnected); } catch { }
+            try { SetState(SessionState.Failed); } catch { }
+        }
+        catch
+        {
+            // SSH.NET raises ErrorOccurred synchronously. This fire-and-forget continuation
+            // must contain every exception, including teardown and subscriber failures.
+        }
+        finally
+        {
+            if (acquiredLifecycleGate)
+                _lifecycleGate.Release();
+
+            lock (_primaryTransportGate)
+                _pendingPrimaryTransportFailures.Remove(client);
+        }
+    }
+
+    private static SshNegotiatedConnectionInfo CaptureNegotiatedInfo(
+        SshClient client,
+        SshNetHostKeyVerifier verifier)
+    {
+        var verification = verifier.LastVerification;
+        if (verification is not { State: HostKeyTrustState.Trusted })
+        {
+            // A successful SSH.NET connection must have passed Sutty's attached verifier.
+            // Treat a missing observation as a library/integration regression, never as an
+            // opportunity to expose unverified host-key metadata.
+            throw new System.Security.SecurityException(
+                "The SSH connection completed without a trusted host-key observation.");
+        }
+
+        var negotiated = client.ConnectionInfo;
+        var hostKeyAlgorithm = string.IsNullOrWhiteSpace(negotiated.CurrentHostKeyAlgorithm)
+            ? verification.PresentedKey.Algorithm
+            : negotiated.CurrentHostKeyAlgorithm;
+
+        return new SshNegotiatedConnectionInfo(
+            negotiated.ServerVersion,
+            negotiated.ClientVersion,
+            negotiated.CurrentKeyExchangeAlgorithm,
+            hostKeyAlgorithm,
+            verification.PresentedKey.Sha256Fingerprint,
+            negotiated.CurrentClientEncryption,
+            negotiated.CurrentServerEncryption,
+            negotiated.CurrentClientHmacAlgorithm,
+            negotiated.CurrentServerHmacAlgorithm,
+            negotiated.CurrentClientCompressionAlgorithm,
+            negotiated.CurrentServerCompressionAlgorithm);
     }
 
     private async Task<SftpClient> ConnectSftpClientAsync(

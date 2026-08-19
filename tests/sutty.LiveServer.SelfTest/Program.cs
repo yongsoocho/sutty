@@ -33,6 +33,7 @@ static async Task RunSmokeAsync(LiveConfiguration configuration)
     try
     {
         await ConnectRequiredAsync(session);
+        VerifyNegotiatedConnectionInfo(session, configuration);
         Assert(session.SftpState == SftpConnectionState.Ready,
             $"SFTP is not ready: {session.LastSftpError}");
 
@@ -244,6 +245,36 @@ static async Task ConnectRequiredAsync(SshNetSession session)
     await session.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(45));
     Assert(session.State == SessionState.Connected,
         $"SSH connection failed: {session.LastError}");
+}
+
+static void VerifyNegotiatedConnectionInfo(
+    SshNetSession session,
+    LiveConfiguration configuration)
+{
+    var negotiated = session.NegotiatedInfo ??
+        throw new InvalidOperationException(
+            "The connected SSH session did not publish negotiated connection information.");
+
+    Assert(!string.IsNullOrWhiteSpace(negotiated.ServerVersion),
+        "The SSH server identification was not reported.");
+    Assert(!string.IsNullOrWhiteSpace(negotiated.ClientVersion),
+        "The SSH client identification was not reported.");
+    Assert(!string.IsNullOrWhiteSpace(negotiated.KeyExchangeAlgorithm),
+        "The negotiated SSH key-exchange algorithm was not reported.");
+    Assert(!string.IsNullOrWhiteSpace(negotiated.HostKeyAlgorithm),
+        "The negotiated SSH host-key algorithm was not reported.");
+    var hostKeyFingerprint = negotiated.HostKeySha256Fingerprint ?? "";
+    Assert(!string.IsNullOrWhiteSpace(hostKeyFingerprint),
+        "The verified SSH host-key fingerprint was not reported.");
+    Assert(!string.IsNullOrWhiteSpace(negotiated.ClientToServerCipher) &&
+           !string.IsNullOrWhiteSpace(negotiated.ServerToClientCipher),
+        "Both negotiated SSH cipher directions must be reported.");
+
+    if (!string.IsNullOrWhiteSpace(configuration.ExpectedHostKeySha256))
+    {
+        Assert(configuration.CanTrust(hostKeyFingerprint),
+            "The negotiated-information fingerprint does not match the independently configured expected host key.");
+    }
 }
 
 static async Task VerifyInteractiveTerminalAsync(SshNetSession session)

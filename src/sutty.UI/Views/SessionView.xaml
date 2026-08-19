@@ -79,17 +79,71 @@
                         Text="sftp ready" />
                 </Border>
 
-                <Border
+                <Button
+                    x:Name="ConnectionInfoButton"
                     Grid.Column="3"
+                    MinWidth="0"
+                    MinHeight="0"
                     Padding="8,2"
                     VerticalAlignment="Center"
+                    AutomationProperties.Name="{x:Bind h:Loc.T('SSH 연결 정보', 'SSH connection information')}"
                     Background="{ThemeResource PillBg}"
-                    CornerRadius="10">
-                    <TextBlock
-                        x:Name="RoutePillText"
-                        FontSize="10.5"
-                        Foreground="{ThemeResource AccentViolet}" />
-                </Border>
+                    BorderThickness="0"
+                    CornerRadius="10"
+                    IsEnabled="False">
+                    <Button.Content>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock
+                                x:Name="RoutePillText"
+                                VerticalAlignment="Center"
+                                FontSize="10.5"
+                                Foreground="{ThemeResource AccentViolet}" />
+                            <FontIcon
+                                VerticalAlignment="Center"
+                                FontSize="10"
+                                Foreground="{ThemeResource AccentViolet}"
+                                Glyph="&#xE946;" />
+                        </StackPanel>
+                    </Button.Content>
+                    <Button.Flyout>
+                        <Flyout Placement="Bottom">
+                            <StackPanel Width="420" Spacing="8">
+                                <TextBlock
+                                    FontSize="15"
+                                    FontWeight="SemiBold"
+                                    Text="{x:Bind h:Loc.T('SSH 연결 정보', 'SSH connection information')}" />
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('주 SSH 전송의 핸드셰이크 결과입니다. SFTP는 별도 연결을 협상합니다.', 'Handshake results for the primary SSH transport. SFTP negotiates a separate connection.')}"
+                                    TextWrapping="Wrap" />
+                                <TextBox
+                                    x:Name="ConnectionInfoTextBox"
+                                    Height="230"
+                                    AcceptsReturn="True"
+                                    AutomationProperties.Name="{x:Bind h:Loc.T('협상된 SSH 연결 정보', 'Negotiated SSH connection information')}"
+                                    FontFamily="Cascadia Mono, Consolas"
+                                    FontSize="10.5"
+                                    IsReadOnly="True"
+                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                    TextWrapping="Wrap" />
+                                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                                    <TextBlock
+                                        x:Name="CopyConnectionInfoStatus"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.LiveSetting="Polite"
+                                        FontSize="10.5"
+                                        Visibility="Collapsed" />
+                                    <Button
+                                        x:Name="CopyConnectionInfoButton"
+                                        AutomationProperties.Name="{x:Bind h:Loc.T('SSH 연결 정보 복사', 'Copy SSH connection information')}"
+                                        Click="CopyConnectionInfo_Click"
+                                        Content="{x:Bind h:Loc.T('복사', 'Copy')}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
 
                 <!--  REPL | TERMINAL 세그먼트 토글 (설정에 저장)  -->
                 <Border

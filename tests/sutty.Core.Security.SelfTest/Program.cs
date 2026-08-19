@@ -3,12 +3,15 @@ using sutty.Core.Diagnostics;
 using sutty.Core.Models;
 using sutty.Core.Routing;
 using sutty.Core.Sessions;
+using sutty.Core.Sftp;
+using sutty.Core.Terminal;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using SshNet.Agent;
 using System.Text.Json.Nodes;
 
 AssertSshNet2026PublicApi();
+AssertNegotiatedConnectionInfoContract();
 AssertSshAgentAdapterLoads();
 
 ConnectionLogStore.Clear();
@@ -46,10 +49,14 @@ var failedSession = new SshNetSession(new SshConnectionInfo
     AuthMethod = SshAuthMethod.Password,
     Password = failedConnectionPassword,
 });
+Assert(failedSession.NegotiatedInfo is null,
+    "new SSH session has no stale negotiated-information snapshot");
 using (var connectionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
     await failedSession.ConnectAsync(connectionTimeout.Token);
 Assert(failedSession.State == SessionState.Failed,
     "refused SSH connection enters failed state");
+Assert(failedSession.NegotiatedInfo is null,
+    "failed SSH connection clears negotiated-information snapshot");
 var failedConnectionLogs = ConnectionLogStore.Snapshot()
     .Where(entry => entry.SessionId == failedSession.Id)
     .ToArray();
@@ -62,6 +69,8 @@ Assert(!string.Join('\n', failedConnectionLogs.Select(entry =>
     .Contains(failedConnectionPassword, StringComparison.Ordinal),
     "SSH.NET verbose diagnostics exclude the password");
 await failedSession.DisconnectAsync();
+ConnectionLogStore.Clear();
+await AssertUnexpectedPrimaryTransportFailureAsync();
 ConnectionLogStore.Clear();
 
 var proxyPassword = CreateTestSecret("proxy-route");
@@ -391,6 +400,30 @@ static void AssertSshNet2026PublicApi()
         var hostKeyEvent = clientType.GetEvent(nameof(BaseClient.HostKeyReceived));
         Assert(hostKeyEvent?.EventHandlerType == typeof(EventHandler<HostKeyEventArgs>),
             $"SSH.NET {clientType.Name} HostKeyReceived API");
+        var transportErrorEvent = clientType.GetEvent(nameof(BaseClient.ErrorOccurred));
+        Assert(transportErrorEvent?.EventHandlerType == typeof(EventHandler<ExceptionEventArgs>),
+            $"SSH.NET {clientType.Name} ErrorOccurred API");
+    }
+
+    var connectionInfoType = typeof(Renci.SshNet.ConnectionInfo);
+    foreach (var propertyName in new[]
+             {
+                 nameof(Renci.SshNet.ConnectionInfo.ServerVersion),
+                 nameof(Renci.SshNet.ConnectionInfo.ClientVersion),
+                 nameof(Renci.SshNet.ConnectionInfo.CurrentKeyExchangeAlgorithm),
+                 nameof(Renci.SshNet.ConnectionInfo.CurrentHostKeyAlgorithm),
+                 nameof(Renci.SshNet.ConnectionInfo.CurrentClientEncryption),
+                 nameof(Renci.SshNet.ConnectionInfo.CurrentServerEncryption),
+                 nameof(Renci.SshNet.ConnectionInfo.CurrentClientHmacAlgorithm),
+                 nameof(Renci.SshNet.ConnectionInfo.CurrentServerHmacAlgorithm),
+                 nameof(Renci.SshNet.ConnectionInfo.CurrentClientCompressionAlgorithm),
+                 nameof(Renci.SshNet.ConnectionInfo.CurrentServerCompressionAlgorithm),
+             })
+    {
+        var property = connectionInfoType.GetProperty(propertyName);
+        Assert(property is { PropertyType: { } propertyType, CanRead: true } &&
+               propertyType == typeof(string) && property.GetMethod?.IsPublic == true,
+            $"SSH.NET negotiated connection property {propertyName}");
     }
 
     Assert(
@@ -398,6 +431,140 @@ static void AssertSshNet2026PublicApi()
             nameof(ShellStream.ChangeWindowSize),
             [typeof(uint), typeof(uint), typeof(uint), typeof(uint)]) is not null,
         "SSH.NET runtime PTY resize API");
+}
+
+static void AssertNegotiatedConnectionInfoContract()
+{
+    var snapshot = new SshNegotiatedConnectionInfo(
+        " SSH-2.0-test-server ",
+        " SSH-2.0-sutty ",
+        " curve25519-sha256 ",
+        " ssh-ed25519 ",
+        " SHA256:host-fingerprint ",
+        " chacha20-poly1305@openssh.com ",
+        " aes256-gcm@openssh.com ",
+        " hmac-sha2-256-etm@openssh.com ",
+        " hmac-sha2-512-etm@openssh.com ",
+        " none ",
+        " zlib@openssh.com ");
+
+    Assert(snapshot.ServerVersion == "SSH-2.0-test-server" &&
+           snapshot.ClientVersion == "SSH-2.0-sutty" &&
+           snapshot.KeyExchangeAlgorithm == "curve25519-sha256" &&
+           snapshot.HostKeyAlgorithm == "ssh-ed25519" &&
+           snapshot.HostKeySha256Fingerprint == "SHA256:host-fingerprint" &&
+           snapshot.ClientToServerCipher == "chacha20-poly1305@openssh.com" &&
+           snapshot.ServerToClientCipher == "aes256-gcm@openssh.com" &&
+           snapshot.ClientToServerMac == "hmac-sha2-256-etm@openssh.com" &&
+           snapshot.ServerToClientMac == "hmac-sha2-512-etm@openssh.com" &&
+           snapshot.ClientToServerCompression == "none" &&
+           snapshot.ServerToClientCompression == "zlib@openssh.com",
+        "negotiated-information snapshot normalizes credential-free values");
+
+    var expectedProperties = new[]
+    {
+        nameof(SshNegotiatedConnectionInfo.ClientToServerCipher),
+        nameof(SshNegotiatedConnectionInfo.ClientToServerCompression),
+        nameof(SshNegotiatedConnectionInfo.ClientToServerMac),
+        nameof(SshNegotiatedConnectionInfo.ClientVersion),
+        nameof(SshNegotiatedConnectionInfo.HostKeyAlgorithm),
+        nameof(SshNegotiatedConnectionInfo.HostKeySha256Fingerprint),
+        nameof(SshNegotiatedConnectionInfo.KeyExchangeAlgorithm),
+        nameof(SshNegotiatedConnectionInfo.ServerToClientCipher),
+        nameof(SshNegotiatedConnectionInfo.ServerToClientCompression),
+        nameof(SshNegotiatedConnectionInfo.ServerToClientMac),
+        nameof(SshNegotiatedConnectionInfo.ServerVersion),
+    }.Order(StringComparer.Ordinal).ToArray();
+    var publicProperties = typeof(SshNegotiatedConnectionInfo)
+        .GetProperties(System.Reflection.BindingFlags.Instance |
+                       System.Reflection.BindingFlags.Public);
+
+    Assert(publicProperties.Select(property => property.Name)
+            .Order(StringComparer.Ordinal)
+            .SequenceEqual(expectedProperties, StringComparer.Ordinal),
+        "negotiated-information public contract contains only the reviewed fields");
+    Assert(publicProperties.All(property =>
+            property.PropertyType == typeof(string) && property.SetMethod is null),
+        "negotiated-information snapshot is immutable and retains no raw key bytes");
+    Assert(publicProperties.All(property =>
+            !property.Name.Contains("Password", StringComparison.OrdinalIgnoreCase) &&
+            !property.Name.Contains("Passphrase", StringComparison.OrdinalIgnoreCase) &&
+            !property.Name.Contains("Secret", StringComparison.OrdinalIgnoreCase) &&
+            !property.Name.Contains("Raw", StringComparison.OrdinalIgnoreCase)),
+        "negotiated-information snapshot exposes no secret or raw-key field");
+}
+
+static async Task AssertUnexpectedPrimaryTransportFailureAsync()
+{
+    var session = new SshNetSession(new SshConnectionInfo
+    {
+        Host = "127.0.0.1",
+        Port = 22,
+        Username = "transport-fault-user",
+        AuthMethod = SshAuthMethod.Password,
+        Password = "synthetic-only",
+    });
+    var client = new SshClient(new Renci.SshNet.ConnectionInfo(
+        "127.0.0.1",
+        22,
+        "transport-fault-user",
+        new NoneAuthenticationMethod("transport-fault-user")));
+    var snapshot = new SshNegotiatedConnectionInfo(
+        "SSH-2.0-test-server",
+        "SSH-2.0-sutty",
+        "curve25519-sha256",
+        "ssh-ed25519",
+        "SHA256:test-fingerprint",
+        "aes256-gcm@openssh.com",
+        "aes256-gcm@openssh.com",
+        "none",
+        "none",
+        "none",
+        "none");
+
+    var sessionType = typeof(SshNetSession);
+    var publishMethod = sessionType.GetMethod(
+        "PublishPrimaryTransport",
+        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+    var errorMethod = sessionType.GetMethod(
+        "PrimarySsh_ErrorOccurred",
+        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+    var stateProperty = sessionType.GetProperty(nameof(SshNetSession.State));
+    Assert(publishMethod is not null && errorMethod is not null &&
+           stateProperty?.SetMethod is { IsPublic: false },
+        "primary-transport failure lifecycle test seam remains available");
+
+    var observedStates = new List<SessionState>();
+    var stateGate = new object();
+    session.StateChanged += (_, state) =>
+    {
+        lock (stateGate)
+            observedStates.Add(state);
+    };
+
+    publishMethod!.Invoke(session, [client, snapshot]);
+    stateProperty!.SetValue(session, SessionState.Connected);
+    var transportError = new IOException("synthetic primary transport loss");
+    errorMethod!.Invoke(session, [client, new ExceptionEventArgs(transportError)]);
+
+    Assert(session.NegotiatedInfo is null,
+        "primary-transport error clears negotiated information synchronously");
+    var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+    while (session.State != SessionState.Failed && DateTimeOffset.UtcNow < deadline)
+        await Task.Delay(10);
+
+    Assert(session.State == SessionState.Failed &&
+           session.TerminalState == TerminalState.Closed &&
+           session.SftpState == SftpConnectionState.NotConnected,
+        "unexpected primary-transport loss reaches stable failed subsystem states");
+    Assert(session.LastError == transportError.Message,
+        "unexpected primary-transport loss preserves the original error");
+    lock (stateGate)
+    {
+        Assert(observedStates.Contains(SessionState.Disconnecting) &&
+               observedStates.LastOrDefault() == SessionState.Failed,
+            "unexpected primary-transport loss publishes disconnecting before failed");
+    }
 }
 
 static void AssertSshAgentAdapterLoads()

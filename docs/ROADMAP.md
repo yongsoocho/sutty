@@ -72,6 +72,10 @@ This roadmap follows reliability gates, not calendar promises. Each stage must s
 
 ## Final planned stage — Credential-free small-team packs / 자격증명 없는 소규모 팀 Pack
 
+This stage is planned, not implemented in the current Alpha. Definitions currently remain local to each user's installation.
+
+이 단계는 계획 상태이며 현재 Alpha에는 구현되지 않았습니다. 현재 정의는 각 사용자의 로컬 설치에만 저장됩니다.
+
 - Git-friendly host, group, tag, route, tunnel, and command-template export.
 - Import preview, conflict decisions, schema versioning, and per-user local credential binding.
 - Hard rejection of credential material in every shared package.

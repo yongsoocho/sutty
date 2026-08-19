@@ -1,9 +1,11 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Plugins;
 using sutty.Core.Commands;
+using sutty.Core.Models;
 using sutty.Core.Sessions;
 using sutty.Core.Sftp;
 using sutty.Core.Terminal;
@@ -91,9 +93,7 @@ namespace sutty.UI.Views
             TitleText.Text = $"{user}@{Session.Info.Title} · {Session.Info.Host}:{Session.Info.Port}";
             RoutePillText.Text = Session.Info.Route?.DisplayName ??
                 Session.CorrelationContext.RouteType.ToString().ToUpperInvariant();
-            ToolTipService.SetToolTip(
-                RoutePillText,
-                $"route={Session.CorrelationContext.RouteId} · correlation={Session.CorrelationContext.CorrelationId}");
+            UpdateConnectionInfoToolTip();
             UpdatePrompt();
 
             // 업타임 카운터 (연결 중일 때 1초마다 갱신)
@@ -152,6 +152,7 @@ namespace sutty.UI.Views
             Bindings.Update();
             UpdateSftpPill(Session.SftpState);
             UpdateTerminalStatus(Session.TerminalState);
+            UpdateConnectionInfo(Session.State);
         }
 
         // ── TERMINAL ↔ REPL 세그먼트 토글 ──
@@ -386,6 +387,68 @@ namespace sutty.UI.Views
             SftpPillText.Foreground = ThemeResources.Brush(this, resourceKey);
         }
 
+        private void UpdateConnectionInfo(SessionState state)
+        {
+            var negotiated = Session.NegotiatedInfo;
+            var available = state == SessionState.Connected && negotiated is not null;
+            ConnectionInfoButton.IsEnabled = available;
+            CopyConnectionInfoButton.IsEnabled = available;
+            ConnectionInfoTextBox.Text = negotiated is null
+                ? Loc.T(
+                    "SSH 연결이 완료되면 협상 정보를 확인할 수 있습니다.",
+                    "Negotiated information is available after the SSH connection completes.")
+                : FormatConnectionInfo(negotiated);
+            CopyConnectionInfoStatus.Visibility = Visibility.Collapsed;
+            UpdateConnectionInfoToolTip();
+        }
+
+        private void UpdateConnectionInfoToolTip()
+        {
+            var action = Session.NegotiatedInfo is null
+                ? Loc.T("연결 뒤 SSH 협상 정보를 확인할 수 있습니다.",
+                    "SSH negotiation details are available after connecting.")
+                : Loc.T("협상된 SSH 알고리즘과 호스트 키 지문을 확인합니다.",
+                    "Inspect negotiated SSH algorithms and the host-key fingerprint.");
+            ToolTipService.SetToolTip(
+                ConnectionInfoButton,
+                $"{action}\nroute={Session.CorrelationContext.RouteId} · " +
+                $"correlation={Session.CorrelationContext.CorrelationId}");
+        }
+
+        private static string FormatConnectionInfo(SshNegotiatedConnectionInfo info)
+        {
+            var missing = Loc.T("표시되지 않음", "Not reported");
+            string Value(string? value) => string.IsNullOrWhiteSpace(value) ? missing : value;
+
+            return string.Join(Environment.NewLine,
+                $"{Loc.T("서버 식별", "Server identification")}: {Value(info.ServerVersion)}",
+                $"{Loc.T("클라이언트 식별", "Client identification")}: {Value(info.ClientVersion)}",
+                $"KEX: {Value(info.KeyExchangeAlgorithm)}",
+                $"{Loc.T("호스트 키 알고리즘", "Host-key algorithm")}: {Value(info.HostKeyAlgorithm)}",
+                $"{Loc.T("호스트 키 지문", "Host-key fingerprint")}: {Value(info.HostKeySha256Fingerprint)}",
+                $"{Loc.T("암호화 (클라이언트 → 서버)", "Cipher (client → server)")}: {Value(info.ClientToServerCipher)}",
+                $"{Loc.T("암호화 (서버 → 클라이언트)", "Cipher (server → client)")}: {Value(info.ServerToClientCipher)}",
+                $"MAC ({Loc.T("클라이언트 → 서버", "client → server")}): {Value(info.ClientToServerMac)}",
+                $"MAC ({Loc.T("서버 → 클라이언트", "server → client")}): {Value(info.ServerToClientMac)}",
+                $"{Loc.T("압축 (클라이언트 → 서버)", "Compression (client → server)")}: {Value(info.ClientToServerCompression)}",
+                $"{Loc.T("압축 (서버 → 클라이언트)", "Compression (server → client)")}: {Value(info.ServerToClientCompression)}");
+        }
+
+        private void CopyConnectionInfo_Click(object sender, RoutedEventArgs e)
+        {
+            var copied = ClipboardHelper.CopyText(ConnectionInfoTextBox.Text);
+            CopyConnectionInfoStatus.Text = copied
+                ? Loc.T("복사됨", "Copied")
+                : Loc.T("클립보드에 복사할 수 없습니다.", "Could not copy to the clipboard.");
+            CopyConnectionInfoStatus.Foreground = ThemeResources.Brush(
+                this,
+                copied ? "AccentTeal" : "StatusRed");
+            CopyConnectionInfoStatus.Visibility = Visibility.Visible;
+            var peer = FrameworkElementAutomationPeer.FromElement(CopyConnectionInfoStatus) ??
+                FrameworkElementAutomationPeer.CreatePeerForElement(CopyConnectionInfoStatus);
+            peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+        }
+
         private void ApplyState(SessionState state, bool initial = false)
         {
             var info = Session.Info;
@@ -405,6 +468,7 @@ namespace sutty.UI.Views
 
             UpdateStatusPill(state);
             UpdateSftpPill(Session.SftpState);
+            UpdateConnectionInfo(state);
 
             var connected = state == SessionState.Connected;
             CommandBox.IsEnabled = connected;
@@ -421,7 +485,6 @@ namespace sutty.UI.Views
 
                 case SessionState.Connected:
                     AddSystemCell("Connected.");
-                    _ = ShowBannerAsync(); // 서버 정보(uname)를 실제로 실행해서 출력
                     if (_isTerminal && TerminalSurface.IsLoaded)
                         _ = EnsureTerminalStartedAsync();
                     break;
@@ -437,33 +500,6 @@ namespace sutty.UI.Views
                 case SessionState.Failed:
                     AddSystemCell($"Connection failed: {Session.LastError ?? "unknown error"}");
                     break;
-            }
-        }
-
-        private async Task ShowBannerAsync()
-        {
-            try
-            {
-                var banner = await Session.RunCommandAsync("uname -a");
-                if (!string.IsNullOrWhiteSpace(banner))
-                    AddSystemCell(banner.TrimEnd());
-            }
-            catch
-            {
-                // 배너는 장식일 뿐 — 실패해도 무시
-            }
-
-            try
-            {
-                // Resolve the symbolic initial cwd once so Files consumers never receive
-                // an invalid "/~" path. Failure deliberately leaves the visible "~".
-                var initialVersion = Volatile.Read(ref _workingDirectoryRequestVersion);
-                if (_cwd == "~")
-                    await ResolveWorkingDirectoryAsync("~", initialVersion);
-            }
-            catch
-            {
-                // Home discovery is optional; connection and terminal remain usable.
             }
         }
 

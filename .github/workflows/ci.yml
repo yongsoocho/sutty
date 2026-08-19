@@ -45,6 +45,11 @@ jobs:
         shell: pwsh
         run: .\tests\product-scope\Assert-ProductScope.Tests.ps1
 
+      - name: Test release-metadata guard
+        if: matrix.configuration == 'Debug'
+        shell: pwsh
+        run: .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
+
       - name: Enforce product scope
         if: matrix.configuration == 'Debug'
         shell: pwsh

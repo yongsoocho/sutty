@@ -2,15 +2,17 @@
 
 ## English
 
-Sutty `v0.1.0-alpha.1` is an unsigned evaluation release for Windows 11 24H2 or later. Use it first with development, test, or staging systems and keep an existing recovery path for important servers.
+Sutty Alpha ZIPs are unsigned evaluation releases for Windows 11 24H2 or later. Use them first with development, test, or staging systems and keep an existing recovery path for important servers.
 
-1. Open the [official GitHub Release](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.1).
-2. Download `Sutty-v0.1.0-alpha.1-win-x64.zip` or `Sutty-v0.1.0-alpha.1-win-arm64.zip` for the computer architecture.
+1. Open the [official GitHub Releases page](https://github.com/yongsoocho/sutty/releases) and select the Alpha release you intend to install.
+2. Download the `Sutty-*-win-x64.zip` or `Sutty-*-win-arm64.zip` asset for the computer architecture. Keep only that ZIP in the download folder while following the commands below.
 3. Download `SHA256SUMS.txt` from the same Release.
-4. Calculate the archive digest and compare it with the corresponding line in `SHA256SUMS.txt`:
+4. Calculate the digest of the actual downloaded archive and compare both its filename and SHA-256 value with the corresponding line in `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\Sutty-v0.1.0-alpha.1-win-x64.zip -Algorithm SHA256
+$archives = @(Get-ChildItem -File .\Sutty-*-win-*.zip)
+if ($archives.Count -ne 1) { throw 'Keep exactly one Sutty Alpha ZIP in this folder.' }
+Get-FileHash -LiteralPath $archives[0].FullName -Algorithm SHA256
 ```
 
 5. Extract the ZIP into a new folder and run `sutty.UI.exe`.
@@ -27,15 +29,17 @@ To confirm the running build, open **Settings → About** or launch:
 
 ## 한국어
 
-Sutty `v0.1.0-alpha.1`은 Windows 11 24H2 이상을 위한 서명되지 않은 시험 배포판입니다. 개발·테스트·스테이징 환경에서 먼저 사용하고, 중요한 서버에는 기존 복구 수단을 함께 유지하세요.
+Sutty Alpha ZIP은 Windows 11 24H2 이상을 위한 서명되지 않은 시험 배포판입니다. 개발·테스트·스테이징 환경에서 먼저 사용하고, 중요한 서버에는 기존 복구 수단을 함께 유지하세요.
 
-1. [공식 GitHub Release](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.1)를 엽니다.
-2. 컴퓨터 아키텍처에 맞는 `Sutty-v0.1.0-alpha.1-win-x64.zip` 또는 `Sutty-v0.1.0-alpha.1-win-arm64.zip`을 받습니다.
+1. [공식 GitHub Releases 페이지](https://github.com/yongsoocho/sutty/releases)를 열고 설치할 Alpha Release를 선택합니다.
+2. 컴퓨터 아키텍처에 맞는 `Sutty-*-win-x64.zip` 또는 `Sutty-*-win-arm64.zip` asset을 받습니다. 아래 명령을 실행할 때는 다운로드 폴더에 확인할 ZIP 하나만 두세요.
 3. 같은 Release에서 `SHA256SUMS.txt`를 받습니다.
-4. 아래 명령으로 ZIP의 해시를 계산해 `SHA256SUMS.txt`의 해당 줄과 비교합니다.
+4. 아래 명령으로 실제 다운로드한 ZIP의 해시를 계산한 뒤 파일명과 SHA-256 값을 모두 `SHA256SUMS.txt`의 해당 줄과 비교합니다.
 
 ```powershell
-Get-FileHash .\Sutty-v0.1.0-alpha.1-win-x64.zip -Algorithm SHA256
+$archives = @(Get-ChildItem -File .\Sutty-*-win-*.zip)
+if ($archives.Count -ne 1) { throw 'Keep exactly one Sutty Alpha ZIP in this folder.' }
+Get-FileHash -LiteralPath $archives[0].FullName -Algorithm SHA256
 ```
 
 5. ZIP을 새 폴더에 풀고 `sutty.UI.exe`를 실행합니다.

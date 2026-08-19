@@ -6,6 +6,7 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 
 - Windows 11 desktop application, local-first, with no account or cloud control plane.
 - Five primary workspaces: Local, Terminal, REPL, Files, and Multi. Saved Hosts and Commands are common capabilities used across those workspaces.
+- The current Alpha is centered on per-user local use. Credential-free file/Git sharing packs for small teams, including export, import preview, conflict handling, schema versioning, and local credential binding, are planned and are not part of the implemented foundation below.
 - English and Korean first-party UI.
 - Fresh production storage contains no sample hosts, commands, credentials, or connection history.
 
@@ -14,9 +15,10 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 | Area | Current evidence |
 | --- | --- |
 | Runtime and architecture | .NET 10; x64 and ARM64 solution platforms; UI, Core, Setting, Command, and the pinned Windows SSH Agent compatibility project have explicit responsibilities. |
-| Real sessions | Production session creation uses the SSH.NET-backed session only. SSH, Terminal, and SFTP states are independent. |
+| Real sessions | Production session creation uses the SSH.NET-backed session only. SSH, Terminal, and SFTP states are independent. Unexpected primary-transport errors retire only the current client generation, clear live handshake data, run best-effort owned-resource cleanup, and publish `Failed` without racing explicit disconnect. |
 | SSH authentication | Password, private keys including PPK v2/v3, Windows SSH Agent, and repeated multi-prompt keyboard-interactive OTP/MFA flows are wired through SSH.NET and the secure UI prompt. |
 | Host identity | Unknown keys fail closed, one-time and persisted trust are explicit, and changed keys are blocked. |
+| Connection information | The primary SSH handshake is captured as an in-memory, credential-free snapshot and exposed in an accessible read-only/copy flyout: server/client identification, KEX, verified host-key algorithm and SHA-256 fingerprint, plus both cipher/MAC/compression directions. Connection alone issues no banner or home-directory discovery command. |
 | Interactive terminal | Persistent SSH PTY and local ConPTY use package-local xterm.js 6.0.0 in a hardened WebView2. ANSI/VT color/style, alternate screen, mouse/input modes, IME/Unicode cells, search, clipboard shortcuts, measured server-side resize, and bounded acknowledged output delivery are integrated. |
 | Structured commands | Standard output, standard error, exit status/signal, timing, and cancellation are preserved for REPL and Multi execution. |
 | SFTP baseline | Session-bound lazy tree plus bounded recursive enumeration and filename search, recursive file/folder upload and download, symlink non-traversal, deterministic partial files, checkpoint resume, durable pause/resume, retry, selectable final-size or SHA-256 verification, five durable conflict policies, safe promotion, cross-directory move without overwrite, preview-confirmed recursive deletion, octal permission changes, cancellation, queue limits, rename, delete, and directory creation. |
@@ -38,6 +40,7 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 - Existing terminal parser/input and safe SFTP path checks remain part of the solution; transfer checks now cover recursive/empty-directory copy, bounded filename search, cross-directory file/folder move and self-descendant rejection, resume offsets, checksums, conflict-policy behavior and durable policy persistence, safe recursive-delete previews, non-secret checkpoint persistence, per-target failure isolation, and failed-only retry.
 - Package-local renderer checks cover restrictive CSP, absence of remote asset URLs and `innerHTML`, input/output/resize bridge primitives, and the reviewed xterm.js SHA-256.
 - Route-policy rejection, credential-free diagnostic correlation context, structured-text classification, danger/warning classification, and command-suggestion ordering have focused self-tests.
+- SSH.NET negotiated-property and transport-error event availability, the immutable connection-information field allowlist, normalization, and absence on new/failed connections have focused automated checks. Static source review confirms removal of the automatic remote commands. Live fingerprint, reconnect, unexpected-drop cleanup, no-exec, and indirect-route evidence remains pending.
 - The user-facing strict-route setting replaces organization-scale terminology. Saved profiles read the legacy boolean into `DisableDirect`, subsequent saves emit only the current field, and unknown/retired/corrupt route metadata becomes an explicit non-connectable `Unsupported` or `Corrupt` state with a stable recovery error code and Host-editor guidance.
 - A product-scope check gates CI, Alpha archives, and signed-package workflows. It keeps primary product documentation vendor-neutral, allows technical format names only in migration/import documentation, rejects replacement overclaims, organization-scale positioning, placeholder labels, and superseded binary plan names, and has fixture-based self-tests.
 - `CONTRIBUTING.md`, the bilingual Development Playbook, PR template, and feature/bug forms define Core → Test → UI → live-validation order, vertical slices, lifecycle and secret rules, SFTP integrity, Multi safety, and Definition of Done.
@@ -49,7 +52,7 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 ## Remaining release gates
 
 1. Run and record the full shell/TUI/Unicode/input/security/latency/soak matrix for the new package-local renderer; integration alone is not GA evidence.
-2. Run the live Windows Agent, repeated OTP/MFA, PPK v2/v3, SSH jump, ProxyCommand, and HTTP/SOCKS compatibility matrix; add proxy-DNS verification, full reconnect policy, and negotiated-algorithm UX.
+2. Run the live Windows Agent, repeated OTP/MFA, PPK v2/v3, SSH jump, ProxyCommand, and HTTP/SOCKS compatibility matrix; add proxy-DNS verification and a full reconnect policy, and record negotiated-information fingerprint/reconnect/unexpected-drop/no-exec/indirect-route acceptance.
 3. Run live-server evidence for permission changes, pause/resume, recursive delete, all collision policies, large/deep paths, and 16-target Multi transfer; restart queue discovery and deterministic N→1 collision isolation now have an Alpha baseline.
 4. Add a post-connect tunnel manager and local/remote/dynamic lifecycle and failure integration tests. Non-loopback forwarding already requires an explicit high-risk confirmation and emits a warning diagnostic.
 5. Finish streaming command output, typed named parameters, durable Multi details/export, timeouts, and redacted local activity records.

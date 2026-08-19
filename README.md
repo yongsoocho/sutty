@@ -33,7 +33,7 @@ Two common capabilities support every workspace:
 - **Saved Hosts** — local connection profiles, routes, tunnels, tags, and optional encrypted credential references.
 - **Commands** — reusable local command templates shared by REPL and explicitly selected Multi operations.
 
-Small-team support means credential-free, file/Git-based sharing of host, route, tunnel, and command definitions. It does not include accounts, shared credentials, RBAC, central administration, or live collaboration.
+The small-team product direction is credential-free, file/Git-based sharing of host, route, tunnel, and command definitions. The current Alpha is centered on per-user local use; the sharing pack, import preview, conflict handling, schema versioning, and local credential rebinding are planned and are not implemented yet. This direction does not include accounts, shared credentials, RBAC, central administration, or live collaboration.
 
 ### Implemented Alpha baseline
 
@@ -41,6 +41,7 @@ Small-team support means credential-free, file/Git-based sharing of host, route,
 - Local PowerShell tabs opened with the top `+` button, backed by a real ConPTY process with runtime resize and process-tree cleanup.
 - A real persistent PTY channel rendered by package-local xterm.js in a hardened WebView2, with ANSI/VT color and style, mouse/input modes, IME/CJK/emoji handling, alternate screen, search, clipboard shortcuts, bounded output backpressure, and runtime server-side resize.
 - Fail-closed SSH host-key verification. Unknown keys offer **Connect once**, **Trust and save**, or **Cancel**; changed saved keys are blocked.
+- Read-only SSH connection information for the primary transport shows server/client identification, KEX, verified host-key algorithm and SHA-256 fingerprint, and both cipher/MAC/compression directions. Merely connecting no longer runs automatic banner or home-directory discovery commands.
 - Independent SSH, Terminal, and SFTP states, so an unavailable SFTP subsystem does not close a working SSH session.
 - REPL and Multi command execution backed by structured standard output, standard error, exit status/signal, and duration; reusable positional command templates remain available.
 - Remote SFTP navigation and lazy loading; bounded recursive tree enumeration and filename search; file/folder upload and download (including empty directories); same-directory rename; cross-directory move without overwrite; safe recursive deletion; octal permission changes; directory creation; Copy path; and Open in Terminal. Symbolic links are listed but never followed recursively.
@@ -61,7 +62,7 @@ Small-team support means credential-free, file/Git-based sharing of host, route,
 ### Why this is not GA
 
 - The package-local xterm.js/WebView2 renderer is integrated for both SSH and local ConPTY, but the required shell/TUI/Unicode/input/security/latency/soak acceptance matrix is not complete. Terminal compatibility therefore remains **Alpha, not GA**. See [ADR 0001](docs/adr/0001-terminal-renderer.md).
-- Windows Agent, repeated OTP/multi-prompt keyboard-interactive authentication, PPK v2/v3, SSH jump, and external ProxyCommand routes are integrated, but their live-server/agent/route compatibility matrix is incomplete. Central route-policy distribution and safe command replay after a full SSH reconnect remain outside the current implementation.
+- Windows Agent, repeated OTP/multi-prompt keyboard-interactive authentication, PPK v2/v3, SSH jump, and external ProxyCommand routes are integrated, but their live-server/agent/route compatibility matrix is incomplete. Negotiated connection information is exposed without issuing a remote command, but its fingerprint, reconnect, no-exec, and indirect-route acceptance remain pending. Central route-policy distribution and safe command replay after a full SSH reconnect remain outside the current implementation.
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP recursive transfer, durable restart queue/checkpoints, retry/resume, pause, checksum verification, five collision policies, recursive deletion, `chmod`, filename search, cross-directory move, 1→N/N→1 Multi transfer, and failed-target-only retry are implemented. Synchronized browsing, directory comparison, and large/deep-path live multi-host acceptance remain incomplete.
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent local activity export, timeout, or streaming workflow.
@@ -71,7 +72,7 @@ The detailed current-state mapping is in [Requirements Traceability](docs/REQUIR
 
 ### Explicitly unsupported scope
 
-Sutty does not support FTP, FTPS, Telnet, Serial, RDP, VNC, X11 forwarding, cloud accounts or sync, Team Vault/RBAC/SSO, terminal collaboration, mobile, macOS, or Linux applications. These are not hidden Alpha features. Small-team sharing is credential-free and file/Git-based; accounts, shared credentials, central administration, and live collaboration are outside the local-first product boundary.
+Sutty does not support FTP, FTPS, Telnet, Serial, RDP, VNC, X11 forwarding, cloud accounts or sync, Team Vault/RBAC/SSO, terminal collaboration, mobile, macOS, or Linux applications. These are not hidden Alpha features. Planned small-team sharing is credential-free and file/Git-based; accounts, shared credentials, central administration, and live collaboration are outside the local-first product boundary.
 
 ### Trust, credentials, and local data
 
@@ -128,11 +129,16 @@ Focused self-tests after a Debug build:
 
 ```powershell
 .\tests\product-scope\Assert-ProductScope.Tests.ps1
+.\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
 .\.github\scripts\Assert-ProductScope.ps1
-dotnet run --project tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Core.Security.SelfTest/sutty.Core.Security.SelfTest.csproj -c Debug --no-build
+dotnet run --project tests/sutty.Command.SelfTest/sutty.Command.SelfTest.csproj -c Debug --no-build
+dotnet run --project tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj -c Debug --no-build
+dotnet run --project tests/sutty.Setting.SelfTest/sutty.Setting.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Sftp.SelfTest/sutty.Sftp.SelfTest.csproj -c Debug --no-build
 ```
+
+See [Contributing](CONTRIBUTING.md) for the authoritative local verification sequence and restore/build prerequisites.
 
 ### License
 
@@ -157,7 +163,7 @@ Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/S
 - **Saved Hosts** — 로컬 연결 프로필, route, tunnel, tag, 선택형 암호화 자격증명 참조
 - **Commands** — REPL과 명시적으로 선택한 Multi 작업에서 재사용하는 로컬 명령 템플릿
 
-소규모 팀 지원은 자격증명 없는 Host·route·tunnel·command 정의를 파일 또는 Git으로 공유한다는 뜻입니다. 계정, 공유 자격증명, RBAC, 중앙 관리, 실시간 협업은 포함하지 않습니다.
+소규모 팀 제품 방향은 자격증명 없는 Host·route·tunnel·command 정의를 파일 또는 Git으로 공유하는 것입니다. 현재 Alpha는 사용자별 로컬 사용이 중심이며, 공유 Pack·가져오기 미리보기·충돌 처리·schema version·로컬 자격증명 연결은 계획 단계로 아직 구현되지 않았습니다. 계정, 공유 자격증명, RBAC, 중앙 관리, 실시간 협업은 포함하지 않습니다.
 
 ### 구현된 Alpha 기준선
 
@@ -165,6 +171,7 @@ Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/S
 - 상단 `+` 버튼으로 여는 로컬 PowerShell 탭. 실제 ConPTY 프로세스, 실행 중 크기 변경, 프로세스 트리 정리를 사용합니다.
 - 패키지 내부 xterm.js와 보안 설정한 WebView2로 표시하는 실제 지속 PTY 채널. ANSI/VT 색·스타일, 마우스·입력 모드, IME·한글·이모지, 대체 화면, 검색, 클립보드 단축키, 제한된 출력 백프레셔, 실행 중 서버 측 크기 변경을 지원합니다.
 - 기본 차단 방식의 SSH 호스트키 검증. 알 수 없는 키는 **이번만 연결**, **신뢰하고 저장**, **취소**를 제공하며 저장된 키가 바뀌면 연결을 차단합니다.
+- 주 SSH 전송의 서버·클라이언트 식별, KEX, 검증된 호스트 키 알고리즘과 SHA-256 지문, 양방향 cipher·MAC·압축을 보여주는 읽기 전용 연결 정보. 연결만으로 자동 banner나 홈 디렉터리 탐색 명령을 실행하지 않습니다.
 - SFTP subsystem을 사용할 수 없어도 작동 중인 SSH 세션을 닫지 않는 SSH·Terminal·SFTP 독립 상태
 - 표준 출력·표준 오류·종료 상태/signal·소요 시간을 구조화하는 REPL·Multi 명령 실행과 재사용 가능한 위치형 명령 템플릿
 - 원격 SFTP 탐색과 지연 로딩, 제한된 재귀 트리 열거·파일명 검색, 파일·폴더 업로드/다운로드(빈 폴더 포함), 같은 디렉터리 내 이름 변경, 덮어쓰기 없는 디렉터리 간 이동, 안전한 재귀 삭제, 8진수 권한 변경, 디렉터리 생성, 경로 복사, Terminal에서 열기. 심볼릭 링크는 표시하지만 재귀적으로 따라가지 않습니다.
@@ -185,7 +192,7 @@ Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/S
 ### GA가 아닌 이유
 
 - 패키지 내부 xterm.js/WebView2 렌더러를 SSH와 로컬 ConPTY에 연결했지만 필수 셸·TUI·Unicode·입력·보안·지연·장시간 실행 인수 매트릭스는 아직 완성되지 않았습니다. 따라서 터미널 호환성은 계속 **Alpha이며 GA가 아닙니다**. [ADR 0001](docs/adr/0001-terminal-renderer.md)을 확인하세요.
-- Windows Agent, 반복 OTP·다중 prompt keyboard-interactive 인증, PPK v2/v3, SSH Jump, 외부 ProxyCommand 경로를 통합했지만 실제 서버·Agent·경로 호환성 매트릭스는 아직 미완성입니다. 중앙 경로 정책 배포와 전체 SSH 재연결 뒤 안전한 명령 재실행은 현재 구현 범위 밖입니다.
+- Windows Agent, 반복 OTP·다중 prompt keyboard-interactive 인증, PPK v2/v3, SSH Jump, 외부 ProxyCommand 경로를 통합했지만 실제 서버·Agent·경로 호환성 매트릭스는 아직 미완성입니다. 원격 명령 없이 협상 연결 정보를 표시하지만 지문·재연결·무명령 연결·간접 경로 인수는 남아 있습니다. 중앙 경로 정책 배포와 전체 SSH 재연결 뒤 안전한 명령 재실행은 현재 구현 범위 밖입니다.
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - SFTP 재귀 전송, 영속 재시작 queue·checkpoint, 재시도·재개·일시정지, checksum 검증, 다섯 충돌 정책, 재귀 삭제, `chmod`, 파일명 검색, 디렉터리 간 이동, 1→N/N→1 Multi 전송, 실패 대상만 재시도를 구현했습니다. 동기 탐색·디렉터리 비교와 대용량·깊은 경로·실제 다중 Host 인수는 미완성입니다.
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 로컬 활동 내보내기, timeout, streaming 흐름이 없습니다.
@@ -195,7 +202,7 @@ Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/S
 
 ### 명시적 미지원 범위
 
-Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정·동기화, Team Vault/RBAC/SSO, 터미널 협업, 모바일, macOS, Linux 앱을 지원하지 않습니다. 숨겨진 Alpha 기능이 아닙니다. 소규모 팀 지원은 자격증명 없는 파일·Git 기반 정의 공유이며, 계정·공유 자격증명·중앙 관리·실시간 협업은 로컬 우선 제품 경계 밖입니다.
+Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정·동기화, Team Vault/RBAC/SSO, 터미널 협업, 모바일, macOS, Linux 앱을 지원하지 않습니다. 숨겨진 Alpha 기능이 아닙니다. 계획된 소규모 팀 공유는 자격증명 없는 파일·Git 기반이며, 계정·공유 자격증명·중앙 관리·실시간 협업은 로컬 우선 제품 경계 밖입니다.
 
 ### 신뢰, 자격 증명, 로컬 데이터
 
@@ -252,11 +259,16 @@ Debug 빌드 뒤 집중형 self-test를 실행할 수 있습니다.
 
 ```powershell
 .\tests\product-scope\Assert-ProductScope.Tests.ps1
+.\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
 .\.github\scripts\Assert-ProductScope.ps1
-dotnet run --project tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Core.Security.SelfTest/sutty.Core.Security.SelfTest.csproj -c Debug --no-build
+dotnet run --project tests/sutty.Command.SelfTest/sutty.Command.SelfTest.csproj -c Debug --no-build
+dotnet run --project tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj -c Debug --no-build
+dotnet run --project tests/sutty.Setting.SelfTest/sutty.Setting.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Sftp.SelfTest/sutty.Sftp.SelfTest.csproj -c Debug --no-build
 ```
+
+전체 로컬 검증 순서와 restore/build 선행 조건은 [기여 가이드](CONTRIBUTING.md)를 기준으로 확인하세요.
 
 ### 라이선스
 

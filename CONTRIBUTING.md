@@ -26,6 +26,7 @@ Build one reviewable vertical slice in this order:
 
 ```powershell
 .\tests\product-scope\Assert-ProductScope.Tests.ps1
+.\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
 .\.github\scripts\Assert-ProductScope.ps1
 dotnet restore .\sutty.slnx --locked-mode -p:Platform=x64
 dotnet build .\sutty.slnx -c Debug --no-restore -p:Platform=x64
