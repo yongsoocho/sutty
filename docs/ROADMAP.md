@@ -10,11 +10,11 @@ This roadmap follows reliability gates, not calendar promises. Each stage must s
 
 - Record one independently reviewable live acceptance slice for password, each supported private-key format, Windows Agent, and repeated keyboard-interactive prompts.
 - Record Direct, HTTP/SOCKS, Jump, ProxyCommand, and forwarding normal/failure/cancellation/shutdown slices with proof that no failed indirect route opens Direct.
-- Surface negotiated connection information and stable route failure codes without credentials.
+- Record live acceptance for credential-free negotiated connection information and stable route failure codes.
 
 - 비밀번호, 지원 개인키 형식별, Windows Agent, 반복 keyboard-interactive prompt를 독립적으로 리뷰 가능한 실환경 인수 Slice로 기록합니다.
 - Direct, HTTP/SOCKS, Jump, ProxyCommand, forwarding의 정상·실패·취소·종료를 Slice로 검증하고 실패한 간접 경로가 Direct를 열지 않음을 증명합니다.
-- 자격증명 없이 협상 연결 정보와 안정적인 경로 오류 코드를 표시합니다.
+- 자격증명 없는 협상 연결 정보와 안정적인 경로 오류 코드의 실환경 인수 증거를 기록합니다.
 
 ### Milestone B — Terminal Compatibility Evidence / 터미널 호환성 증거
 

@@ -343,8 +343,8 @@ namespace sutty.UI.Views
                 await ShowLaunchDialogAsync(
                     Helpers.Loc.T("Sutty 명령줄", "Sutty command line"),
                     Helpers.Loc.T(
-                        "저장 Host 열기:\n\nsutty.exe --host <저장 Host ID 또는 정확한 이름>\n\n버전 확인:\n\nsutty.exe --version\n\n비밀번호와 개인키 암호는 명령줄 인자로 받지 않습니다.",
-                        "Open a Saved Host:\n\nsutty.exe --host <Saved Host ID or exact name>\n\nShow version:\n\nsutty.exe --version\n\nPasswords and private-key passphrases are not accepted as command-line arguments."));
+                        "저장 Host 열기:\n\nsutty.UI.exe --host <저장 Host ID 또는 정확한 이름>\n\n버전 확인:\n\nsutty.UI.exe --version\n\n비밀번호와 개인키 암호는 명령줄 인자로 받지 않습니다.",
+                        "Open a Saved Host:\n\nsutty.UI.exe --host <Saved Host ID or exact name>\n\nShow version:\n\nsutty.UI.exe --version\n\nPasswords and private-key passphrases are not accepted as command-line arguments."));
                 return;
             }
 
@@ -353,8 +353,8 @@ namespace sutty.UI.Views
                 await ShowLaunchDialogAsync(
                     Helpers.Loc.T("명령줄 확인", "Check command line"),
                     Helpers.Loc.T(
-                        "지원하지 않는 실행 인자입니다.\n\n사용법: sutty.exe --host <저장 Host ID 또는 정확한 이름>",
-                        "The launch arguments are unsupported.\n\nUsage: sutty.exe --host <Saved Host ID or exact name>"));
+                        "지원하지 않는 실행 인자입니다.\n\n사용법: sutty.UI.exe --host <저장 Host ID 또는 정확한 이름>",
+                        "The launch arguments are unsupported.\n\nUsage: sutty.UI.exe --host <Saved Host ID or exact name>"));
                 return;
             }
 

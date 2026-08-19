@@ -14,7 +14,7 @@
 
 > **알파, GA 아님.** Sutty는 개발 중인 엔지니어링 빌드입니다. 중요한 시스템에 사용하기 전에 현재 한계를 확인해야 합니다.
 
-> **Current / 현재:** [`v0.1.0-alpha.2`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.2) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
+> **Current / 현재:** [`v0.1.0-alpha.3`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.3) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
 
 ## English
 
