@@ -100,6 +100,24 @@ function New-CanonicalSummary {
     return $summary | ConvertTo-Json -Depth 10 -Compress
 }
 
+function New-SshLive001Checks {
+    foreach ($id in @(
+        'package-sha256',
+        'package-commit-identity',
+        'package-core-identity',
+        'authentication-success',
+        'authentication-rejection',
+        'host-key-rejection',
+        'connection-cancellation',
+        'transport-timeout',
+        'negotiated-reconnect',
+        'command-pty-sftp',
+        'remote-local-cleanup',
+        'server-session-audit')) {
+        [ordered]@{ id = $id; result = 'Pass' }
+    }
+}
+
 function New-EvidenceBundle {
     param(
         [string]$Name,
@@ -189,6 +207,7 @@ function Get-ValidationFailure {
         [string]$Manifest,
         [string]$ExpectedCommit,
         [string]$ExpectedPackageSha256,
+        [string]$RequiredGateId,
         [string]$RequiredResult
     )
 
@@ -200,6 +219,9 @@ function Get-ValidationFailure {
             }
             if (-not [string]::IsNullOrWhiteSpace($ExpectedPackageSha256)) {
                 $arguments.ExpectedPackageSha256 = $ExpectedPackageSha256
+            }
+            if (-not [string]::IsNullOrWhiteSpace($RequiredGateId)) {
+                $arguments.RequiredGateId = $RequiredGateId
             }
             if (-not [string]::IsNullOrWhiteSpace($RequiredResult)) {
                 $arguments.RequiredResult = $RequiredResult
@@ -221,6 +243,7 @@ function Assert-Accepted {
         [hashtable]$Fixture,
         [string]$Name,
         [switch]$Direct,
+        [string]$RequiredGateId,
         [string]$RequiredResult
     )
 
@@ -230,6 +253,7 @@ function Assert-Accepted {
             -Manifest $Fixture.Manifest `
             -ExpectedCommit $commit `
             -ExpectedPackageSha256 $packageSha256 `
+            -RequiredGateId $RequiredGateId `
             -RequiredResult $RequiredResult
     }
     else {
@@ -247,6 +271,7 @@ function Assert-Rejected {
         [switch]$Direct,
         [string]$ExpectedCommit,
         [string]$ExpectedPackageSha256,
+        [string]$RequiredGateId,
         [string]$RequiredResult
     )
 
@@ -256,6 +281,7 @@ function Assert-Rejected {
             -Manifest $Fixture.Manifest `
             -ExpectedCommit $ExpectedCommit `
             -ExpectedPackageSha256 $ExpectedPackageSha256 `
+            -RequiredGateId $RequiredGateId `
             -RequiredResult $RequiredResult
     }
     else {
@@ -280,6 +306,116 @@ try {
     $canonical = New-EvidenceBundle 'canonical'
     Assert-Accepted -Fixture $canonical -Name 'canonical quoted YAML and JSON bundle'
     Assert-Accepted -Fixture $canonical -Name 'expected commit, package, and Pass binding' -Direct -RequiredResult Pass
+    $releaseGateSummary = New-CanonicalSummary `
+        -GateId 'SSH-LIVE-001' `
+        -Checks @(New-SshLive001Checks)
+    $releaseGate = New-EvidenceBundle `
+        'release-gate' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary $releaseGateSummary
+    Assert-Accepted `
+        -Fixture $releaseGate `
+        -Name 'exact SSH-LIVE-001 release gate binding' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    Assert-Rejected `
+        -Fixture $canonical `
+        -Name 'different Pass gate does not satisfy SSH-LIVE-001 release gate' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    Assert-Rejected `
+        -Fixture $releaseGate `
+        -Name 'invalid required release gate identifier' `
+        -Direct `
+        -RequiredGateId 'ssh_live_001'
+    $partialReleaseGate = New-EvidenceBundle `
+        'release-gate-partial' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' }
+    Assert-Rejected `
+        -Fixture $partialReleaseGate `
+        -Name 'partial SSH-LIVE-001 checks do not satisfy release gate' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    $publicKeyReleaseGate = New-EvidenceBundle `
+        'release-gate-public-key' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001' } `
+        -Summary $releaseGateSummary
+    Assert-Rejected `
+        -Fixture $publicKeyReleaseGate `
+        -Name 'PublicKey evidence does not satisfy Direct Password release gate' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    foreach ($profileCase in @(
+        @{ Name = 'ARM64 evidence'; Field = 'architecture'; Value = 'arm64' },
+        @{ Name = 'indirect route evidence'; Field = 'route'; Value = 'Socks5' },
+        @{ Name = 'unrecorded fingerprint evidence'; Field = 'expected_host_fingerprint'; Value = 'NotRecorded' },
+        @{ Name = 'unsupported Windows build evidence'; Field = 'windows_build'; Value = '10.0.19045.0' })) {
+        $profileFixture = New-EvidenceBundle `
+            "release-gate-$($profileCase.Field)" `
+            -Overrides @{
+                gate_id = 'SSH-LIVE-001'
+                authentication = 'Password'
+                $profileCase.Field = $profileCase.Value
+            } `
+            -Summary $releaseGateSummary
+        Assert-Rejected `
+            -Fixture $profileFixture `
+            -Name "$($profileCase.Name) does not satisfy SSH-LIVE-001 release profile" `
+            -Direct `
+            -RequiredGateId 'SSH-LIVE-001' `
+            -RequiredResult Pass
+    }
+    $missingReleaseChecks = @(New-SshLive001Checks | Select-Object -Skip 1)
+    $missingReleaseGate = New-EvidenceBundle `
+        'release-gate-missing-check' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary (New-CanonicalSummary -GateId 'SSH-LIVE-001' -Checks $missingReleaseChecks)
+    Assert-Rejected `
+        -Fixture $missingReleaseGate `
+        -Name 'missing full-gate check does not satisfy SSH-LIVE-001' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    $extraReleaseChecks = @(
+        @(New-SshLive001Checks) + @([ordered]@{ id = 'unexpected-extra'; result = 'Pass' }))
+    $extraReleaseGate = New-EvidenceBundle `
+        'release-gate-extra-check' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary (New-CanonicalSummary -GateId 'SSH-LIVE-001' -Checks $extraReleaseChecks)
+    Assert-Rejected `
+        -Fixture $extraReleaseGate `
+        -Name 'extra check does not satisfy exact SSH-LIVE-001 profile' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    $duplicateReleaseChecks = @(
+        @(New-SshLive001Checks) + @([ordered]@{ id = 'package-sha256'; result = 'Pass' }))
+    $duplicateReleaseGate = New-EvidenceBundle `
+        'release-gate-duplicate-check' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary (New-CanonicalSummary -GateId 'SSH-LIVE-001' -Checks $duplicateReleaseChecks)
+    Assert-Rejected `
+        -Fixture $duplicateReleaseGate `
+        -Name 'duplicate check does not satisfy exact SSH-LIVE-001 profile' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    $failedReleaseChecks = @(New-SshLive001Checks)
+    $failedReleaseChecks[0] = [ordered]@{ id = 'package-sha256'; result = 'Fail' }
+    $failedReleaseGate = New-EvidenceBundle `
+        'release-gate-failed-check' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary (New-CanonicalSummary -GateId 'SSH-LIVE-001' -Checks $failedReleaseChecks)
+    Assert-Rejected `
+        -Fixture $failedReleaseGate `
+        -Name 'failed check does not satisfy SSH-LIVE-001 Pass profile' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
     $safeScenario = New-EvidenceBundle `
         'safe-scenario-field' `
         -Summary (New-CanonicalSummary -AdditionalProperties @{

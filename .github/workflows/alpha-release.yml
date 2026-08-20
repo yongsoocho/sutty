@@ -223,6 +223,7 @@ jobs:
             -ManifestPath $evidenceManifest `
             -ExpectedCommit $env:CANDIDATE_SHA `
             -ExpectedPackageSha256 $x64Hash `
+            -RequiredGateId SSH-LIVE-001 `
             -RequiredResult Pass
 
       - name: Recheck immutable publication preconditions

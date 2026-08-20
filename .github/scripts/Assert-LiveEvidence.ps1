@@ -12,6 +12,9 @@ param(
 
     [string]$ExpectedPackageSha256,
 
+    [Parameter(ParameterSetName = 'Manifest')]
+    [string]$RequiredGateId,
+
     [ValidateSet('Pass', 'Fail', 'Blocked')]
     [string]$RequiredResult
 )
@@ -37,6 +40,20 @@ $requiredKeys = @(
     'duration_seconds'
     'evidence_files'
     'redaction_reviewed'
+)
+$sshLive001RequiredCheckIds = @(
+    'package-sha256'
+    'package-commit-identity'
+    'package-core-identity'
+    'authentication-success'
+    'authentication-rejection'
+    'host-key-rejection'
+    'connection-cancellation'
+    'transport-timeout'
+    'negotiated-reconnect'
+    'command-pty-sftp'
+    'remote-local-cleanup'
+    'server-session-audit'
 )
 $requiredKeySet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($requiredKey in $requiredKeys) {
@@ -428,6 +445,8 @@ function Test-SummaryContract {
 
     $checksProperty = Get-RequiredSummaryProperty 'checks'
     $checkResults = [System.Collections.Generic.List[string]]::new()
+    $checkResultsById = [System.Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::Ordinal)
     if ($null -ne $checksProperty) {
         if ($checksProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Array -or
             $checksProperty.Value.GetArrayLength() -lt 1 -or
@@ -443,6 +462,8 @@ function Test-SummaryContract {
                 }
                 $idProperties = @($check.EnumerateObject() | Where-Object { $_.Name -ceq 'id' })
                 $resultProperties = @($check.EnumerateObject() | Where-Object { $_.Name -ceq 'result' })
+                $validCheckId = $null
+                $validCheckResult = $null
                 if ($idProperties.Count -ne 1 -or
                     $idProperties[0].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String) {
                     Add-Violation "$Description each checks item must contain one string id."
@@ -453,6 +474,9 @@ function Test-SummaryContract {
                         -not $checkIds.Add($checkId)) {
                         Add-Violation "$Description checks ids must be bounded canonical unique identifiers."
                     }
+                    else {
+                        $validCheckId = $checkId
+                    }
                 }
                 if ($resultProperties.Count -ne 1 -or
                     $resultProperties[0].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
@@ -460,7 +484,11 @@ function Test-SummaryContract {
                     Add-Violation "$Description each checks item must contain one allowed result."
                 }
                 else {
-                    $checkResults.Add($resultProperties[0].Value.GetString())
+                    $validCheckResult = $resultProperties[0].Value.GetString()
+                    $checkResults.Add($validCheckResult)
+                }
+                if ($null -ne $validCheckId -and $null -ne $validCheckResult) {
+                    $checkResultsById.Add($validCheckId, $validCheckResult)
                 }
             }
         }
@@ -482,6 +510,18 @@ function Test-SummaryContract {
             $blockingCategories[0].Value.GetString() -cmatch '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
         if (-not $hasBoundedBlockingCategory) {
             Add-Violation "$Description cannot declare Blocked without a blocked check or bounded blocking_category."
+        }
+    }
+
+    if ($RequiredGateId -ceq 'SSH-LIVE-001') {
+        if ($checkResultsById.Count -ne $sshLive001RequiredCheckIds.Count) {
+            Add-Violation "$Description SSH-LIVE-001 must contain exactly the 12 complete gate checks."
+        }
+        foreach ($requiredCheckId in $sshLive001RequiredCheckIds) {
+            if (-not $checkResultsById.ContainsKey($requiredCheckId) -or
+                $checkResultsById[$requiredCheckId] -cne 'Pass') {
+                Add-Violation "$Description SSH-LIVE-001 check $requiredCheckId must appear exactly once as Pass."
+            }
         }
     }
 }
@@ -837,8 +877,12 @@ function Test-LiveEvidenceManifest {
     if ((Get-Value 'schema_version') -cne '1' -or $quotedFields.Contains('schema_version')) {
         Add-Violation "$Description schema_version must be exactly 1."
     }
-    if ((Get-Value 'gate_id') -cnotmatch '^(?=.{1,64}$)[A-Z0-9]+(?:-[A-Z0-9]+)+$') {
+    $gateId = Get-Value 'gate_id'
+    if ($gateId -cnotmatch '^(?=.{1,64}$)[A-Z0-9]+(?:-[A-Z0-9]+)+$') {
         Add-Violation "$Description gate_id must be an uppercase hyphenated identifier of at most 64 characters."
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($RequiredGateId) -and $gateId -cne $RequiredGateId) {
+        Add-Violation "$Description gate_id does not satisfy the required release gate."
     }
 
     $commit = Get-Value 'commit'
@@ -858,7 +902,11 @@ function Test-LiveEvidenceManifest {
         Add-Violation "$Description package_sha256 does not match the expected package digest."
     }
 
-    if ((Get-Value 'windows_build') -cnotmatch '^(?:10\.0\.)?[0-9]{5}(?:\.[0-9]{1,6})?$') {
+    $windowsBuild = Get-Value 'windows_build'
+    $windowsBuildMatch = [regex]::Match(
+        $windowsBuild,
+        '^(?:10\.0\.)?([0-9]{5})(?:\.[0-9]{1,6})?$')
+    if (-not $windowsBuildMatch.Success) {
         Add-Violation "$Description windows_build must be a numeric Windows build such as 10.0.26100.0."
     }
     if ((Get-Value 'architecture') -cnotin @('x64', 'arm64')) {
@@ -883,6 +931,18 @@ function Test-LiveEvidenceManifest {
     }
     if ((Get-Value 'expected_host_fingerprint') -cnotin @('SHA256:[redacted]', 'NotRecorded')) {
         Add-Violation "$Description expected_host_fingerprint must be a redacted contract value."
+    }
+
+    if ($RequiredGateId -ceq 'SSH-LIVE-001') {
+        if (-not $windowsBuildMatch.Success -or [int]$windowsBuildMatch.Groups[1].Value -lt 26100) {
+            Add-Violation "$Description SSH-LIVE-001 requires Windows 11 24H2 build 26100 or newer."
+        }
+        if ((Get-Value 'architecture') -cne 'x64' -or
+            (Get-Value 'route') -cne 'Direct' -or
+            (Get-Value 'authentication') -cne 'Password' -or
+            (Get-Value 'expected_host_fingerprint') -cne 'SHA256:[redacted]') {
+            Add-Violation "$Description SSH-LIVE-001 requires x64, Direct, Password, and a reviewed redacted host fingerprint."
+        }
     }
 
     $result = Get-Value 'result'
@@ -1037,6 +1097,10 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedCommit) -and
 if (-not [string]::IsNullOrWhiteSpace($ExpectedPackageSha256) -and
     ($ExpectedPackageSha256 -cnotmatch '^[0-9a-f]{64}$' -or $ExpectedPackageSha256 -cmatch '^0{64}$')) {
     Add-Violation 'ExpectedPackageSha256 must be a 64-character lowercase SHA-256 digest.'
+}
+if (-not [string]::IsNullOrWhiteSpace($RequiredGateId) -and
+    $RequiredGateId -cnotmatch '^(?=.{1,64}$)[A-Z0-9]+(?:-[A-Z0-9]+)+$') {
+    Add-Violation 'RequiredGateId must be an uppercase hyphenated identifier of at most 64 characters.'
 }
 
 $validatedCount = 0

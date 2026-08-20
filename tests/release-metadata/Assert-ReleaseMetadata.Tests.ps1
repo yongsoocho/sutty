@@ -354,6 +354,7 @@ try {
     Assert-Result ($workflow -match 'Assert-ReleaseMetadata\.ps1') 'promotion workflow revalidates source and packaged metadata'
     Assert-Result ($workflow -match 'Assert-LiveEvidence\.ps1') 'promotion workflow validates reviewed live evidence'
     Assert-Result ($workflow -match '-RequiredResult Pass') 'promotion requires accepted Pass evidence'
+    Assert-Result (@([regex]::Matches($workflow, '-RequiredGateId SSH-LIVE-001')).Count -eq 1) 'promotion requires the exact SSH-LIVE-001 release gate'
     Assert-Result ($workflow -match 'merge-base --is-ancestor') 'promotion proves acceptance ancestry on main'
     Assert-Result ($workflow -match 'actions/runs/\$env:CANDIDATE_RUN_ID') 'promotion verifies the candidate workflow run through the API'
     Assert-Result ($workflow -match 'status\s+-cne\s+''completed''') 'promotion requires a completed candidate run'
