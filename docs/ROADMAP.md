@@ -4,6 +4,10 @@ This roadmap follows reliability gates, not calendar promises. Each stage must s
 
 이 로드맵은 날짜 약속이 아니라 신뢰성 게이트를 따릅니다. 각 단계는 Core 동작, 테스트, UI, 정직한 문서를 갖춘 완결된 Vertical Slice로 제공해야 합니다.
 
+The authoritative near-term order, dependencies, and exit criteria are in the [Alpha 4 execution plan](ALPHA4_EXECUTION_PLAN.md). Support promotion follows [Supported environments](SUPPORTED_ENVIRONMENTS.md) and never advances from implementation alone.
+
+단기 실행 순서·의존성·종료 기준은 [Alpha 4 실행 계획](ALPHA4_EXECUTION_PLAN.md)이 기준입니다. 지원 상태 승격은 [지원 환경](SUPPORTED_ENVIRONMENTS.md)을 따르며 구현만으로 올리지 않습니다.
+
 ## Now — Daily-driver Alpha hardening / 일상 사용 Alpha 안정화
 
 ### Milestone A — Authentication and Route Matrix / 인증·경로 매트릭스

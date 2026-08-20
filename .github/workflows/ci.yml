@@ -12,7 +12,7 @@ on:
         default: false
         type: boolean
       live_modes:
-        description: Comma-separated modes (smoke,fault,scale,soak)
+        description: Comma-separated modes (connection-info,smoke,fault,scale,soak)
         required: false
         default: smoke
         type: string
@@ -50,6 +50,21 @@ jobs:
         shell: pwsh
         run: .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
 
+      - name: Test Alpha candidate manifest guard
+        if: matrix.configuration == 'Debug'
+        shell: pwsh
+        run: .\tests\release-candidate\Assert-AlphaCandidate.Tests.ps1
+
+      - name: Test live-evidence guard
+        if: matrix.configuration == 'Debug'
+        shell: pwsh
+        run: .\tests\live-evidence\Assert-LiveEvidence.Tests.ps1
+
+      - name: Enforce committed live-evidence records
+        if: matrix.configuration == 'Debug'
+        shell: pwsh
+        run: .\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
+
       - name: Enforce product scope
         if: matrix.configuration == 'Debug'
         shell: pwsh
@@ -79,6 +94,17 @@ jobs:
           -p:Platform=x64
           -p:PublishReadyToRun=false
           -p:PublishTrimmed=false
+
+      - name: Run credential-free live-evidence writer self-test
+        if: matrix.configuration == 'Debug'
+        run: >-
+          dotnet run
+          --project .\tests\sutty.LiveServer.SelfTest\sutty.LiveServer.SelfTest.csproj
+          --configuration Debug
+          --no-build
+          --no-restore
+          --
+          --self-test-evidence
 
       - name: Run security self-tests
         if: matrix.configuration == 'Debug'

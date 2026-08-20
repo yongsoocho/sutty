@@ -1,245 +1,369 @@
-name: Alpha release
+name: Alpha release promotion
 
 on:
-  push:
-    tags:
-      - 'v*-alpha.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Alpha tag that points to the candidate commit
+        required: true
+        type: string
+      candidate_run_id:
+        description: Successful Alpha candidate workflow run ID
+        required: true
+        type: string
+      candidate_run_attempt:
+        description: Successful Alpha candidate workflow run attempt
+        required: true
+        type: string
+      candidate_artifact_name:
+        description: Exact sealed artifact name from the candidate run
+        required: true
+        type: string
+      acceptance_commit:
+        description: Commit on main containing the reviewed live-evidence bundle
+        required: true
+        type: string
+      evidence_manifest_path:
+        description: Canonical reviewed Pass manifest path under docs/evidence
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
-  group: alpha-release-${{ github.ref }}
+  group: alpha-release-${{ inputs.tag }}
   cancel-in-progress: false
 
-env:
-  DOTNET_CLI_TELEMETRY_OPTOUT: 1
-  DOTNET_NOLOGO: true
-  ContinuousIntegrationBuild: true
-
 jobs:
-  package-and-release:
-    name: Validate and publish Alpha archives
+  promote-candidate:
+    name: Verify and publish exact Alpha candidate bytes
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Test product-scope guard
-        shell: pwsh
-        run: .\tests\product-scope\Assert-ProductScope.Tests.ps1
-
-      - name: Enforce product scope
-        shell: pwsh
-        run: .\.github\scripts\Assert-ProductScope.ps1
-
-      - name: Test release-metadata guard
-        shell: pwsh
-        run: .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
-
-      - name: Validate source release metadata
-        shell: pwsh
-        run: .\.github\scripts\Assert-ReleaseMetadata.ps1 -Tag $env:GITHUB_REF_NAME
-
-      - name: Reject an existing GitHub release
+      - name: Validate promotion inputs and GitHub provenance
+        id: provenance
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.tag }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+          CANDIDATE_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
+          ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
+          EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
         run: |
-          $tag = $env:GITHUB_REF_NAME
+          if ($env:GITHUB_REF -cne 'refs/heads/main') { throw 'Alpha promotion must be dispatched from refs/heads/main.' }
+          $tagPattern = '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$'
+          if ($env:CANDIDATE_TAG -cnotmatch $tagPattern) { throw 'Promotion tag is not a supported Alpha tag.' }
+          if ($env:CANDIDATE_RUN_ID -cnotmatch '^[1-9][0-9]*$') { throw 'candidate_run_id must be a positive decimal workflow run ID.' }
+          if ($env:CANDIDATE_RUN_ATTEMPT -cnotmatch '^[1-9][0-9]*$') { throw 'candidate_run_attempt must be a positive decimal number.' }
+          $expectedArtifactName = "sutty-$env:CANDIDATE_TAG-candidate-$env:CANDIDATE_RUN_ID-attempt-$env:CANDIDATE_RUN_ATTEMPT"
+          if ($env:CANDIDATE_ARTIFACT_NAME -cne $expectedArtifactName) { throw "candidate_artifact_name must be exactly $expectedArtifactName." }
+          if ($env:ACCEPTANCE_COMMIT -cnotmatch '^[0-9a-f]{40}$') { throw 'acceptance_commit must be a 40-character lowercase Git object ID.' }
+          if ($env:EVIDENCE_MANIFEST_PATH -cnotmatch '^docs/evidence/alpha[0-9]+/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,63}/manifest\.yml$') {
+            throw 'evidence_manifest_path is not a canonical committed evidence path.'
+          }
+          & gh release verify --help *> $null
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI does not support immutable release attestation verification.' }
+          & gh release verify-asset --help *> $null
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI does not support immutable release asset verification.' }
+
+          function Invoke-GitHubJson {
+            param([string]$Endpoint, [string[]]$Headers = @())
+            $arguments = @('api', $Endpoint, '--method', 'GET')
+            foreach ($header in $Headers) { $arguments += @('-H', $header) }
+            $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+            try {
+              $PSNativeCommandUseErrorActionPreference = $false
+              $output = @(& gh @arguments 2>&1)
+              $exitCode = $LASTEXITCODE
+            }
+            finally {
+              $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+              $global:LASTEXITCODE = 0
+            }
+            if ($exitCode -ne 0) { throw "GitHub API request failed closed for $Endpoint`: $($output -join [Environment]::NewLine)" }
+            try { return ($output -join [Environment]::NewLine) | ConvertFrom-Json }
+            catch { throw "GitHub API returned invalid JSON for $Endpoint." }
+          }
+
+          function Assert-ReleaseAbsent {
+            param([string]$Repository, [string]$Tag)
+            $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+            try {
+              $PSNativeCommandUseErrorActionPreference = $false
+              $lookupOutput = @(& gh api "repos/$Repository/releases/tags/$Tag" --method GET --silent 2>&1)
+              $lookupExitCode = $LASTEXITCODE
+            }
+            finally {
+              $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+              $global:LASTEXITCODE = 0
+            }
+            if ($lookupExitCode -eq 0) { throw "Release already exists for $Tag. Release assets are immutable; create a new tag." }
+            $lookupMessage = $lookupOutput -join [Environment]::NewLine
+            if ($lookupMessage -notmatch '(?i)\(HTTP 404\)') {
+              throw "Could not verify release absence for $Tag. GitHub API lookup failed: $lookupMessage"
+            }
+          }
+
           $repository = $env:GITHUB_REPOSITORY
+          $workflow = Invoke-GitHubJson "repos/$repository/actions/workflows/alpha-candidate.yml"
+          $run = Invoke-GitHubJson "repos/$repository/actions/runs/$env:CANDIDATE_RUN_ID"
+          if ([long]$run.workflow_id -ne [long]$workflow.id) { throw 'The supplied run was not produced by alpha-candidate.yml.' }
+          if ([string]$run.event -cne 'workflow_dispatch' -or [string]$run.status -cne 'completed' -or [string]$run.conclusion -cne 'success') {
+            throw 'The candidate workflow run is not a completed successful manual run.'
+          }
+          if ([string]$run.head_repository.full_name -cne $repository -or [string]$run.head_branch -cne 'main' -or [string]$run.head_sha -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'The candidate workflow run does not identify an exact commit from this repository main branch.'
+          }
+          if ([int]$run.run_attempt -ne [int]$env:CANDIDATE_RUN_ATTEMPT) { throw 'The candidate workflow run attempt does not match the promotion input.' }
+
+          $artifactQuery = "repos/$repository/actions/runs/$env:CANDIDATE_RUN_ID/artifacts?name=$env:CANDIDATE_ARTIFACT_NAME"
+          $artifacts = Invoke-GitHubJson $artifactQuery
+          if ([int]$artifacts.total_count -ne 1 -or @($artifacts.artifacts).Count -ne 1) {
+            throw 'The candidate run must contain exactly one artifact with the supplied identity.'
+          }
+          $artifact = @($artifacts.artifacts)[0]
+          if ([string]$artifact.name -cne $env:CANDIDATE_ARTIFACT_NAME -or [bool]$artifact.expired -or
+              [long]$artifact.size_in_bytes -le 0 -or [long]$artifact.workflow_run.id -ne [long]$env:CANDIDATE_RUN_ID) {
+            throw 'The candidate artifact is expired, empty, or bound to a different workflow run.'
+          }
+
+          $immutable = Invoke-GitHubJson `
+            -Endpoint "repos/$repository/immutable-releases" `
+            -Headers @('Accept: application/vnd.github+json', 'X-GitHub-Api-Version: 2026-03-10')
+          if ($immutable.enabled -ne $true) { throw 'Repository immutable releases must be enabled before Alpha promotion.' }
+          Assert-ReleaseAbsent -Repository $repository -Tag $env:CANDIDATE_TAG
+          "candidate_sha=$($run.head_sha)" >> $env:GITHUB_OUTPUT
+
+      - name: Check out exact tagged candidate source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out reviewed acceptance commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.acceptance_commit }}
+          path: acceptance
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify tag, candidate source, and acceptance ancestry
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+          CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
+          ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
+        run: |
+          $tagCommit = (& git -C .\source rev-list -n 1 "refs/tags/$env:CANDIDATE_TAG").Trim()
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -cne $env:CANDIDATE_SHA) { throw 'The Alpha tag does not point to the exact candidate workflow commit.' }
+          $sourceHead = (& git -C .\source rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceHead -cne $env:CANDIDATE_SHA) { throw 'The checked-out release source is not the exact candidate workflow commit.' }
+          $acceptanceHead = (& git -C .\acceptance rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $acceptanceHead -cne $env:ACCEPTANCE_COMMIT) { throw 'The checked-out acceptance source does not match acceptance_commit.' }
+
+          & git -C .\acceptance merge-base --is-ancestor $env:ACCEPTANCE_COMMIT refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'acceptance_commit is not reachable from the current origin/main history.' }
+          & git -C .\acceptance merge-base --is-ancestor $env:CANDIDATE_SHA $env:ACCEPTANCE_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'acceptance_commit does not descend from the exact candidate commit.' }
+
+      - name: Download exact sealed candidate artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.candidate_artifact_name }}
+          path: artifacts/candidate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Verify manifest, checksums, metadata, and reviewed live evidence
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+          CANDIDATE_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
+          CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
+          EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
+        run: |
+          .\source\.github\scripts\Assert-AlphaCandidate.ps1 `
+            -PackageDirectory .\artifacts\candidate\packages `
+            -ManifestPath .\artifacts\candidate\CANDIDATE-MANIFEST.json `
+            -Repository $env:GITHUB_REPOSITORY `
+            -Tag $env:CANDIDATE_TAG `
+            -Commit $env:CANDIDATE_SHA `
+            -CandidateRunId $env:CANDIDATE_RUN_ID `
+            -CandidateRunAttempt ([int]$env:CANDIDATE_RUN_ATTEMPT) `
+            -ArtifactName $env:CANDIDATE_ARTIFACT_NAME
+
+          $x64Payload = New-Item -ItemType Directory -Force -Path .\artifacts\payload-x64
+          $arm64Payload = New-Item -ItemType Directory -Force -Path .\artifacts\payload-arm64
+          Expand-Archive -LiteralPath ".\artifacts\candidate\packages\Sutty-$env:CANDIDATE_TAG-win-x64.zip" -DestinationPath $x64Payload.FullName
+          Expand-Archive -LiteralPath ".\artifacts\candidate\packages\Sutty-$env:CANDIDATE_TAG-win-arm64.zip" -DestinationPath $arm64Payload.FullName
+
+          .\source\.github\scripts\Assert-ReleaseMetadata.ps1 `
+            -Tag $env:CANDIDATE_TAG `
+            -RepositoryRoot .\source `
+            -Commit $env:CANDIDATE_SHA `
+            -X64PayloadPath $x64Payload.FullName `
+            -Arm64PayloadPath $arm64Payload.FullName `
+            -PackageDirectory .\artifacts\candidate\packages
+
+          .\source\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\acceptance\docs\evidence
+          $evidenceManifest = Join-Path .\acceptance $env:EVIDENCE_MANIFEST_PATH
+          $x64Archive = ".\artifacts\candidate\packages\Sutty-$env:CANDIDATE_TAG-win-x64.zip"
+          $x64Hash = (Get-FileHash -LiteralPath $x64Archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          .\source\.github\scripts\Assert-LiveEvidence.ps1 `
+            -ManifestPath $evidenceManifest `
+            -ExpectedCommit $env:CANDIDATE_SHA `
+            -ExpectedPackageSha256 $x64Hash `
+            -RequiredResult Pass
+
+      - name: Recheck immutable publication preconditions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.tag }}
+          CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
+        run: |
+          $repository = $env:GITHUB_REPOSITORY
+          $immutableJson = & gh api "repos/$repository/immutable-releases" --method GET `
+            -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2026-03-10'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not recheck immutable release settings.' }
+          try { $immutable = $immutableJson | ConvertFrom-Json }
+          catch { throw 'Immutable release settings response was not valid JSON.' }
+          if ($immutable.enabled -ne $true) { throw 'Repository immutable releases were disabled before publication.' }
+
+          $remoteTagLines = @(& git -C .\source ls-remote origin "refs/tags/$env:CANDIDATE_TAG" "refs/tags/$env:CANDIDATE_TAG^{}")
+          if ($LASTEXITCODE -ne 0 -or $remoteTagLines.Count -lt 1 -or $remoteTagLines.Count -gt 2) {
+            throw 'Could not recheck the exact remote Alpha tag target.'
+          }
+          $peeledLine = @($remoteTagLines | Where-Object { $_ -match '\^\{\}$' })
+          $remoteTargetLine = if ($peeledLine.Count -eq 1) { $peeledLine[0] }
+            elseif ($peeledLine.Count -eq 0 -and $remoteTagLines.Count -eq 1) { $remoteTagLines[0] }
+            else { throw 'Remote Alpha tag response is ambiguous.' }
+          $remoteTagTarget = @($remoteTargetLine -split '\s+')[0]
+          if ($remoteTagTarget -cne $env:CANDIDATE_SHA) {
+            throw 'The remote Alpha tag moved away from the exact candidate commit.'
+          }
+
           $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
           try {
             $PSNativeCommandUseErrorActionPreference = $false
-            $lookupOutput = @(& gh api "repos/$repository/releases/tags/$tag" --method GET --silent 2>&1)
+            $lookupOutput = @(& gh api "repos/$repository/releases/tags/$env:CANDIDATE_TAG" --method GET --silent 2>&1)
             $lookupExitCode = $LASTEXITCODE
           }
           finally {
             $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
             $global:LASTEXITCODE = 0
           }
-
-          if ($lookupExitCode -eq 0) {
-            throw "Release already exists for $tag. Release assets are immutable; create a new tag."
-          }
-
+          if ($lookupExitCode -eq 0) { throw "Release already exists for $env:CANDIDATE_TAG. Release assets are immutable; create a new tag." }
           $lookupMessage = $lookupOutput -join [Environment]::NewLine
           if ($lookupMessage -notmatch '(?i)\(HTTP 404\)') {
-            throw "Could not verify release absence for $tag. GitHub API lookup failed: $lookupMessage"
+            throw "Could not verify release absence for $env:CANDIDATE_TAG. GitHub API lookup failed: $lookupMessage"
           }
 
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: '**/packages.lock.json'
-
-      - name: Restore locked x64 dependencies
-        run: >-
-          dotnet restore .\sutty.slnx
-          --locked-mode
-          -p:Platform=x64
-          -p:Configuration=Release
-          -p:PublishReadyToRun=false
-          -p:PublishTrimmed=false
-
-      - name: Build x64 Release
-        run: >-
-          dotnet build .\sutty.slnx
-          --configuration Release
-          --no-restore
-          -p:Platform=x64
-          -p:PublishReadyToRun=false
-          -p:PublishTrimmed=false
-
-      - name: Run security self-tests
-        run: dotnet .\tests\sutty.Core.Security.SelfTest\bin\Release\net10.0\sutty.Core.Security.SelfTest.dll
-
-      - name: Run saved-host and history self-tests
-        run: dotnet .\tests\sutty.Command.SelfTest\bin\Release\net10.0\sutty.Command.SelfTest.dll
-
-      - name: Run terminal self-tests
-        run: dotnet .\tests\sutty.Terminal.SelfTest\bin\Release\net10.0\sutty.Terminal.SelfTest.dll
-
-      - name: Run settings self-tests
-        run: dotnet .\tests\sutty.Setting.SelfTest\bin\Release\net10.0\sutty.Setting.SelfTest.dll
-
-      - name: Run SFTP self-tests
-        run: dotnet .\tests\sutty.Sftp.SelfTest\bin\Release\net10.0\sutty.Sftp.SelfTest.dll
-
-      - name: Publish unsigned x64 Alpha
-        run: >-
-          dotnet publish .\src\sutty.UI\sutty.UI.csproj
-          --configuration Release
-          --runtime win-x64
-          --self-contained true
-          --no-restore
-          --output .\artifacts\alpha-win-x64
-          -p:Platform=x64
-          -p:GenerateAppxPackageOnBuild=false
-          -p:AppxPackageSigningEnabled=false
-          -p:PublishReadyToRun=false
-          -p:PublishTrimmed=false
-          -p:DebugSymbols=false
-          -p:DebugType=None
-
-      - name: Restore locked ARM64 dependencies
-        run: >-
-          dotnet restore .\sutty.slnx
-          --locked-mode
-          -p:Platform=ARM64
-          -p:Configuration=Release
-          -p:PublishReadyToRun=false
-          -p:PublishTrimmed=false
-
-      - name: Build ARM64 Release
-        run: >-
-          dotnet build .\sutty.slnx
-          --configuration Release
-          --no-restore
-          -p:Platform=ARM64
-          -p:PublishReadyToRun=false
-          -p:PublishTrimmed=false
-
-      - name: Publish unsigned ARM64 Alpha
-        run: >-
-          dotnet publish .\src\sutty.UI\sutty.UI.csproj
-          --configuration Release
-          --runtime win-arm64
-          --self-contained true
-          --no-restore
-          --output .\artifacts\alpha-win-arm64
-          -p:Platform=ARM64
-          -p:GenerateAppxPackageOnBuild=false
-          -p:AppxPackageSigningEnabled=false
-          -p:PublishReadyToRun=false
-          -p:PublishTrimmed=false
-          -p:DebugSymbols=false
-          -p:DebugType=None
-
-      - name: Add release identity and installation guide
-        shell: pwsh
-        run: |
-          $metadata = @(
-            "Sutty $env:GITHUB_REF_NAME",
-            "Commit: $env:GITHUB_SHA",
-            "Channel: Alpha",
-            "Signing: unsigned ZIP evaluation build",
-            "Minimum OS: Windows 11 24H2"
-          )
-          foreach ($architecture in @('x64', 'arm64')) {
-            $path = ".\artifacts\alpha-win-$architecture"
-            [System.IO.File]::WriteAllLines(
-              (Join-Path $path 'BUILDINFO.txt'),
-              $metadata + "Architecture: $architecture",
-              [System.Text.UTF8Encoding]::new($false))
-            Copy-Item -LiteralPath .\LICENSE -Destination (Join-Path $path 'LICENSE.txt')
-            Copy-Item -LiteralPath .\docs\ALPHA_INSTALL.md -Destination (Join-Path $path 'ALPHA_INSTALL.md')
-          }
-
-      - name: Validate x64 Alpha payload policy
-        shell: pwsh
-        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\alpha-win-x64
-
-      - name: Validate ARM64 Alpha payload policy
-        shell: pwsh
-        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\alpha-win-arm64
-
-      - name: Package archives and SHA-256 checksums
-        shell: pwsh
-        run: |
-          $packageDirectory = New-Item -ItemType Directory -Force -Path .\artifacts\packages
-          $tag = $env:GITHUB_REF_NAME
-          $x64Archive = Join-Path $packageDirectory.FullName "Sutty-$tag-win-x64.zip"
-          $arm64Archive = Join-Path $packageDirectory.FullName "Sutty-$tag-win-arm64.zip"
-          Compress-Archive -Path .\artifacts\alpha-win-x64\* -DestinationPath $x64Archive -CompressionLevel Optimal
-          Compress-Archive -Path .\artifacts\alpha-win-arm64\* -DestinationPath $arm64Archive -CompressionLevel Optimal
-
-          $hashLines = @(Get-ChildItem -LiteralPath $packageDirectory.FullName -File -Filter *.zip |
-            Sort-Object Name |
-            ForEach-Object {
-              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              "$hash  $($_.Name)"
-            })
-          [System.IO.File]::WriteAllLines(
-            (Join-Path $packageDirectory.FullName 'SHA256SUMS.txt'),
-            $hashLines,
-            [System.Text.UTF8Encoding]::new($false))
-
-      - name: Validate packaged release metadata
-        shell: pwsh
-        run: >-
-          .\.github\scripts\Assert-ReleaseMetadata.ps1
-          -Tag $env:GITHUB_REF_NAME
-          -Commit $env:GITHUB_SHA
-          -X64PayloadPath .\artifacts\alpha-win-x64
-          -Arm64PayloadPath .\artifacts\alpha-win-arm64
-          -PackageDirectory .\artifacts\packages
-
-      - name: Upload immutable Alpha workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sutty-${{ github.ref_name }}-unsigned
-          path: artifacts/packages/*
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Create immutable GitHub prerelease
+      - name: Create immutable GitHub prerelease from exact candidate bytes
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.tag }}
         run: |
-          $tag = $env:GITHUB_REF_NAME
+          $tag = $env:CANDIDATE_TAG
           $repository = $env:GITHUB_REPOSITORY
-          $notesPath = ".\docs\releases\$tag.md"
           $titleVersion = $tag.TrimStart('v') -replace '-alpha\.', ' Alpha '
-          $title = "Sutty $titleVersion"
           $assets = @(
-            ".\artifacts\packages\Sutty-$tag-win-x64.zip",
-            ".\artifacts\packages\Sutty-$tag-win-arm64.zip",
-            '.\artifacts\packages\SHA256SUMS.txt'
+            ".\artifacts\candidate\packages\Sutty-$tag-win-x64.zip",
+            ".\artifacts\candidate\packages\Sutty-$tag-win-arm64.zip",
+            '.\artifacts\candidate\packages\SHA256SUMS.txt',
+            '.\artifacts\candidate\CANDIDATE-MANIFEST.json'
           )
+          & gh release create $tag @assets --repo $repository --verify-tag --prerelease `
+            --title "Sutty $titleVersion" --notes-file ".\source\docs\releases\$tag.md"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the immutable Alpha prerelease from the sealed candidate.' }
 
-          & gh release create $tag @assets --repo $repository --verify-tag --prerelease --title $title --notes-file $notesPath
-          if ($LASTEXITCODE -ne 0) { throw 'Could not create the immutable Alpha prerelease.' }
+      - name: Verify published release asset bytes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.tag }}
+          CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
+        run: |
+          $downloadDirectory = New-Item -ItemType Directory -Force -Path .\artifacts\published
+          function Invoke-AttestationVerification {
+            param([string[]]$Arguments, [string]$Description)
+
+            $lastOutput = @()
+            for ($attempt = 1; $attempt -le 6; $attempt++) {
+              $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+              try {
+                $PSNativeCommandUseErrorActionPreference = $false
+                $lastOutput = @(& gh @Arguments 2>&1)
+                $exitCode = $LASTEXITCODE
+              }
+              finally {
+                $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+                $global:LASTEXITCODE = 0
+              }
+              if ($exitCode -eq 0) { return }
+              if ($attempt -lt 6) { Start-Sleep -Seconds 10 }
+            }
+            throw "$Description failed after bounded attestation propagation retries: $($lastOutput -join [Environment]::NewLine)"
+          }
+
+          & gh release download $env:CANDIDATE_TAG --repo $env:GITHUB_REPOSITORY --dir $downloadDirectory.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the published release assets for verification.' }
+
+          $expectedNames = @(
+            "Sutty-$env:CANDIDATE_TAG-win-arm64.zip",
+            "Sutty-$env:CANDIDATE_TAG-win-x64.zip",
+            'SHA256SUMS.txt',
+            'CANDIDATE-MANIFEST.json'
+          ) | Sort-Object
+          $publishedNames = @(Get-ChildItem -LiteralPath $downloadDirectory.FullName -File | ForEach-Object { $_.Name } | Sort-Object)
+          if ([string]::Join('|', $publishedNames) -cne [string]::Join('|', $expectedNames)) {
+            throw 'Published release assets do not match the sealed candidate asset inventory.'
+          }
+          foreach ($name in $expectedNames) {
+            $candidatePath = if ($name -ceq 'CANDIDATE-MANIFEST.json') { Join-Path .\artifacts\candidate $name }
+              else { Join-Path .\artifacts\candidate\packages $name }
+            $publishedPath = Join-Path $downloadDirectory.FullName $name
+            $candidateHash = (Get-FileHash -LiteralPath $candidatePath -Algorithm SHA256).Hash
+            $publishedHash = (Get-FileHash -LiteralPath $publishedPath -Algorithm SHA256).Hash
+            if ($publishedHash -cne $candidateHash) { throw "Published release asset bytes differ from the sealed candidate: $name" }
+            Invoke-AttestationVerification `
+              -Arguments @('release', 'verify-asset', $env:CANDIDATE_TAG, $publishedPath, '--repo', $env:GITHUB_REPOSITORY, '--format', 'json') `
+              -Description "GitHub release attestation verification for $name"
+          }
+
+          Invoke-AttestationVerification `
+            -Arguments @('release', 'verify', $env:CANDIDATE_TAG, '--repo', $env:GITHUB_REPOSITORY, '--format', 'json') `
+            -Description 'GitHub release attestation verification'
+
+          $releaseJson = & gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:CANDIDATE_TAG" --method GET `
+            -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2026-03-10'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify the published release state.' }
+          try { $release = $releaseJson | ConvertFrom-Json }
+          catch { throw 'Published release state was not valid JSON.' }
+          if ($release.draft -ne $false -or $release.prerelease -ne $true -or
+              $release.immutable -ne $true -or @($release.assets).Count -ne 4) {
+            throw 'Published release is not the expected four-asset immutable prerelease.'
+          }
+
+          $remoteTagLines = @(& git -C .\source ls-remote origin "refs/tags/$env:CANDIDATE_TAG" "refs/tags/$env:CANDIDATE_TAG^{}")
+          if ($LASTEXITCODE -ne 0 -or $remoteTagLines.Count -lt 1 -or $remoteTagLines.Count -gt 2) {
+            throw 'Could not verify the immutable release tag after publication.'
+          }
+          $peeledLine = @($remoteTagLines | Where-Object { $_ -match '\^\{\}$' })
+          $remoteTargetLine = if ($peeledLine.Count -eq 1) { $peeledLine[0] }
+            elseif ($peeledLine.Count -eq 0 -and $remoteTagLines.Count -eq 1) { $remoteTagLines[0] }
+            else { throw 'Published Alpha tag response is ambiguous.' }
+          if (@($remoteTargetLine -split '\s+')[0] -cne $env:CANDIDATE_SHA) {
+            throw 'The immutable release tag does not point to the exact candidate commit.'
+          }

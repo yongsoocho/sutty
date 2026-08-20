@@ -14,7 +14,7 @@
 
 > **알파, GA 아님.** Sutty는 개발 중인 엔지니어링 빌드입니다. 중요한 시스템에 사용하기 전에 현재 한계를 확인해야 합니다.
 
-> **Current / 현재:** [`v0.1.0-alpha.3`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.3) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
+> **Current / 현재:** [`v0.1.0-alpha.4`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.4) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
 
 ## English
 
@@ -68,7 +68,7 @@ The small-team product direction is credential-free, file/Git-based sharing of h
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent local activity export, timeout, or streaming workflow.
 - Local/remote/dynamic forwarding has session lifecycle support and non-loopback binds require an explicit high-risk confirmation, but a post-connect tunnel manager and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed artifact has been supplied. Credential-free sharing packs, local support bundles, and the GA compatibility/accessibility matrices remain planned.
 
-The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with delivery order in the [Roadmap](docs/ROADMAP.md), engineering rules in [Contributing](CONTRIBUTING.md) and the [Development Playbook](docs/DEVELOPMENT_PLAYBOOK.md), and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
+The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Exact compatibility-claim boundaries are in [Supported environments](docs/SUPPORTED_ENVIRONMENTS.md), and live evidence must follow the [evidence schema](docs/evidence/EVIDENCE_SCHEMA.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md), with Alpha 4 ordering and exit criteria in the [Alpha 4 execution plan](docs/ALPHA4_EXECUTION_PLAN.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with longer-term delivery order in the [Roadmap](docs/ROADMAP.md), engineering rules in [Contributing](CONTRIBUTING.md) and the [Development Playbook](docs/DEVELOPMENT_PLAYBOOK.md), and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
 
 ### Explicitly unsupported scope
 
@@ -102,7 +102,7 @@ Read [Security](SECURITY.md) before reporting or sharing diagnostic data.
 | [`sutty.SshAgent`](src/sutty.SshAgent) | Upstream-pinned Windows OpenSSH Agent/Pageant adapter compiled against the selected SSH.NET runtime |
 | [`sutty.Command`](src/sutty.Command) | SQLite command templates, connection history, pins, and non-secret drafts |
 | [`sutty.Setting`](src/sutty.Setting) | Atomic JSON-backed application settings |
-| [`tests`](tests) | Focused self-tests plus an opt-in credentialed live-server smoke/fault/scale/soak harness; not a completed GA matrix |
+| [`tests`](tests) | Focused self-tests plus an opt-in credentialed live-server smoke/connection-info/fault/scale/soak harness; not a completed GA matrix |
 
 ### Prerequisites, build, and run
 
@@ -198,7 +198,7 @@ Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/S
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 로컬 활동 내보내기, timeout, streaming 흐름이 없습니다.
 - Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했고 loopback이 아닌 bind는 고위험 확인을 요구하지만 연결 후 tunnel 관리자와 실제 포워딩 매트릭스는 미완성입니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. 자격증명 없는 공유 pack, 로컬 support bundle, GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
-현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md), 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 개발 순서는 [로드맵](docs/ROADMAP.md), 개발 규칙은 [기여 가이드](CONTRIBUTING.md)와 [개발 Playbook](docs/DEVELOPMENT_PLAYBOOK.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.
+현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md)에 있습니다. 정확한 호환성 주장 경계는 [지원 환경](docs/SUPPORTED_ENVIRONMENTS.md), 실환경 증거 계약은 [증거 스키마](docs/evidence/EVIDENCE_SCHEMA.md)를 따릅니다. 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md), Alpha 4 순서와 종료 기준은 [Alpha 4 실행 계획](docs/ALPHA4_EXECUTION_PLAN.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 장기 개발 순서는 [로드맵](docs/ROADMAP.md), 개발 규칙은 [기여 가이드](CONTRIBUTING.md)와 [개발 Playbook](docs/DEVELOPMENT_PLAYBOOK.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.
 
 ### 명시적 미지원 범위
 
@@ -232,7 +232,7 @@ Sutty는 FTP, FTPS, Telnet, Serial, RDP, VNC, X11 포워딩, 클라우드 계정
 | [`sutty.SshAgent`](src/sutty.SshAgent) | 선택한 SSH.NET 런타임에 맞춰 직접 빌드하는 upstream 고정 Windows OpenSSH Agent/Pageant adapter |
 | [`sutty.Command`](src/sutty.Command) | SQLite 명령 템플릿, 접속 기록, pin, 비밀정보 없는 초안 |
 | [`sutty.Setting`](src/sutty.Setting) | 원자적으로 저장하는 JSON 환경설정 |
-| [`tests`](tests) | 집중형 self-test와 선택 실행하는 자격증명 기반 실서버 smoke·fault·scale·soak harness. 아직 완료된 GA 매트릭스가 아닙니다. |
+| [`tests`](tests) | 집중형 self-test와 선택 실행하는 자격증명 기반 실서버 smoke·connection-info·fault·scale·soak harness. 아직 완료된 GA 매트릭스가 아닙니다. |
 
 ### 준비 사항, 빌드, 실행
 

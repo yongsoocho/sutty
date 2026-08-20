@@ -1,6 +1,7 @@
 param(
     [string]$MetadataScript = (Resolve-Path (Join-Path $PSScriptRoot '..\..\.github\scripts\Assert-ReleaseMetadata.ps1')).Path,
-    [string]$WorkflowPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\.github\workflows\alpha-release.yml')).Path
+    [string]$WorkflowPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\.github\workflows\alpha-release.yml')).Path,
+    [string]$CandidateWorkflowPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\.github\workflows\alpha-candidate.yml')).Path
 )
 
 $ErrorActionPreference = 'Stop'
@@ -266,6 +267,52 @@ try {
     Update-Checksums -Root $missingExecutable
     Assert-Result ($null -ne (Get-ValidationFailure -Root $missingExecutable -Artifacts)) 'archive missing the root executable is rejected after checksum refresh'
 
+    $contentMismatch = New-FixtureRepository 'archive-content-mismatch'
+    Add-Payloads -Root $contentMismatch
+    Add-Packages -Root $contentMismatch
+    $contentMismatchArchivePath = Join-Path $contentMismatch "artifacts\packages\Sutty-$tag-win-x64.zip"
+    $contentMismatchArchive = [System.IO.Compression.ZipFile]::Open(
+        $contentMismatchArchivePath,
+        [System.IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $originalEntry = @($contentMismatchArchive.Entries | Where-Object {
+            $_.FullName.Replace('\\', '/') -ceq 'sutty.UI.exe'
+        })
+        Assert-Result ($originalEntry.Count -eq 1) 'content-mismatch fixture starts with one root executable'
+        $originalStream = $originalEntry[0].Open()
+        try {
+            $memory = [System.IO.MemoryStream]::new()
+            try {
+                $originalStream.CopyTo($memory)
+                $changedBytes = $memory.ToArray()
+            }
+            finally {
+                $memory.Dispose()
+            }
+        }
+        finally {
+            $originalStream.Dispose()
+        }
+        Assert-Result ($changedBytes.Length -gt 0) 'content-mismatch fixture executable is non-empty'
+        $changedBytes[0] = $changedBytes[0] -bxor 0x01
+        $originalEntry[0].Delete()
+        $replacementEntry = $contentMismatchArchive.CreateEntry(
+            'sutty.UI.exe',
+            [System.IO.Compression.CompressionLevel]::Optimal)
+        $replacementStream = $replacementEntry.Open()
+        try {
+            $replacementStream.Write($changedBytes, 0, $changedBytes.Length)
+        }
+        finally {
+            $replacementStream.Dispose()
+        }
+    }
+    finally {
+        $contentMismatchArchive.Dispose()
+    }
+    Update-Checksums -Root $contentMismatch
+    Assert-Result ($null -ne (Get-ValidationFailure -Root $contentMismatch -Artifacts)) 'same-length ZIP entry content mismatch is rejected after checksum refresh'
+
     $extraPackage = New-FixtureRepository 'extra-package-file'
     Add-Payloads -Root $extraPackage
     Add-Packages -Root $extraPackage
@@ -273,23 +320,62 @@ try {
     Assert-Result ($null -ne (Get-ValidationFailure -Root $extraPackage -Artifacts)) 'unexpected package file is rejected'
 
     $workflow = [System.IO.File]::ReadAllText($WorkflowPath)
-    Assert-Result ($workflow -notmatch '(?i)--clobber') 'Alpha workflow never uses asset clobbering'
-    Assert-Result ($workflow -notmatch '(?i)gh\s+release\s+edit') 'Alpha workflow never edits an existing release'
-    Assert-Result ($workflow -notmatch '(?i)gh\s+release\s+upload') 'Alpha workflow never uploads assets to an existing release'
-    Assert-Result (@([regex]::Matches($workflow, '(?i)gh\s+release\s+create')).Count -eq 1) 'Alpha workflow has one create-only publication command'
-    Assert-Result ($workflow -match 'Release already exists') 'Alpha workflow explicitly rejects an existing release'
-    Assert-Result ($workflow -match 'gh\s+api\s+"repos/\$repository/releases/tags/\$tag"') 'Alpha workflow uses the release-by-tag API for the preflight lookup'
-    Assert-Result ($workflow -match '\$PSNativeCommandUseErrorActionPreference\s*=\s*\$false') 'Alpha workflow handles the expected non-zero native lookup without premature termination'
-    Assert-Result ($workflow -match '\$lookupExitCode\s*=\s*\$LASTEXITCODE') 'Alpha workflow captures the preflight native exit code'
-    Assert-Result ($workflow -match '\$global:LASTEXITCODE\s*=\s*0') 'Alpha workflow clears the expected missing-release native exit code'
-    Assert-Result ($workflow -match '\\?\(HTTP 404\\?\)') 'Alpha workflow accepts only an HTTP 404 as a missing release'
-    Assert-Result ($workflow -match 'Could not verify release absence') 'Alpha workflow fails closed on lookup errors other than HTTP 404'
-    Assert-Result ($workflow.IndexOf('Release already exists', [StringComparison]::Ordinal) -lt
-        $workflow.IndexOf('Restore locked x64 dependencies', [StringComparison]::Ordinal)) 'existing release rejection runs before build work'
-    Assert-Result ($workflow -match 'tests\\product-scope\\Assert-ProductScope\.Tests\.ps1') 'Alpha workflow runs product-scope fixture tests'
-    Assert-Result (@([regex]::Matches($workflow, 'Assert-ReleaseMetadata\.ps1')).Count -eq 2) 'Alpha workflow has pre-package and post-package metadata gates'
+    $candidateWorkflow = [System.IO.File]::ReadAllText($CandidateWorkflowPath)
 
-    Write-Host 'Release-metadata guard self-tests passed (15 fixture cases plus workflow immutability contract).'
+    Assert-Result ($candidateWorkflow -match '(?m)^\s*workflow_dispatch:\s*$') 'candidate workflow is manual-only'
+    Assert-Result ($candidateWorkflow -notmatch '(?m)^\s*push:\s*$') 'candidate workflow has no push trigger'
+    Assert-Result ($candidateWorkflow -notmatch '(?i)gh\s+release\s+(?:create|edit|upload)') 'candidate workflow cannot publish or mutate a release'
+    Assert-Result (@([regex]::Matches($candidateWorkflow, 'actions/upload-artifact@v4')).Count -eq 1) 'candidate workflow uploads one sealed artifact'
+    Assert-Result ($candidateWorkflow -match 'compression-level:\s*0') 'candidate workflow preserves exact package bytes in the workflow artifact'
+    Assert-Result ($candidateWorkflow -match 'CANDIDATE-MANIFEST\.json') 'candidate workflow uploads a strict candidate manifest'
+    Assert-Result ($candidateWorkflow -match 'Assert-AlphaCandidate\.ps1') 'candidate workflow seals the candidate manifest'
+    Assert-Result ($candidateWorkflow -match '-WriteManifest') 'candidate workflow creates the manifest only after packaging'
+    Assert-Result (@([regex]::Matches($candidateWorkflow, 'Assert-ReleaseMetadata\.ps1')).Count -eq 2) 'candidate workflow has pre-package and post-package metadata gates'
+    Assert-Result ($candidateWorkflow -match 'tests\\live-evidence\\Assert-LiveEvidence\.Tests\.ps1') 'candidate workflow runs live-evidence fixtures'
+    Assert-Result ($candidateWorkflow -match 'tests\\release-candidate\\Assert-AlphaCandidate\.Tests\.ps1') 'candidate workflow runs candidate-manifest fixtures'
+    Assert-Result ($candidateWorkflow -match "GITHUB_REF\s+-cne\s+'refs/heads/main'") 'candidate workflow accepts source only from main'
+    Assert-Result ($candidateWorkflow -match 'Tag already exists') 'candidate workflow rejects an existing tag before building'
+    Assert-Result ($candidateWorkflow -match 'Release already exists') 'candidate workflow rejects an existing release before building'
+    Assert-Result ($candidateWorkflow.IndexOf('Tag already exists', [StringComparison]::Ordinal) -lt
+        $candidateWorkflow.IndexOf('Restore locked x64 dependencies', [StringComparison]::Ordinal)) 'candidate publication preflight runs before build work'
+
+    Assert-Result ($workflow -match '(?m)^\s*workflow_dispatch:\s*$') 'promotion workflow is manual-only'
+    Assert-Result ($workflow -notmatch '(?m)^\s*push:\s*$') 'promotion workflow cannot publish from a tag push'
+    Assert-Result ($workflow -match "GITHUB_REF\s+-cne\s+'refs/heads/main'") 'promotion workflow itself must be dispatched from main'
+    Assert-Result ($workflow -notmatch '(?i)dotnet\s+(?:restore|build|publish)') 'promotion workflow never rebuilds candidate bytes'
+    Assert-Result ($workflow -notmatch '(?i)Compress-Archive') 'promotion workflow never repackages candidate bytes'
+    Assert-Result ($workflow -notmatch '(?i)--clobber') 'promotion workflow never uses asset clobbering'
+    Assert-Result ($workflow -notmatch '(?i)gh\s+release\s+edit') 'promotion workflow never edits an existing release'
+    Assert-Result ($workflow -notmatch '(?i)gh\s+release\s+upload') 'promotion workflow never uploads assets to an existing release'
+    Assert-Result (@([regex]::Matches($workflow, '(?i)gh\s+release\s+create')).Count -eq 1) 'promotion workflow has one create-only publication command'
+    Assert-Result ($workflow -match 'actions/download-artifact@v4') 'promotion workflow downloads the sealed candidate from its exact run'
+    Assert-Result ($workflow -match 'run-id:\s*\$\{\{ inputs\.candidate_run_id \}\}') 'promotion download is pinned to the candidate run ID'
+    Assert-Result ($workflow -match 'Assert-AlphaCandidate\.ps1') 'promotion workflow revalidates the strict candidate manifest and checksums'
+    Assert-Result ($workflow -match 'Assert-ReleaseMetadata\.ps1') 'promotion workflow revalidates source and packaged metadata'
+    Assert-Result ($workflow -match 'Assert-LiveEvidence\.ps1') 'promotion workflow validates reviewed live evidence'
+    Assert-Result ($workflow -match '-RequiredResult Pass') 'promotion requires accepted Pass evidence'
+    Assert-Result ($workflow -match 'merge-base --is-ancestor') 'promotion proves acceptance ancestry on main'
+    Assert-Result ($workflow -match 'actions/runs/\$env:CANDIDATE_RUN_ID') 'promotion verifies the candidate workflow run through the API'
+    Assert-Result ($workflow -match 'status\s+-cne\s+''completed''') 'promotion requires a completed candidate run'
+    Assert-Result ($workflow -match 'conclusion\s+-cne\s+''success''') 'promotion requires a successful candidate run'
+    Assert-Result ($workflow -match 'immutable-releases') 'promotion checks the immutable releases repository setting'
+    Assert-Result ($workflow -match 'X-GitHub-Api-Version: 2026-03-10') 'promotion pins the immutable releases API version'
+    Assert-Result ($workflow -match 'immutable\.enabled\s+-ne\s+\$true') 'promotion fails unless immutable releases are enabled'
+    Assert-Result ($workflow -match 'ls-remote origin') 'promotion rechecks the remote tag target immediately before publication'
+    Assert-Result ($workflow -match 'Release already exists') 'promotion explicitly rejects an existing release'
+    Assert-Result ($workflow -match '\\?\(HTTP 404\\?\)') 'promotion accepts only an HTTP 404 as a missing release'
+    Assert-Result ($workflow -match 'Could not verify release absence') 'promotion fails closed on release lookup errors other than HTTP 404'
+    Assert-Result ($workflow.IndexOf('Release already exists', [StringComparison]::Ordinal) -lt
+        $workflow.IndexOf('gh release create', [StringComparison]::OrdinalIgnoreCase)) 'release absence is checked before publication'
+    Assert-Result ($workflow -match 'CANDIDATE-MANIFEST\.json') 'promotion publishes the provenance manifest with the exact packages'
+    Assert-Result ($workflow -match 'gh\s+release\s+download') 'promotion downloads published assets for byte verification'
+    Assert-Result ($workflow -match '''release'', ''verify'', \$env:CANDIDATE_TAG') 'promotion verifies the signed immutable release attestation'
+    Assert-Result ($workflow -match '''release'', ''verify-asset'', \$env:CANDIDATE_TAG') 'promotion verifies every published asset attestation'
+    Assert-Result ($workflow -match 'for \(\$attempt = 1; \$attempt -le 6; \$attempt\+\+\)') 'attestation verification uses bounded propagation retries'
+    Assert-Result ($workflow -match 'release\.immutable\s+-ne\s+\$true') 'promotion requires the published release itself to be immutable'
+    Assert-Result (@([regex]::Matches($workflow, 'ls-remote origin')).Count -ge 2) 'promotion verifies the exact tag target before and after publication'
+
+    Write-Host 'Release-metadata guard self-tests passed (16 fixture cases plus two-phase pipeline contract).'
 }
 finally {
     $resolvedScratch = [System.IO.Path]::GetFullPath($scratch)

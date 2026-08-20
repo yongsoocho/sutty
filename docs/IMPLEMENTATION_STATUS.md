@@ -31,6 +31,7 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 | Route foundation | Direct, HTTP CONNECT, SOCKS4, SOCKS5, SSH jump, and ProxyCommand routes are resolved before client creation and shared by SSH/SFTP. Saved hosts restore credential-free route/tunnel definitions while route secrets remain in the Windows-user vault. Strict route policy rejects Direct without fallback; one credential-free correlation context is created per session. |
 | Forwarding | Local, remote, and dynamic forwarding rules start after target authentication, report runtime failures, and stop before the owning SSH session is disposed. |
 | Terminal productivity | REPL JSON/YAML and severity highlighting, bounded command suggestions, Right/Tab acceptance, tab/navigation/settings shortcuts, and Insert-style copy/paste are implemented. |
+| Support and evidence governance | The exact Windows/architecture, server/authentication/key, route/forwarding, terminal, and SFTP claim boundaries use four support states in [Supported environments](SUPPORTED_ENVIRONMENTS.md). The strict [live-evidence schema](evidence/EVIDENCE_SCHEMA.md) separates run results from support promotion and contains no fabricated live `Pass` record. |
 
 ## Verification added for this milestone
 
@@ -46,7 +47,7 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 - `CONTRIBUTING.md`, the bilingual Development Playbook, PR template, and feature/bug forms define Core → Test → UI → live-validation order, vertical slices, lifecycle and secret rules, SFTP integrity, Multi safety, and Definition of Done.
 - SSH.NET is upgraded to the security-fixed 2026.0.0 release and lock files are refreshed. The official Windows Agent adapter source is pinned in-tree, compiled directly against SSH.NET 2026, and can be made a required self-test gate; a live Agent service/key and live server matrix are still required.
 - A credential-free atomic transfer queue survives process restart, converts abandoned running work to interrupted state, preserves completed targets, and exposes explicit restore/resume actions in Files and Multi.
-- A credentialed live-server harness now covers smoke, disconnect/resume fault injection, configurable 100 GB/100,000-file scale, and 16-session soak modes. These modes are release gates and have not been run without an approved server.
+- A credentialed live-server harness now covers isolated connection-information/reconnect checks, smoke, disconnect/resume fault injection, configurable 100 GB/100,000-file scale, and 16-session soak modes. These modes have not been run without an approved server, and their candidate writer cannot promote a successful automated subset beyond `Blocked` until the full gate coverage is recorded.
 - A manual signed-MSIX workflow validates the production PFX, signs and verifies separate x64 and ARM64 outputs, and emits architecture-specific App Installer descriptors that support controlled update and rollback. A production certificate and deployment endpoint are still required.
 
 ## Remaining release gates
@@ -58,4 +59,4 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 5. Finish streaming command output, typed named parameters, durable Multi details/export, timeouts, and redacted local activity records.
 6. Complete credential-free sharing/import preview, support bundles, accessibility, clean-install/upgrade/rollback, performance, and soak evidence. Signed packaging/update automation exists but has not produced a production-signed acceptance artifact.
 
-The authoritative requirement-by-requirement status remains in [Requirements Traceability](REQUIREMENTS.md). Product admission rules and explicit non-goals are fixed in [Product Scope](PRODUCT_SCOPE.md).
+The authoritative requirement-by-requirement status remains in [Requirements Traceability](REQUIREMENTS.md). Product admission rules and explicit non-goals are fixed in [Product Scope](PRODUCT_SCOPE.md). Alpha 4 slice order and exit criteria are fixed in the [Alpha 4 execution plan](ALPHA4_EXECUTION_PLAN.md); no live gate is complete until its reviewed bundle satisfies the [evidence schema](evidence/EVIDENCE_SCHEMA.md).

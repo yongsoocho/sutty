@@ -243,13 +243,17 @@ if ($artifactArgumentCount -eq $artifactArguments.Count) {
         # ZIP paths are normalized to '/', then compared with ordinal case sensitivity.
         # Directory entries are ignored; every payload file must have one exact archive entry.
         $resolvedPayloadPath = (Resolve-Path -LiteralPath $payloadPath).Path
-        $payloadInventory = [System.Collections.Generic.Dictionary[string, long]]::new(
+        $payloadInventory = [System.Collections.Generic.Dictionary[string, object]]::new(
             [StringComparer]::Ordinal)
         foreach ($payloadFile in Get-ChildItem -LiteralPath $resolvedPayloadPath -File -Recurse -Force) {
             $relativePath = [System.IO.Path]::GetRelativePath(
                 $resolvedPayloadPath,
                 $payloadFile.FullName).Replace('\', '/')
-            $payloadInventory.Add($relativePath, $payloadFile.Length)
+            $payloadInventory.Add($relativePath, [pscustomobject]@{
+                Length = [long]$payloadFile.Length
+                Sha256 = (Get-FileHash -LiteralPath $payloadFile.FullName -Algorithm SHA256).
+                    Hash.ToLowerInvariant()
+            })
         }
         $payload.Inventory = $payloadInventory
 
@@ -332,7 +336,7 @@ if ($artifactArgumentCount -eq $artifactArguments.Count) {
             try {
                 $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $archivePath).Path)
                 try {
-                    $archiveInventory = [System.Collections.Generic.Dictionary[string, long]]::new(
+                    $archiveInventory = [System.Collections.Generic.Dictionary[string, object]]::new(
                         [StringComparer]::Ordinal)
                     foreach ($entry in $archive.Entries) {
                         $entryPath = $entry.FullName.Replace('\', '/')
@@ -352,7 +356,10 @@ if ($artifactArgumentCount -eq $artifactArguments.Count) {
                             Add-Violation "$($payload.Archive) contains a duplicate file entry: $entryPath"
                             continue
                         }
-                        $archiveInventory.Add($entryPath, $entry.Length)
+                        $archiveInventory.Add($entryPath, [pscustomobject]@{
+                            Length = [long]$entry.Length
+                            Entry = $entry
+                        })
                     }
 
                     $rootExecutableCount = @($archiveInventory.Keys | Where-Object {
@@ -371,8 +378,21 @@ if ($artifactArgumentCount -eq $artifactArguments.Count) {
                             if (-not $archiveInventory.ContainsKey($payloadEntry.Key)) {
                                 Add-Violation "$($payload.Archive) is missing payload file: $($payloadEntry.Key)"
                             }
-                            elseif ($archiveInventory[$payloadEntry.Key] -ne $payloadEntry.Value) {
+                            elseif ($archiveInventory[$payloadEntry.Key].Length -ne $payloadEntry.Value.Length) {
                                 Add-Violation "$($payload.Archive) entry length does not match payload file $($payloadEntry.Key)."
+                            }
+                            else {
+                                $entryStream = $archiveInventory[$payloadEntry.Key].Entry.Open()
+                                try {
+                                    $archiveHashBytes = [System.Security.Cryptography.SHA256]::HashData($entryStream)
+                                    $archiveHash = [Convert]::ToHexString($archiveHashBytes).ToLowerInvariant()
+                                }
+                                finally {
+                                    $entryStream.Dispose()
+                                }
+                                if ($archiveHash -cne $payloadEntry.Value.Sha256) {
+                                    Add-Violation "$($payload.Archive) entry content does not match payload file $($payloadEntry.Key)."
+                                }
                             }
                         }
                         foreach ($archiveEntry in $archiveInventory.GetEnumerator()) {

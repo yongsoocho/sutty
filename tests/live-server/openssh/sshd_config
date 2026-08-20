@@ -1,0 +1,42 @@
+Port 22
+ListenAddress 0.0.0.0
+AddressFamily inet
+PidFile /run/sshd.pid
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+PermitRootLogin no
+AllowUsers sutty-live
+AuthenticationMethods password
+PasswordAuthentication yes
+PermitEmptyPasswords no
+PubkeyAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+
+StrictModes yes
+MaxAuthTries 3
+MaxSessions 16
+LoginGraceTime 30
+ClientAliveInterval 30
+ClientAliveCountMax 2
+
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding no
+GatewayPorts no
+PermitTunnel no
+PermitUserEnvironment no
+PermitUserRC no
+
+PrintMotd no
+PrintLastLog no
+UseDNS no
+LogLevel VERBOSE
+SyslogFacility AUTHPRIV
+
+Subsystem sftp internal-sftp
+
+Match User sutty-live
+    ForceCommand /usr/local/bin/sutty-session-audit

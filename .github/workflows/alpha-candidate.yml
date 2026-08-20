@@ -1,0 +1,289 @@
+name: Alpha candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Planned immutable Alpha tag (for example v0.1.0-alpha.4)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpha-candidate-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+  ContinuousIntegrationBuild: true
+
+jobs:
+  build-candidate:
+    name: Build immutable Alpha candidate once
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate candidate source and unpublished identity
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:GITHUB_REF -cne 'refs/heads/main') {
+            throw 'Alpha candidates must be dispatched from refs/heads/main.'
+          }
+          if ($env:CANDIDATE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$') {
+            throw 'Candidate tag is not a supported Alpha tag.'
+          }
+          if ($env:GITHUB_SHA -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'GitHub did not supply an exact lowercase candidate commit.'
+          }
+
+          function Assert-GitHubObjectAbsent {
+            param([string]$Endpoint, [string]$ExistingMessage, [string]$FailureMessage)
+
+            $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+            try {
+              $PSNativeCommandUseErrorActionPreference = $false
+              $lookupOutput = @(& gh api $Endpoint --method GET --silent 2>&1)
+              $lookupExitCode = $LASTEXITCODE
+            }
+            finally {
+              $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+              $global:LASTEXITCODE = 0
+            }
+            if ($lookupExitCode -eq 0) { throw $ExistingMessage }
+            $lookupMessage = $lookupOutput -join [Environment]::NewLine
+            if ($lookupMessage -notmatch '(?i)\(HTTP 404\)') {
+              throw "$FailureMessage GitHub API lookup failed: $lookupMessage"
+            }
+          }
+
+          $repository = $env:GITHUB_REPOSITORY
+          $tag = $env:CANDIDATE_TAG
+          Assert-GitHubObjectAbsent `
+            -Endpoint "repos/$repository/git/ref/tags/$tag" `
+            -ExistingMessage "Tag already exists for $tag. Build a candidate for a new tag." `
+            -FailureMessage "Could not verify tag absence for $tag."
+          Assert-GitHubObjectAbsent `
+            -Endpoint "repos/$repository/releases/tags/$tag" `
+            -ExistingMessage "Release already exists for $tag. Release assets are immutable; create a new tag." `
+            -FailureMessage "Could not verify release absence for $tag."
+
+      - name: Test product-scope guard
+        shell: pwsh
+        run: .\tests\product-scope\Assert-ProductScope.Tests.ps1
+
+      - name: Enforce product scope
+        shell: pwsh
+        run: .\.github\scripts\Assert-ProductScope.ps1
+
+      - name: Test release-metadata and pipeline guards
+        shell: pwsh
+        run: .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
+
+      - name: Test Alpha candidate manifest guard
+        shell: pwsh
+        run: .\tests\release-candidate\Assert-AlphaCandidate.Tests.ps1
+
+      - name: Test live-evidence guard
+        shell: pwsh
+        run: .\tests\live-evidence\Assert-LiveEvidence.Tests.ps1
+
+      - name: Enforce committed live-evidence records
+        shell: pwsh
+        run: .\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
+
+      - name: Validate source release metadata
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: .\.github\scripts\Assert-ReleaseMetadata.ps1 -Tag $env:CANDIDATE_TAG
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Restore locked x64 dependencies
+        run: >-
+          dotnet restore .\sutty.slnx
+          --locked-mode
+          -p:Platform=x64
+          -p:Configuration=Release
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Build x64 Release
+        run: >-
+          dotnet build .\sutty.slnx
+          --configuration Release
+          --no-restore
+          -p:Platform=x64
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Run security self-tests
+        run: dotnet .\tests\sutty.Core.Security.SelfTest\bin\Release\net10.0\sutty.Core.Security.SelfTest.dll
+
+      - name: Run saved-host and history self-tests
+        run: dotnet .\tests\sutty.Command.SelfTest\bin\Release\net10.0\sutty.Command.SelfTest.dll
+
+      - name: Run terminal self-tests
+        run: dotnet .\tests\sutty.Terminal.SelfTest\bin\Release\net10.0\sutty.Terminal.SelfTest.dll
+
+      - name: Run settings self-tests
+        run: dotnet .\tests\sutty.Setting.SelfTest\bin\Release\net10.0\sutty.Setting.SelfTest.dll
+
+      - name: Run SFTP self-tests
+        run: dotnet .\tests\sutty.Sftp.SelfTest\bin\Release\net10.0\sutty.Sftp.SelfTest.dll
+
+      - name: Publish unsigned x64 Alpha candidate
+        run: >-
+          dotnet publish .\src\sutty.UI\sutty.UI.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          --output .\artifacts\alpha-win-x64
+          -p:Platform=x64
+          -p:GenerateAppxPackageOnBuild=false
+          -p:AppxPackageSigningEnabled=false
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+          -p:DebugSymbols=false
+          -p:DebugType=None
+
+      - name: Restore locked ARM64 dependencies
+        run: >-
+          dotnet restore .\sutty.slnx
+          --locked-mode
+          -p:Platform=ARM64
+          -p:Configuration=Release
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Build ARM64 Release
+        run: >-
+          dotnet build .\sutty.slnx
+          --configuration Release
+          --no-restore
+          -p:Platform=ARM64
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+
+      - name: Publish unsigned ARM64 Alpha candidate
+        run: >-
+          dotnet publish .\src\sutty.UI\sutty.UI.csproj
+          --configuration Release
+          --runtime win-arm64
+          --self-contained true
+          --no-restore
+          --output .\artifacts\alpha-win-arm64
+          -p:Platform=ARM64
+          -p:GenerateAppxPackageOnBuild=false
+          -p:AppxPackageSigningEnabled=false
+          -p:PublishReadyToRun=false
+          -p:PublishTrimmed=false
+          -p:DebugSymbols=false
+          -p:DebugType=None
+
+      - name: Add release identity and installation guide
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          $metadata = @(
+            "Sutty $env:CANDIDATE_TAG",
+            "Commit: $env:GITHUB_SHA",
+            'Channel: Alpha',
+            'Signing: unsigned ZIP evaluation build',
+            'Minimum OS: Windows 11 24H2'
+          )
+          foreach ($architecture in @('x64', 'arm64')) {
+            $path = ".\artifacts\alpha-win-$architecture"
+            [System.IO.File]::WriteAllLines(
+              (Join-Path $path 'BUILDINFO.txt'),
+              $metadata + "Architecture: $architecture",
+              [System.Text.UTF8Encoding]::new($false))
+            Copy-Item -LiteralPath .\LICENSE -Destination (Join-Path $path 'LICENSE.txt')
+            Copy-Item -LiteralPath .\docs\ALPHA_INSTALL.md -Destination (Join-Path $path 'ALPHA_INSTALL.md')
+          }
+
+      - name: Validate x64 Alpha payload policy
+        shell: pwsh
+        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\alpha-win-x64
+
+      - name: Validate ARM64 Alpha payload policy
+        shell: pwsh
+        run: .\.github\scripts\Assert-ReleaseArtifactClean.ps1 -ArtifactPath .\artifacts\alpha-win-arm64
+
+      - name: Package candidate archives and SHA-256 checksums once
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          $packageDirectory = New-Item -ItemType Directory -Force -Path .\artifacts\candidate\packages
+          $x64Archive = Join-Path $packageDirectory.FullName "Sutty-$env:CANDIDATE_TAG-win-x64.zip"
+          $arm64Archive = Join-Path $packageDirectory.FullName "Sutty-$env:CANDIDATE_TAG-win-arm64.zip"
+          Compress-Archive -Path .\artifacts\alpha-win-x64\* -DestinationPath $x64Archive -CompressionLevel Optimal
+          Compress-Archive -Path .\artifacts\alpha-win-arm64\* -DestinationPath $arm64Archive -CompressionLevel Optimal
+
+          $hashLines = @(Get-ChildItem -LiteralPath $packageDirectory.FullName -File -Filter *.zip |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            })
+          [System.IO.File]::WriteAllLines(
+            (Join-Path $packageDirectory.FullName 'SHA256SUMS.txt'),
+            $hashLines,
+            [System.Text.UTF8Encoding]::new($false))
+
+      - name: Validate packaged release metadata
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: >-
+          .\.github\scripts\Assert-ReleaseMetadata.ps1
+          -Tag $env:CANDIDATE_TAG
+          -Commit $env:GITHUB_SHA
+          -X64PayloadPath .\artifacts\alpha-win-x64
+          -Arm64PayloadPath .\artifacts\alpha-win-arm64
+          -PackageDirectory .\artifacts\candidate\packages
+
+      - name: Seal strict candidate manifest
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          $artifactName = "sutty-$env:CANDIDATE_TAG-candidate-$env:GITHUB_RUN_ID-attempt-$env:GITHUB_RUN_ATTEMPT"
+          .\.github\scripts\Assert-AlphaCandidate.ps1 `
+            -PackageDirectory .\artifacts\candidate\packages `
+            -ManifestPath .\artifacts\candidate\CANDIDATE-MANIFEST.json `
+            -Repository $env:GITHUB_REPOSITORY `
+            -Tag $env:CANDIDATE_TAG `
+            -Commit $env:GITHUB_SHA `
+            -CandidateRunId $env:GITHUB_RUN_ID `
+            -CandidateRunAttempt ([int]$env:GITHUB_RUN_ATTEMPT) `
+            -ArtifactName $artifactName `
+            -WriteManifest
+
+      - name: Upload sealed Alpha candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: sutty-${{ inputs.tag }}-candidate-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: artifacts/candidate
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90

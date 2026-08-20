@@ -154,6 +154,13 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 | SEC-HK-003 | P1 | Planned | A saved-host strict-trust option cannot yet disable Connect once for that host.<br>저장 Host별 엄격 신뢰 옵션으로 해당 Host의 이번만 연결을 비활성화할 수 없습니다. |
 | SEC-HK-004 | P1 | Planned | Known-host management, rotation workflow, and local security activity records are unavailable.<br>Known-host 관리·rotation 흐름·로컬 보안 활동 기록이 없습니다. |
 
+## Support and evidence governance / 지원·증거 거버넌스
+
+| ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
+| --- | --- | --- | --- |
+| SUPPORT-001 | P0 | Implemented | [Supported environments](SUPPORTED_ENVIRONMENTS.md) defines the only four support states—**Implemented**, **Live Validated**, **Released**, and **Unsupported**—and maps Windows/architecture, server/authentication/key, route/forwarding, terminal, and SFTP boundaries without inventing live results. No current row is promoted beyond **Implemented** without a conforming bundle.<br>[지원 환경](SUPPORTED_ENVIRONMENTS.md)은 유일한 네 지원 상태인 **Implemented**, **Live Validated**, **Released**, **Unsupported**를 정의하고 가짜 실환경 결과 없이 Windows/architecture, server/authentication/key, route/forwarding, terminal, SFTP 경계를 연결합니다. 규격에 맞는 bundle 없이는 현재 행을 **Implemented**보다 높이지 않습니다. |
+| EVID-001 | P0 | Implemented | [Evidence schema](evidence/EVIDENCE_SCHEMA.md) defines the exact flat `manifest.yml` allowlist, required redacted `summary.json`, immutable result handling, and fixture-validated rejection boundary. It creates no live `Pass` record; a human-reviewed real bundle is still required for every live claim.<br>[증거 스키마](evidence/EVIDENCE_SCHEMA.md)는 정확한 평면 `manifest.yml` allowlist, 필수 redacted `summary.json`, 불변 결과 처리, fixture 기반 거부 경계를 정의합니다. 실환경 `Pass` 기록을 만들지 않으며 모든 실환경 주장에는 사람이 검토한 실제 bundle이 필요합니다. |
+
 ## Non-functional requirements / 비기능 요구사항
 
 | ID | Area / 영역 | Status | Evidence and remaining gap / 증거와 남은 차이 |
@@ -190,6 +197,6 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 
 ## Update rule / 갱신 규칙
 
-Every feature PR should name its requirement ID, update the status only after source and tests land together, and preserve both English and Korean meaning. A release must not infer GA readiness from the number of **Implemented** rows alone.
+Every feature PR should name its requirement ID, update the status only after source and tests land together, and preserve both English and Korean meaning. A release must not infer GA readiness from the number of **Implemented** rows alone. Compatibility claims and evidence promotion additionally follow [Supported environments](SUPPORTED_ENVIRONMENTS.md), the [evidence schema](evidence/EVIDENCE_SCHEMA.md), and the [Alpha 4 execution plan](ALPHA4_EXECUTION_PLAN.md).
 
-모든 기능 PR은 requirement ID를 명시하고 소스와 테스트가 함께 반영된 뒤에만 상태를 바꾸며 영어·한국어의 의미를 같이 유지해야 합니다. 릴리스는 **Implemented** 행의 개수만으로 GA 준비 상태를 추정하면 안 됩니다.
+모든 기능 PR은 requirement ID를 명시하고 소스와 테스트가 함께 반영된 뒤에만 상태를 바꾸며 영어·한국어의 의미를 같이 유지해야 합니다. 릴리스는 **Implemented** 행의 개수만으로 GA 준비 상태를 추정하면 안 됩니다. 호환성 주장과 증거 승격은 [지원 환경](SUPPORTED_ENVIRONMENTS.md), [증거 스키마](evidence/EVIDENCE_SCHEMA.md), [Alpha 4 실행 계획](ALPHA4_EXECUTION_PLAN.md)도 따라야 합니다.
