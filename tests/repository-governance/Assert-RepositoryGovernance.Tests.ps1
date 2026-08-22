@@ -123,6 +123,48 @@ try {
     }
     Assert-Accepted { Invoke-Validation -Path $apiMetadata } 'read API metadata with pinned GitHub Actions checks'
 
+    $normalizedPullRequest = New-Fixture 'normalized-pull-request' -Mutate {
+        param($rulesets)
+        $parameters = (Get-Rule (Get-Main $rulesets) pull_request).parameters
+        $parameters | Add-Member -NotePropertyName required_reviewers -NotePropertyValue @()
+        $parameters | Add-Member `
+            -NotePropertyName require_extra_approval_for_unattributed_changes `
+            -NotePropertyValue $true
+    }
+    Assert-Accepted { Invoke-Validation -Path $normalizedPullRequest } 'GitHub-normalized pull-request response'
+
+    $normalizedReviewer = New-Fixture 'normalized-required-reviewer' -Mutate {
+        param($rulesets)
+        $parameters = (Get-Rule (Get-Main $rulesets) pull_request).parameters
+        $parameters | Add-Member -NotePropertyName required_reviewers -NotePropertyValue @(
+            [pscustomobject]@{ reviewer = @{ id = 1; type = 'Team' }; minimum_approvals = 1; file_patterns = @('*') })
+        $parameters | Add-Member `
+            -NotePropertyName require_extra_approval_for_unattributed_changes `
+            -NotePropertyValue $true
+    }
+    Assert-Rejected { Invoke-Validation -Path $normalizedReviewer } 'unexpected beta required reviewer'
+
+    $normalizedApprovalOff = New-Fixture 'normalized-extra-approval-off' -Mutate {
+        param($rulesets)
+        $parameters = (Get-Rule (Get-Main $rulesets) pull_request).parameters
+        $parameters | Add-Member -NotePropertyName required_reviewers -NotePropertyValue @()
+        $parameters | Add-Member `
+            -NotePropertyName require_extra_approval_for_unattributed_changes `
+            -NotePropertyValue $false
+    }
+    Assert-Rejected { Invoke-Validation -Path $normalizedApprovalOff } 'disabled unattributed-change approval'
+
+    $normalizedUnknown = New-Fixture 'normalized-unknown-property' -Mutate {
+        param($rulesets)
+        $parameters = (Get-Rule (Get-Main $rulesets) pull_request).parameters
+        $parameters | Add-Member -NotePropertyName required_reviewers -NotePropertyValue @()
+        $parameters | Add-Member `
+            -NotePropertyName require_extra_approval_for_unattributed_changes `
+            -NotePropertyValue $true
+        $parameters | Add-Member -NotePropertyName unknown_default -NotePropertyValue $true
+    }
+    Assert-Rejected { Invoke-Validation -Path $normalizedUnknown } 'unknown normalized pull-request property'
+
     $missingMain = New-Fixture 'missing-main' -Mutate {
         param($rulesets)
         $rulesets[0] = $rulesets[1]
@@ -202,6 +244,12 @@ try {
     }
     Assert-Rejected { Invoke-Validation -Path $missingUpdate } 'missing tag update protection'
 
+    $normalizedTagUpdate = New-Fixture 'normalized-tag-update' -Mutate {
+        param($rulesets)
+        (Get-Rule (Get-Tags $rulesets) update).PSObject.Properties.Remove('parameters')
+    }
+    Assert-Accepted { Invoke-Validation -Path $normalizedTagUpdate } 'GitHub-normalized type-only tag update rule'
+
     $nonFastForwardOnly = New-Fixture 'non-fast-forward-only' -Mutate {
         param($rulesets)
         $tags = Get-Tags $rulesets
@@ -215,12 +263,6 @@ try {
         (Get-Rule (Get-Tags $rulesets) update).parameters.update_allows_fetch_and_merge = $true
     }
     Assert-Rejected { Invoke-Validation -Path $fetchAndMergeUpdate } 'tag fetch-and-merge update allowed'
-
-    $missingUpdateParameter = New-Fixture 'missing-update-parameter' -Mutate {
-        param($rulesets)
-        (Get-Rule (Get-Tags $rulesets) update).PSObject.Properties.Remove('parameters')
-    }
-    Assert-Rejected { Invoke-Validation -Path $missingUpdateParameter } 'missing tag update parameters'
 
     $stringUpdateParameter = New-Fixture 'string-update-parameter' -Mutate {
         param($rulesets)

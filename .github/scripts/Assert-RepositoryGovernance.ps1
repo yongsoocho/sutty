@@ -236,13 +236,19 @@ function Assert-RuleWithoutParameters {
 function Assert-UpdateRule {
     param(
         [Parameter(Mandatory)][System.Text.Json.JsonElement]$Rule,
-        [Parameter(Mandatory)][string]$Description
+        [Parameter(Mandatory)][string]$Description,
+        [switch]$StrictContract
     )
 
-    Assert-ExactProperties -Element $Rule -Expected @('type', 'parameters') -Description $Description
     if ((Get-RequiredString -Object $Rule -Name type -Description $Description) -cne 'update') {
         throw "$Description has the wrong rule type."
     }
+    $properties = @($Rule.EnumerateObject() | ForEach-Object { $_.Name })
+    if (-not $StrictContract -and $properties.Count -eq 1 -and $properties[0] -ceq 'type') {
+        # GitHub normalizes a tag update rule to type-only in detail responses.
+        return
+    }
+    Assert-ExactProperties -Element $Rule -Expected @('type', 'parameters') -Description $Description
     $parameters = Get-RequiredProperty -Object $Rule -Name parameters -Description $Description
     Assert-ExactProperties `
         -Element $parameters `
@@ -259,19 +265,55 @@ function Assert-UpdateRule {
 function Assert-PullRequestRule {
     param(
         [Parameter(Mandatory)][System.Text.Json.JsonElement]$Rule,
-        [Parameter(Mandatory)][string]$Description
+        [Parameter(Mandatory)][string]$Description,
+        [switch]$StrictContract
     )
 
     Assert-ExactProperties -Element $Rule -Expected @('type', 'parameters') -Description $Description
     $parameters = Get-RequiredProperty -Object $Rule -Name parameters -Description $Description
-    Assert-ExactProperties -Element $parameters -Expected @(
+    $requestProperties = @(
         'required_approving_review_count'
         'dismiss_stale_reviews_on_push'
         'require_code_owner_review'
         'require_last_push_approval'
         'required_review_thread_resolution'
         'allowed_merge_methods'
-    ) -Description "$Description.parameters"
+    )
+    if ($StrictContract) {
+        Assert-ExactProperties `
+            -Element $parameters `
+            -Expected $requestProperties `
+            -Description "$Description.parameters"
+    }
+    else {
+        $actualProperties = @($parameters.EnumerateObject() | ForEach-Object { $_.Name })
+        $normalizedProperties = @(
+            $requestProperties +
+            @('required_reviewers', 'require_extra_approval_for_unattributed_changes'))
+        $matchesRequest = $actualProperties.Count -eq $requestProperties.Count -and
+            @($actualProperties | Where-Object { $_ -cnotin $requestProperties }).Count -eq 0
+        $matchesNormalized = $actualProperties.Count -eq $normalizedProperties.Count -and
+            @($actualProperties | Where-Object { $_ -cnotin $normalizedProperties }).Count -eq 0
+        if (-not $matchesRequest -and -not $matchesNormalized) {
+            throw "$Description.parameters properties do not match the supported GitHub response contract."
+        }
+        if ($matchesNormalized) {
+            $requiredReviewers = Get-RequiredProperty `
+                -Object $parameters `
+                -Name required_reviewers `
+                -Description "$Description.parameters"
+            if ($requiredReviewers.ValueKind -ne [System.Text.Json.JsonValueKind]::Array -or
+                @($requiredReviewers.EnumerateArray()).Count -ne 0) {
+                throw 'main pull_request must not add beta required reviewers.'
+            }
+            if (-not (Get-RequiredBoolean `
+                    -Object $parameters `
+                    -Name require_extra_approval_for_unattributed_changes `
+                    -Description "$Description.parameters")) {
+                throw 'main pull_request must retain GitHub extra approval for unattributed changes.'
+            }
+        }
+    }
 
     if ((Get-RequiredInt32 `
             -Object $parameters `
@@ -471,7 +513,8 @@ function Assert-RulesetContract {
             -Description "$Description.rules.non_fast_forward"
         Assert-PullRequestRule `
             -Rule $rulesByType.pull_request `
-            -Description "$Description.rules.pull_request"
+            -Description "$Description.rules.pull_request" `
+            -StrictContract:$StrictRoot
         Assert-StatusChecksRule `
             -Rule $rulesByType.required_status_checks `
             -Description "$Description.rules.required_status_checks" `
@@ -480,7 +523,8 @@ function Assert-RulesetContract {
     else {
         Assert-UpdateRule `
             -Rule $rulesByType.update `
-            -Description "$Description.rules.update"
+            -Description "$Description.rules.update" `
+            -StrictContract:$StrictRoot
     }
 }
 
