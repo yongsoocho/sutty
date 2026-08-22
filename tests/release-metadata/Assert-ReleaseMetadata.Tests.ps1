@@ -42,7 +42,7 @@ function New-FixtureRepository {
     Set-Utf8Text -Path (Join-Path $root 'README.md') -Content @'
 # Sutty
 
-> **Current / 현재:** [`v1.2.3-alpha.4`](https://github.com/yongsoocho/sutty/releases/tag/v1.2.3-alpha.4) · [Download](https://github.com/yongsoocho/sutty/releases)
+> **Latest published / 최신 공개본:** [`v1.2.3-alpha.3`](https://github.com/yongsoocho/sutty/releases/tag/v1.2.3-alpha.3) · **Current candidate / 현재 후보:** [`v1.2.3-alpha.4`](docs/releases/v1.2.3-alpha.4.md) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
 '@
     Set-Utf8Text -Path (Join-Path $root 'docs\ALPHA_INSTALL.md') -Content @'
 # Sutty Alpha installation
@@ -58,6 +58,8 @@ Verify the selected `Sutty-*-win-*.zip` against `SHA256SUMS.txt`.
 - ``Sutty-$tag-win-x64.zip``
 - ``Sutty-$tag-win-arm64.zip``
 - ``SHA256SUMS.txt``
+- ``CANDIDATE-MANIFEST.json``
+- ``RELEASE-ATTESTATION.json``
 "@
 
     return $root
@@ -186,7 +188,7 @@ try {
     (Get-Content -LiteralPath (Join-Path $readmeMismatch 'README.md') -Raw).
         Replace('v1.2.3-alpha.4', 'v1.2.3-alpha.3') |
         Set-Content -LiteralPath (Join-Path $readmeMismatch 'README.md') -Encoding utf8NoBOM
-    Assert-Result ($null -ne (Get-ValidationFailure -Root $readmeMismatch)) 'stale README Current release is rejected'
+    Assert-Result ($null -ne (Get-ValidationFailure -Root $readmeMismatch)) 'stale README current candidate is rejected'
 
     $notesMismatch = New-FixtureRepository 'notes-mismatch'
     (Get-Content -LiteralPath (Join-Path $notesMismatch "docs\releases\$tag.md") -Raw).
@@ -333,6 +335,8 @@ try {
     Assert-Result (@([regex]::Matches($candidateWorkflow, 'Assert-ReleaseMetadata\.ps1')).Count -eq 2) 'candidate workflow has pre-package and post-package metadata gates'
     Assert-Result ($candidateWorkflow -match 'tests\\live-evidence\\Assert-LiveEvidence\.Tests\.ps1') 'candidate workflow runs live-evidence fixtures'
     Assert-Result ($candidateWorkflow -match 'tests\\release-candidate\\Assert-AlphaCandidate\.Tests\.ps1') 'candidate workflow runs candidate-manifest fixtures'
+    Assert-Result ($candidateWorkflow -match 'tests\\repository-governance\\Assert-RepositoryGovernance\.Tests\.ps1') 'candidate workflow runs repository-governance fixtures'
+    Assert-Result ($candidateWorkflow -match 'Assert-RepositoryGovernance\.ps1\s+-QueryGitHub\s+-Repository\s+\$env:GITHUB_REPOSITORY\s+-AllowOmittedBypassActors') 'candidate workflow checks observable active ruleset semantics with the documented token limitation'
     Assert-Result ($candidateWorkflow -match "GITHUB_REF\s+-cne\s+'refs/heads/main'") 'candidate workflow accepts source only from main'
     Assert-Result ($candidateWorkflow -match 'Tag already exists') 'candidate workflow rejects an existing tag before building'
     Assert-Result ($candidateWorkflow -match 'Release already exists') 'candidate workflow rejects an existing release before building'
@@ -353,10 +357,20 @@ try {
     Assert-Result ($workflow -match 'Assert-AlphaCandidate\.ps1') 'promotion workflow revalidates the strict candidate manifest and checksums'
     Assert-Result ($workflow -match 'Assert-ReleaseMetadata\.ps1') 'promotion workflow revalidates source and packaged metadata'
     Assert-Result ($workflow -match 'Assert-LiveEvidence\.ps1') 'promotion workflow validates reviewed live evidence'
+    Assert-Result ($workflow -match 'Assert-EvidenceHistory\.ps1') 'promotion enforces append-only evidence history from candidate to acceptance'
+    Assert-Result (@([regex]::Matches(
+            $workflow,
+            'Assert-RepositoryGovernance\.ps1(?:\s+`\r?\n\s+-QueryGitHub|\s+-QueryGitHub)')).Count -eq 2) 'promotion checks active repository rulesets both initially and immediately before publication'
+    Assert-Result ($workflow -match 'environment:\s*alpha-release') 'promotion uses the protected alpha-release environment'
+    Assert-Result (@([regex]::Matches($workflow, 'secrets\.SUTTY_RULESET_AUDIT_TOKEN')).Count -eq 2) 'promotion uses the dedicated ruleset audit secret for both bypass-actor checks'
+    Assert-Result ($workflow -notmatch 'Assert-RepositoryGovernance\.ps1[\s\S]{0,160}-AllowOmittedBypassActors') 'promotion never permits an omitted bypass-actor inventory'
+    Assert-Result (@([regex]::Matches($workflow, 'Assert-ReleaseAttestation\.ps1')).Count -eq 2) 'promotion creates and then revalidates the published release attestation'
     Assert-Result ($workflow -match '-RequiredResult Pass') 'promotion requires accepted Pass evidence'
     Assert-Result (@([regex]::Matches($workflow, '-RequiredGateId SSH-LIVE-001')).Count -eq 1) 'promotion requires the exact SSH-LIVE-001 release gate'
-    Assert-Result ($workflow -match 'merge-base --is-ancestor') 'promotion proves acceptance ancestry on main'
+    Assert-Result (@([regex]::Matches($workflow, 'merge-base --is-ancestor')).Count -eq 4) 'promotion proves candidate and acceptance ancestry initially and immediately before publication'
     Assert-Result ($workflow -match 'actions/runs/\$env:CANDIDATE_RUN_ID') 'promotion verifies the candidate workflow run through the API'
+    Assert-Result ($workflow -match 'candidate_artifact_id=') 'promotion binds the immutable candidate artifact ID'
+    Assert-Result ($workflow -match 'candidate_artifact_digest=') 'promotion binds the candidate artifact SHA-256 digest from the API'
     Assert-Result ($workflow -match 'status\s+-cne\s+''completed''') 'promotion requires a completed candidate run'
     Assert-Result ($workflow -match 'conclusion\s+-cne\s+''success''') 'promotion requires a successful candidate run'
     Assert-Result ($workflow -match 'immutable-releases') 'promotion checks the immutable releases repository setting'
@@ -368,12 +382,30 @@ try {
     Assert-Result ($workflow -match 'Could not verify release absence') 'promotion fails closed on release lookup errors other than HTTP 404'
     Assert-Result ($workflow.IndexOf('Release already exists', [StringComparison]::Ordinal) -lt
         $workflow.IndexOf('gh release create', [StringComparison]::OrdinalIgnoreCase)) 'release absence is checked before publication'
+    $lastGovernanceCheck = $workflow.LastIndexOf(
+        'Assert-RepositoryGovernance.ps1',
+        [StringComparison]::Ordinal)
+    $lastAncestryCheck = $workflow.LastIndexOf(
+        'merge-base --is-ancestor',
+        [StringComparison]::Ordinal)
+    $attestationWrite = $workflow.IndexOf(
+        'Create independently verifiable release attestation',
+        [StringComparison]::Ordinal)
+    $releaseCreate = $workflow.IndexOf(
+        'gh release create',
+        [StringComparison]::OrdinalIgnoreCase)
+    Assert-Result ($lastGovernanceCheck -gt $attestationWrite -and
+        $lastGovernanceCheck -lt $releaseCreate) 'final live governance query runs after attestation creation and before release publication'
+    Assert-Result ($lastAncestryCheck -gt $attestationWrite -and
+        $lastAncestryCheck -lt $releaseCreate) 'final refreshed ancestry check runs after attestation creation and before release publication'
     Assert-Result ($workflow -match 'CANDIDATE-MANIFEST\.json') 'promotion publishes the provenance manifest with the exact packages'
+    Assert-Result ($workflow -match 'RELEASE-ATTESTATION\.json') 'promotion publishes the acceptance and promotion provenance asset'
     Assert-Result ($workflow -match 'gh\s+release\s+download') 'promotion downloads published assets for byte verification'
     Assert-Result ($workflow -match '''release'', ''verify'', \$env:CANDIDATE_TAG') 'promotion verifies the signed immutable release attestation'
     Assert-Result ($workflow -match '''release'', ''verify-asset'', \$env:CANDIDATE_TAG') 'promotion verifies every published asset attestation'
     Assert-Result ($workflow -match 'for \(\$attempt = 1; \$attempt -le 6; \$attempt\+\+\)') 'attestation verification uses bounded propagation retries'
     Assert-Result ($workflow -match 'release\.immutable\s+-ne\s+\$true') 'promotion requires the published release itself to be immutable'
+    Assert-Result ($workflow -match 'assets\)\.Count\s+-ne\s+5') 'promotion requires the exact five-asset immutable release inventory'
     Assert-Result (@([regex]::Matches($workflow, 'ls-remote origin')).Count -ge 2) 'promotion verifies the exact tag target before and after publication'
 
     Write-Host 'Release-metadata guard self-tests passed (16 fixture cases plus two-phase pipeline contract).'

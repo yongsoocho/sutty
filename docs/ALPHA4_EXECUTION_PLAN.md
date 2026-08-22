@@ -42,9 +42,12 @@ Alpha 4 is ready to tag only when:
 5. `Fail` and `Blocked` results remain visible to reviewers and are not deleted, rewritten, or averaged into a `Pass`.
 6. Product-scope, release-metadata, build, focused self-test, payload, checksum, and evidence-schema gates pass for the tag candidate.
 7. No credential, endpoint, username, real fingerprint, local/remote path, transcript, command output, file content, or raw log enters a source commit or release asset.
+8. At least one reviewed `SSH-LIVE-001` `Pass` bundle is bound to the exact x64 candidate commit and ZIP SHA-256; it is a new post-run directory with `review.json`, and the candidate-to-acceptance Git range is append-only for every pre-existing bundle.
+9. Active main/tag rulesets prevent direct main changes, force-pushes, and release-tag mutation, and the required Windows/Governance checks pass on the acceptance change.
+10. Promotion publishes the exact candidate bytes plus `CANDIDATE-MANIFEST.json` and `RELEASE-ATTESTATION.json`, then downloads and verifies the exact five-asset immutable prerelease.
 
 These criteria permit an honest Alpha release with clearly limited evidence; they do not permit a GA, broad compatibility, or universal “supported” claim.
 
 이 기준은 증거 범위를 명확히 제한한 정직한 Alpha 출시를 허용하지만 GA, 넓은 호환성, 보편적인 “지원됨” 주장을 허용하지 않습니다.
 
-The requirement state is tracked in [Requirements](REQUIREMENTS.md), current implementation evidence in [Implementation status](IMPLEMENTATION_STATUS.md), and run procedures in [Release acceptance](RELEASE_ACCEPTANCE.md).
+The requirement state is tracked in [Requirements](REQUIREMENTS.md), current implementation evidence in [Implementation status](IMPLEMENTATION_STATUS.md), run procedures in [Release acceptance](RELEASE_ACCEPTANCE.md), and protected candidate-to-publication controls in [Release governance](RELEASE_GOVERNANCE.md).

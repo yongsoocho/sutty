@@ -131,7 +131,7 @@ static async Task RunSelectedModesAsync(
     if (configuration.Modes.Contains("direct-password-gate"))
     {
         phaseChanged("direct-password-gate");
-        await operations.DirectPasswordGate(configuration, evidenceConfiguration);
+        await operations.DirectPasswordGate(configuration, evidenceConfiguration, phaseChanged);
     }
     if (configuration.Modes.Contains("smoke"))
     {
@@ -187,7 +187,8 @@ static async Task RunConnectionInfoAsync(LiveConfiguration configuration)
 
 static async Task RunDirectPasswordGateAsync(
     LiveConfiguration configuration,
-    LiveEvidenceConfiguration? evidence)
+    LiveEvidenceConfiguration? evidence,
+    Action<string> checkChanged)
 {
     if (evidence is null || evidence.GateId != "SSH-LIVE-001")
         throw new InvalidOperationException(
@@ -197,9 +198,12 @@ static async Task RunDirectPasswordGateAsync(
     await VerifyCandidatePackageAsync(
         configuration.PackagePath,
         evidence.PackageSha256,
-        evidence.Commit);
+        evidence.Commit,
+        checkChanged,
+        evidence.Measurements);
 
     Console.WriteLine("[direct-password-gate] validating successful SSH, command, PTY, SFTP, reconnect, and cleanup");
+    checkChanged("authentication-success");
     var session = CreateSession(configuration);
     var localRoot = CreateScratch("direct-password-gate");
     var remoteName = $"sutty-direct-password-{Guid.NewGuid():N}";
@@ -210,11 +214,13 @@ static async Task RunDirectPasswordGateAsync(
     {
         await ConnectRequiredAsync(session);
         VerifyNegotiatedConnectionInfo(session, configuration);
+        evidence.Measurements.AuthenticationSuccessVerified = true;
         var firstSnapshot = session.NegotiatedInfo ??
             throw new InvalidOperationException("The initial negotiated snapshot is unavailable.");
         Assert(session.SftpState == SftpConnectionState.Ready,
             "SFTP is not ready for the Direct Password gate.");
 
+        checkChanged("command-pty-sftp");
         var command = await session.ExecuteCommandAsync("printf 'sutty-direct-password-command'");
         Assert(command.Succeeded && command.StandardOutput == "sutty-direct-password-command",
             "The Direct Password command check failed; command output is suppressed.");
@@ -243,12 +249,18 @@ static async Task RunDirectPasswordGateAsync(
 
         var destination = Path.Combine(localRoot, "downloaded.bin");
         await session.Sftp.DownloadFileAsync(remoteFile, destination, overwrite: false);
-        Assert(await HashFileAsync(source) == await HashFileAsync(destination),
+        evidence.Measurements.SftpBytes = new FileInfo(source).Length;
+        evidence.Measurements.SftpChecksumVerified =
+            await HashFileAsync(source) == await HashFileAsync(destination);
+        Assert(evidence.Measurements.SftpChecksumVerified,
             "The Direct Password SFTP download checksum does not match.");
+        evidence.Measurements.CommandPtySftpVerified = true;
         Console.WriteLine("[direct-password-gate] SFTP download check passed");
 
+        checkChanged("remote-local-cleanup");
         await DeleteRemoteTreeRequiredAsync(session, configuration.RemoteRoot, remoteRoot, remoteName);
         remoteCreated = false;
+        evidence.Measurements.RemoteCleanupVerified = true;
         Console.WriteLine("[direct-password-gate] remote cleanup check passed");
 
         await session.DisconnectAsync();
@@ -256,6 +268,7 @@ static async Task RunDirectPasswordGateAsync(
 
         // Disconnect deliberately erases transient credentials. Reconnect therefore uses a
         // fresh session built from the same runtime-only configuration, never retained secrets.
+        checkChanged("negotiated-reconnect");
         reconnectSession = CreateSession(configuration);
         await ConnectRequiredAsync(reconnectSession);
         VerifyNegotiatedConnectionInfo(reconnectSession, configuration);
@@ -265,7 +278,12 @@ static async Task RunDirectPasswordGateAsync(
             throw new InvalidOperationException("The reconnect negotiated snapshot is unavailable.");
         Assert(!ReferenceEquals(firstSnapshot, secondSnapshot),
             "Reconnect reused the previous negotiated connection snapshot.");
-        await VerifyServerAuditAsync(reconnectSession, configuration.ServerAuditCommand);
+        evidence.Measurements.ReconnectVerified = true;
+        checkChanged("server-session-audit");
+        await VerifyServerAuditAsync(
+            reconnectSession,
+            configuration.ServerAuditCommand,
+            evidence.Measurements);
         Console.WriteLine("[direct-password-gate] reconnect and server audit checks passed");
     }
     finally
@@ -283,9 +301,11 @@ static async Task RunDirectPasswordGateAsync(
             Directory.Delete(localRoot, recursive: true);
         Assert(!Directory.Exists(localRoot),
             "The Direct Password local scratch directory remained after cleanup.");
+        evidence.Measurements.LocalCleanupVerified = true;
     }
 
     Console.WriteLine("[direct-password-gate] validating wrong-password rejection");
+    checkChanged("authentication-rejection");
     var wrongPassword = $"sutty-invalid-{Convert.ToHexString(RandomNumberGenerator.GetBytes(16))}";
     if (string.Equals(wrongPassword, configuration.Password, StringComparison.Ordinal))
         wrongPassword += "-different";
@@ -293,8 +313,10 @@ static async Task RunDirectPasswordGateAsync(
         configuration with { Password = wrongPassword },
         LiveFailureCategory.AuthenticationFailed,
         "wrong-password rejection");
+    evidence.Measurements.AuthenticationRejectionVerified = true;
 
     Console.WriteLine("[direct-password-gate] validating expected host-key mismatch rejection");
+    checkChanged("host-key-rejection");
     await VerifyRejectedConnectionAsync(
         configuration with
         {
@@ -303,8 +325,10 @@ static async Task RunDirectPasswordGateAsync(
         },
         LiveFailureCategory.HostKeyRejected,
         "host-key mismatch rejection");
+    evidence.Measurements.HostKeyRejectionVerified = true;
 
     Console.WriteLine("[direct-password-gate] validating connection cancellation against a blackhole transport");
+    checkChanged("connection-cancellation");
     var blackholeConfiguration = configuration with
     {
         Host = configuration.BlackholeHost,
@@ -313,6 +337,7 @@ static async Task RunDirectPasswordGateAsync(
         TrustNewHost = true,
     };
     var cancellationSession = CreateSession(blackholeConfiguration);
+    var cancellationWatch = Stopwatch.StartNew();
     try
     {
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
@@ -327,14 +352,18 @@ static async Task RunDirectPasswordGateAsync(
             canceled = true;
         }
         Assert(canceled, "The blackhole connection did not honor cancellation.");
+        evidence.Measurements.CancellationVerified = true;
     }
     finally
     {
+        evidence.Measurements.CancellationElapsedMilliseconds =
+            Math.Max(0, cancellationWatch.ElapsedMilliseconds);
         await cancellationSession.DisconnectAsync();
         AssertDisconnectedClean(cancellationSession, "canceled connection");
     }
 
     Console.WriteLine("[direct-password-gate] validating bounded transport timeout against a blackhole transport");
+    checkChanged("transport-timeout");
     var timeoutSession = CreateSession(blackholeConfiguration);
     var timeoutWatch = Stopwatch.StartNew();
     try
@@ -347,9 +376,12 @@ static async Task RunDirectPasswordGateAsync(
             "The blackhole transport did not observe the bounded SSH timeout window.");
         Assert(timeoutSession.NegotiatedInfo is null,
             "A timed-out connection retained negotiated connection information.");
+        evidence.Measurements.TimeoutVerified = true;
     }
     finally
     {
+        evidence.Measurements.TimeoutElapsedMilliseconds =
+            Math.Max(0, timeoutWatch.ElapsedMilliseconds);
         await timeoutSession.DisconnectAsync();
         AssertDisconnectedClean(timeoutSession, "timed-out connection");
     }
@@ -358,8 +390,11 @@ static async Task RunDirectPasswordGateAsync(
 static async Task VerifyCandidatePackageAsync(
     string packagePath,
     string expectedSha256,
-    string expectedCommit)
+    string expectedCommit,
+    Action<string>? checkChanged = null,
+    LiveGateMeasurements? measurements = null)
 {
+    checkChanged?.Invoke("package-sha256");
     var packageAttributes = File.GetAttributes(packagePath);
     Assert((packageAttributes & FileAttributes.ReparsePoint) == 0,
         "The candidate package must be a physical file, not a reparse point.");
@@ -375,6 +410,8 @@ static async Task VerifyCandidatePackageAsync(
             .ToLowerInvariant();
         Assert(string.Equals(packageSha256, expectedSha256, StringComparison.Ordinal),
             "The exact candidate package SHA-256 does not match the evidence manifest input.");
+        if (measurements is not null)
+            measurements.PackageSha256Verified = true;
     }
 
     await using var archiveStream = new FileStream(
@@ -422,6 +459,7 @@ static async Task VerifyCandidatePackageAsync(
         "The candidate package is missing the root sutty.Core.dll file.");
     Assert(buildInfo is not null && buildInfo.Length is > 0 and <= 4096,
         "The candidate package is missing a bounded root BUILDINFO.txt file.");
+    checkChanged?.Invoke("package-commit-identity");
     await using (var buildInfoStream = buildInfo!.Open())
     using (var reader = new StreamReader(
                buildInfoStream,
@@ -437,7 +475,10 @@ static async Task VerifyCandidatePackageAsync(
         Assert(buildInfoLines.Contains($"Commit: {expectedCommit}", StringComparer.Ordinal) &&
                buildInfoLines.Contains("Architecture: x64", StringComparer.Ordinal),
             "The candidate package BUILDINFO identity does not match the gate commit and architecture.");
+        if (measurements is not null)
+            measurements.PackageCommitIdentityVerified = true;
     }
+    checkChanged?.Invoke("package-core-identity");
     var loadedCorePath = typeof(SshNetSession).Assembly.Location;
     Assert(!string.IsNullOrWhiteSpace(loadedCorePath) && File.Exists(loadedCorePath),
         "The loaded Sutty Core assembly is unavailable for package identity verification.");
@@ -447,6 +488,8 @@ static async Task VerifyCandidatePackageAsync(
     var packagedCoreSha256 = await SHA256.HashDataAsync(packagedCoreStream);
     Assert(CryptographicOperations.FixedTimeEquals(loadedCoreSha256, packagedCoreSha256),
         "The running Sutty Core assembly is not byte-identical to the exact candidate package entry.");
+    if (measurements is not null)
+        measurements.PackageCoreIdentityVerified = true;
 }
 
 static bool IsSafeZipEntryName(string name)
@@ -489,7 +532,10 @@ static async Task VerifyRejectedConnectionAsync(
     }
 }
 
-static async Task VerifyServerAuditAsync(SshNetSession session, string auditCommand)
+static async Task VerifyServerAuditAsync(
+    SshNetSession session,
+    string auditCommand,
+    LiveGateMeasurements measurements)
 {
     var audit = await session.ExecuteCommandAsync(auditCommand);
     Assert(audit.Succeeded, "The server-side session-category audit was unavailable.");
@@ -507,12 +553,17 @@ static async Task VerifyServerAuditAsync(SshNetSession session, string auditComm
                 int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture)),
             "The server-side session-category audit output is not canonical.");
     }
+    measurements.AuditExecCount = counts.GetValueOrDefault("exec");
+    measurements.AuditShellCount = counts.GetValueOrDefault("shell");
+    measurements.AuditSftpCount = counts.GetValueOrDefault("sftp");
+    measurements.AuditOtherCount = counts.GetValueOrDefault("other");
     Assert(counts.Count == 4 &&
            counts.GetValueOrDefault("exec") == 4 &&
            counts.GetValueOrDefault("shell") == 1 &&
            counts.GetValueOrDefault("sftp") == 2 &&
            counts.GetValueOrDefault("other") == 0,
         "The server-side audit detected an unexpected or missing session request.");
+    measurements.ServerAuditVerified = true;
 }
 
 static async Task DeleteRemoteTreeRequiredAsync(
@@ -921,6 +972,16 @@ static async Task RunEvidenceSelfTestsAsync()
         Assert(CompletedHarnessEvidenceResult(defaultConfiguration) == LiveEvidenceResult.Blocked,
             "Partial live harness coverage must never emit a gate-level Pass result.");
 
+        environment["SUTTY_TEST_SSH_PORT"] = "not-a-number";
+        ExpectFailure(
+            () => LiveConfiguration.Load(ReadEnvironment),
+            "An explicitly nonnumeric port must fail closed.");
+        environment["SUTTY_TEST_SSH_PORT"] = "65536";
+        ExpectFailure(
+            () => LiveConfiguration.Load(ReadEnvironment),
+            "An explicitly out-of-range port must fail closed instead of being clamped.");
+        environment.Remove("SUTTY_TEST_SSH_PORT");
+
         environment["SUTTY_TEST_MODES"] = "connection-info,smoke,fault,scale,soak";
         var allModesConfiguration = LiveConfiguration.Load(ReadEnvironment);
         var invoked = new List<string>();
@@ -930,7 +991,7 @@ static async Task RunEvidenceSelfTestsAsync()
             null,
             new LiveModeOperations(
                 _ => RecordModeAsync("connection-info", invoked),
-                (_, _) => RecordModeAsync("direct-password-gate", invoked),
+                (_, _, _) => RecordModeAsync("direct-password-gate", invoked),
                 _ => RecordModeAsync("smoke", invoked),
                 _ => RecordModeAsync("fault", invoked),
                 _ => RecordModeAsync("scale", invoked),
@@ -1070,6 +1131,10 @@ static async Task RunEvidenceSelfTestsAsync()
         environment["SUTTY_TEST_BLACKHOLE_PORT"] = "2222";
         environment["SUTTY_TEST_SERVER_AUDIT_COMMAND"] = "sutty-lab-audit-summary";
         environment["SUTTY_TEST_PACKAGE_PATH"] = candidatePackage;
+        ExpectFailure(
+            () => LiveConfiguration.Load(ReadEnvironment),
+            "The formal Direct Password gate must reject a missing SSH port.");
+        environment["SUTTY_TEST_SSH_PORT"] = "2022";
         var directPasswordConfiguration = LiveConfiguration.Load(ReadEnvironment);
         Assert(CompletedHarnessEvidenceResult(directPasswordConfiguration) == LiveEvidenceResult.Pass,
             "Only the distinct Direct Password full-gate mode may produce Pass after completion.");
@@ -1084,6 +1149,28 @@ static async Task RunEvidenceSelfTestsAsync()
             directPasswordConfiguration,
             ReadEnvironment) ?? throw new InvalidOperationException(
                 "The full Direct Password mode did not map to evidence.");
+        var directMeasurements = directPasswordEvidence.Measurements;
+        directMeasurements.PackageSha256Verified = true;
+        directMeasurements.PackageCommitIdentityVerified = true;
+        directMeasurements.PackageCoreIdentityVerified = true;
+        directMeasurements.AuthenticationSuccessVerified = true;
+        directMeasurements.SftpBytes = 64 * 1024;
+        directMeasurements.SftpChecksumVerified = true;
+        directMeasurements.CommandPtySftpVerified = true;
+        directMeasurements.RemoteCleanupVerified = true;
+        directMeasurements.LocalCleanupVerified = true;
+        directMeasurements.ReconnectVerified = true;
+        directMeasurements.ServerAuditVerified = true;
+        directMeasurements.AuditExecCount = 4;
+        directMeasurements.AuditShellCount = 1;
+        directMeasurements.AuditSftpCount = 2;
+        directMeasurements.AuditOtherCount = 0;
+        directMeasurements.AuthenticationRejectionVerified = true;
+        directMeasurements.HostKeyRejectionVerified = true;
+        directMeasurements.CancellationElapsedMilliseconds = 500;
+        directMeasurements.CancellationVerified = true;
+        directMeasurements.TimeoutElapsedMilliseconds = 15_000;
+        directMeasurements.TimeoutVerified = true;
         var directPasswordBundle = await LiveEvidenceWriter.WriteAsync(
             directPasswordEvidence,
             directPasswordConfiguration,
@@ -1098,12 +1185,47 @@ static async Task RunEvidenceSelfTestsAsync()
         {
             var root = directPasswordSummary.RootElement;
             var checks = root.GetProperty("checks").EnumerateArray().ToArray();
+            var measurements = root.GetProperty("measurements");
             Assert(directPasswordManifest.Contains("result: \"Pass\"", StringComparison.Ordinal) &&
                    root.GetProperty("result").GetString() == "Pass" &&
                    checks.Length == 12 &&
                    checks.All(check => check.GetProperty("result").GetString() == "Pass") &&
+                   measurements.GetProperty("sftp_bytes").GetInt64() == 64 * 1024 &&
+                   measurements.GetProperty("sftp_checksum_verified").GetBoolean() &&
+                   measurements.GetProperty("audit_exec_count").GetInt32() == 4 &&
+                   measurements.GetProperty("audit_shell_count").GetInt32() == 1 &&
+                   measurements.GetProperty("audit_sftp_count").GetInt32() == 2 &&
+                   measurements.GetProperty("audit_other_count").GetInt32() == 0 &&
+                   measurements.GetProperty("package_core_identity_verified").GetBoolean() &&
+                   measurements.GetProperty("local_cleanup_verified").GetBoolean() &&
+                   measurements.GetProperty("reconnect_verified").GetBoolean() &&
                    !root.TryGetProperty("blocking_category", out _),
                 "The complete Direct Password gate did not emit a canonical all-Pass summary.");
+        }
+        var directPasswordFailureBundle = await LiveEvidenceWriter.WriteAsync(
+            directPasswordEvidence,
+            directPasswordConfiguration,
+            new DateTimeOffset(2026, 8, 20, 0, 1, 0, TimeSpan.Zero),
+            TimeSpan.FromSeconds(10),
+            LiveEvidenceResult.Fail,
+            "host-key-rejection",
+            LiveFailureCategory.HostKeyRejected);
+        using (var directPasswordFailureSummary = JsonDocument.Parse(await File.ReadAllTextAsync(
+                   Path.Combine(directPasswordFailureBundle, LiveEvidenceWriter.SummaryFileName))))
+        {
+            var root = directPasswordFailureSummary.RootElement;
+            var checks = root.GetProperty("checks").EnumerateArray().ToArray();
+            var failedIndex = Array.FindIndex(
+                checks,
+                check => check.GetProperty("result").GetString() == "Fail");
+            Assert(root.GetProperty("failed_check_id").GetString() == "host-key-rejection" &&
+                   failedIndex > 0 &&
+                   checks.Take(failedIndex).All(
+                       check => check.GetProperty("result").GetString() == "Pass") &&
+                   checks[failedIndex].GetProperty("id").GetString() == "host-key-rejection" &&
+                   checks.Skip(failedIndex + 1).All(
+                       check => check.GetProperty("result").GetString() == "Blocked"),
+                "Failure evidence did not retain completed, failed, and unexecuted check semantics.");
         }
 
         environment["SUTTY_TEST_HOST_KEY_SHA256"] = "SHA256:sensitive-fingerprint";
@@ -1125,17 +1247,11 @@ static async Task RunEvidenceSelfTestsAsync()
             evidenceLiveConfiguration,
             ReadEnvironment) ?? throw new InvalidOperationException(
                 "Explicit evidence configuration was not enabled.");
-        Assert(!evidence.RedactionReviewed,
-            "Generated evidence must remain an unreviewed candidate by default.");
         environment["SUTTY_EVIDENCE_REDACTION_REVIEWED"] = "1";
-        var reviewedEvidence = LiveEvidenceConfiguration.Load(
-            evidenceLiveConfiguration,
-            ReadEnvironment) ?? throw new InvalidOperationException(
-                "Explicitly reviewed evidence configuration was not enabled.");
-        Assert(reviewedEvidence.RedactionReviewed,
-            "Explicit redaction review acknowledgement was not preserved.");
+        ExpectFailure(
+            () => LiveEvidenceConfiguration.Load(evidenceLiveConfiguration, ReadEnvironment),
+            "The evidence writer must reject a legacy pre-run review claim.");
         environment.Remove("SUTTY_EVIDENCE_REDACTION_REVIEWED");
-
         var priorRawKey = Environment.GetEnvironmentVariable("SUTTY_TEST_SSH_PRIVATE_KEY");
         Environment.SetEnvironmentVariable(
             "SUTTY_TEST_SSH_PRIVATE_KEY",
@@ -1424,7 +1540,7 @@ sealed class InlineProgress<T>(Action<T> callback) : IProgress<T>
 
 sealed record LiveModeOperations(
     Func<LiveConfiguration, Task> ConnectionInfo,
-    Func<LiveConfiguration, LiveEvidenceConfiguration?, Task> DirectPasswordGate,
+    Func<LiveConfiguration, LiveEvidenceConfiguration?, Action<string>, Task> DirectPasswordGate,
     Func<LiveConfiguration, Task> Smoke,
     Func<LiveConfiguration, Task> Fault,
     Func<LiveConfiguration, Task> Scale,
@@ -1435,6 +1551,33 @@ enum LiveEvidenceResult
     Pass,
     Fail,
     Blocked,
+}
+
+sealed record LiveEvidenceCheck(string Id, string Result);
+
+sealed class LiveGateMeasurements
+{
+    public bool PackageSha256Verified { get; set; }
+    public bool PackageCommitIdentityVerified { get; set; }
+    public bool PackageCoreIdentityVerified { get; set; }
+    public bool AuthenticationSuccessVerified { get; set; }
+    public long SftpBytes { get; set; }
+    public bool SftpChecksumVerified { get; set; }
+    public bool CommandPtySftpVerified { get; set; }
+    public bool RemoteCleanupVerified { get; set; }
+    public bool LocalCleanupVerified { get; set; }
+    public bool ReconnectVerified { get; set; }
+    public bool ServerAuditVerified { get; set; }
+    public int AuditExecCount { get; set; }
+    public int AuditShellCount { get; set; }
+    public int AuditSftpCount { get; set; }
+    public int AuditOtherCount { get; set; }
+    public bool AuthenticationRejectionVerified { get; set; }
+    public bool HostKeyRejectionVerified { get; set; }
+    public long CancellationElapsedMilliseconds { get; set; }
+    public bool CancellationVerified { get; set; }
+    public long TimeoutElapsedMilliseconds { get; set; }
+    public bool TimeoutVerified { get; set; }
 }
 
 enum LiveFailureCategory
@@ -1462,7 +1605,7 @@ sealed record LiveEvidenceConfiguration(
     string PackageSha256,
     string ServerFamily,
     string ServerVersion,
-    bool RedactionReviewed)
+    LiveGateMeasurements Measurements)
 {
     private static readonly Regex GatePattern = new(
         "^[A-Z0-9]+(?:-[A-Z0-9]+)+$",
@@ -1492,7 +1635,7 @@ sealed record LiveEvidenceConfiguration(
         var packageSha256 = readEnvironment("SUTTY_EVIDENCE_PACKAGE_SHA256") ?? "";
         var serverFamily = readEnvironment("SUTTY_EVIDENCE_SERVER_FAMILY") ?? "";
         var serverVersion = readEnvironment("SUTTY_EVIDENCE_SERVER_VERSION") ?? "";
-        var redactionReviewed = readEnvironment("SUTTY_EVIDENCE_REDACTION_REVIEWED") ?? "";
+        var legacyReviewClaim = readEnvironment("SUTTY_EVIDENCE_REDACTION_REVIEWED") ?? "";
         var requested = new[]
         {
             outputRoot,
@@ -1502,12 +1645,16 @@ sealed record LiveEvidenceConfiguration(
             packageSha256,
             serverFamily,
             serverVersion,
-            redactionReviewed,
         }.Any(value => !string.IsNullOrWhiteSpace(value));
+        if (!string.IsNullOrWhiteSpace(legacyReviewClaim))
+        {
+            throw new InvalidOperationException(
+                "Live evidence review is a post-run operation; the writer rejected a review claim.");
+        }
         if (!requested)
             return null;
 
-        if (approval != "1" || redactionReviewed is not ("" or "0" or "1") ||
+        if (approval != "1" ||
             gateId.Length > 64 ||
             commit.All(character => character == '0') ||
             packageSha256.All(character => character == '0') ||
@@ -1550,7 +1697,7 @@ sealed record LiveEvidenceConfiguration(
             packageSha256,
             serverFamily,
             serverVersion,
-            redactionReviewed == "1");
+            new LiveGateMeasurements());
     }
 
     private static bool GateMatchesMode(
@@ -1597,7 +1744,7 @@ static class LiveEvidenceWriter
         var startedText = started.ToString(
             "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
             CultureInfo.InvariantCulture);
-        var architecture = RuntimeInformation.OSArchitecture switch
+        var architecture = RuntimeInformation.ProcessArchitecture switch
         {
             Architecture.X64 => "x64",
             Architecture.Arm64 => "arm64",
@@ -1614,6 +1761,52 @@ static class LiveEvidenceWriter
             ? "NotRecorded"
             : "SHA256:[redacted]";
         var resultText = result.ToString();
+        var checks = EvidenceChecks(configuration.Modes, result, safePhase);
+        if (result == LiveEvidenceResult.Pass &&
+            configuration.Modes.SetEquals(new[] { "direct-password-gate" }) &&
+            !CompleteDirectPasswordMeasurements(evidence.Measurements))
+        {
+            throw new InvalidOperationException(
+                "SSH-LIVE-001 cannot pass without its bounded measured assertions.");
+        }
+        var measurementDocument = new Dictionary<string, object?>
+        {
+            ["check_count"] = checks.Count,
+            ["passed_count"] = checks.Count(check => check.Result == "Pass"),
+            ["failed_count"] = checks.Count(check => check.Result == "Fail"),
+            ["blocked_count"] = checks.Count(check => check.Result == "Blocked"),
+        };
+        if (configuration.Modes.SetEquals(new[] { "direct-password-gate" }))
+        {
+            var measured = evidence.Measurements;
+            measurementDocument["package_sha256_verified"] = measured.PackageSha256Verified;
+            measurementDocument["package_commit_identity_verified"] =
+                measured.PackageCommitIdentityVerified;
+            measurementDocument["package_core_identity_verified"] =
+                measured.PackageCoreIdentityVerified;
+            measurementDocument["authentication_success_verified"] =
+                measured.AuthenticationSuccessVerified;
+            measurementDocument["sftp_bytes"] = measured.SftpBytes;
+            measurementDocument["sftp_checksum_verified"] = measured.SftpChecksumVerified;
+            measurementDocument["command_pty_sftp_verified"] = measured.CommandPtySftpVerified;
+            measurementDocument["remote_cleanup_verified"] = measured.RemoteCleanupVerified;
+            measurementDocument["local_cleanup_verified"] = measured.LocalCleanupVerified;
+            measurementDocument["reconnect_verified"] = measured.ReconnectVerified;
+            measurementDocument["audit_exec_count"] = measured.AuditExecCount;
+            measurementDocument["audit_shell_count"] = measured.AuditShellCount;
+            measurementDocument["audit_sftp_count"] = measured.AuditSftpCount;
+            measurementDocument["audit_other_count"] = measured.AuditOtherCount;
+            measurementDocument["server_audit_verified"] = measured.ServerAuditVerified;
+            measurementDocument["authentication_rejection_verified"] =
+                measured.AuthenticationRejectionVerified;
+            measurementDocument["host_key_rejection_verified"] = measured.HostKeyRejectionVerified;
+            measurementDocument["cancellation_elapsed_milliseconds"] =
+                measured.CancellationElapsedMilliseconds;
+            measurementDocument["cancellation_verified"] = measured.CancellationVerified;
+            measurementDocument["timeout_elapsed_milliseconds"] =
+                measured.TimeoutElapsedMilliseconds;
+            measurementDocument["timeout_verified"] = measured.TimeoutVerified;
+        }
         var manifest = string.Join('\n', new[]
         {
             "schema_version: 1",
@@ -1632,7 +1825,7 @@ static class LiveEvidenceWriter
             $"duration_seconds: {durationSeconds.ToString(CultureInfo.InvariantCulture)}",
             "evidence_files:",
             $"  - {YamlString(SummaryFileName)}",
-            $"redaction_reviewed: {evidence.RedactionReviewed.ToString().ToLowerInvariant()}",
+            "redaction_reviewed: false",
             "",
         });
         var summaryDocument = new Dictionary<string, object?>
@@ -1643,12 +1836,13 @@ static class LiveEvidenceWriter
             ["started_at_utc"] = startedText,
             ["duration_seconds"] = durationSeconds,
             ["check_id"] = safePhase,
-            ["checks"] = OrderedChecks(configuration.Modes).Select(check => new
+            ["checks"] = checks.Select(check => new
             {
-                id = check,
-                result = result == LiveEvidenceResult.Fail ? "Fail" : "Pass",
+                id = check.Id,
+                result = check.Result,
             }).ToArray(),
-            ["redaction_reviewed"] = evidence.RedactionReviewed,
+            ["measurements"] = measurementDocument,
+            ["redaction_reviewed"] = false,
             ["privacy_notice"] =
                 "Connection identifiers, credentials, filesystem locations, session content, and cryptographic material are excluded.",
         };
@@ -1656,6 +1850,8 @@ static class LiveEvidenceWriter
             summaryDocument["blocking_category"] = "ManualGateCoverageRequired";
         if (failureCategory is not null)
             summaryDocument["failure_category"] = failureCategory.Value.ToString();
+        if (result == LiveEvidenceResult.Fail)
+            summaryDocument["failed_check_id"] = checks.Single(check => check.Result == "Fail").Id;
         var summary = JsonSerializer.Serialize(
             summaryDocument,
             new JsonSerializerOptions { WriteIndented = true }) + "\n";
@@ -1716,14 +1912,14 @@ static class LiveEvidenceWriter
                 "package-commit-identity",
                 "package-core-identity",
                 "authentication-success",
+                "command-pty-sftp",
+                "remote-local-cleanup",
+                "negotiated-reconnect",
+                "server-session-audit",
                 "authentication-rejection",
                 "host-key-rejection",
                 "connection-cancellation",
                 "transport-timeout",
-                "negotiated-reconnect",
-                "command-pty-sftp",
-                "remote-local-cleanup",
-                "server-session-audit",
             ];
         }
 
@@ -1732,10 +1928,54 @@ static class LiveEvidenceWriter
             .ToArray();
     }
 
+    private static IReadOnlyList<LiveEvidenceCheck> EvidenceChecks(
+        IReadOnlySet<string> modes,
+        LiveEvidenceResult result,
+        string safePhase)
+    {
+        var ordered = OrderedChecks(modes);
+        if (result != LiveEvidenceResult.Fail)
+            return ordered.Select(id => new LiveEvidenceCheck(id, "Pass")).ToArray();
+
+        var failedIndex = Array.IndexOf(ordered, safePhase);
+        if (failedIndex < 0)
+            failedIndex = 0;
+        return ordered.Select((id, index) => new LiveEvidenceCheck(
+            id,
+            index < failedIndex ? "Pass" : index == failedIndex ? "Fail" : "Blocked")).ToArray();
+    }
+
+    private static bool CompleteDirectPasswordMeasurements(LiveGateMeasurements measured) =>
+        measured.PackageSha256Verified &&
+        measured.PackageCommitIdentityVerified &&
+        measured.PackageCoreIdentityVerified &&
+        measured.AuthenticationSuccessVerified &&
+        measured.SftpBytes == 64 * 1024 &&
+        measured.SftpChecksumVerified &&
+        measured.CommandPtySftpVerified &&
+        measured.RemoteCleanupVerified &&
+        measured.LocalCleanupVerified &&
+        measured.ReconnectVerified &&
+        measured.ServerAuditVerified &&
+        measured.AuditExecCount == 4 &&
+        measured.AuditShellCount == 1 &&
+        measured.AuditSftpCount == 2 &&
+        measured.AuditOtherCount == 0 &&
+        measured.AuthenticationRejectionVerified &&
+        measured.HostKeyRejectionVerified &&
+        measured.CancellationElapsedMilliseconds is >= 100 and < 10_000 &&
+        measured.CancellationVerified &&
+        measured.TimeoutElapsedMilliseconds is >= 12_000 and < 30_000 &&
+        measured.TimeoutVerified;
+
     public static string SafePhase(string phase) => phase switch
     {
         "configuration" or "connection-info" or "direct-password-gate" or "smoke" or "fault" or "scale" or
-        "soak" or "evidence" or "complete" or "self-test" => phase,
+        "soak" or "evidence" or "complete" or "self-test" or
+        "package-sha256" or "package-commit-identity" or "package-core-identity" or
+        "authentication-success" or "command-pty-sftp" or "remote-local-cleanup" or
+        "negotiated-reconnect" or "server-session-audit" or "authentication-rejection" or
+        "host-key-rejection" or "connection-cancellation" or "transport-timeout" => phase,
         _ => "unknown",
     };
 
@@ -1846,6 +2086,8 @@ sealed record LiveConfiguration(
             throw new InvalidOperationException(
                 "Set SUTTY_TEST_HOST_KEY_SHA256, or explicitly set SUTTY_TEST_TRUST_NEW_HOST=1.");
 
+        var sshPortInput = readEnvironment("SUTTY_TEST_SSH_PORT");
+        var sshPort = Int(readEnvironment, "SUTTY_TEST_SSH_PORT", 22, 1, 65_535);
         var blackholeHost = readEnvironment("SUTTY_TEST_BLACKHOLE_HOST") ?? host;
         var blackholePort = Int(readEnvironment, "SUTTY_TEST_BLACKHOLE_PORT", 0, 0, 65_535);
         var serverAuditCommand = readEnvironment("SUTTY_TEST_SERVER_AUDIT_COMMAND") ?? "";
@@ -1853,7 +2095,7 @@ sealed record LiveConfiguration(
         if (modes.Contains("direct-password-gate"))
         {
             if (modes.Count != 1 || authMethod != SshAuthMethod.Password ||
-                string.IsNullOrEmpty(password) || trustNew ||
+                string.IsNullOrEmpty(password) || string.IsNullOrEmpty(sshPortInput) || trustNew ||
                 !Regex.IsMatch(
                     expectedKey,
                     "^SHA256:[A-Za-z0-9+/]{43}={0,1}$",
@@ -1874,7 +2116,7 @@ sealed record LiveConfiguration(
 
         return new LiveConfiguration(
             host,
-            Int(readEnvironment, "SUTTY_TEST_SSH_PORT", 22, 1, 65_535),
+            sshPort,
             username,
             authMethod,
             password,
@@ -1910,8 +2152,21 @@ sealed record LiveConfiguration(
         string name,
         int fallback,
         int minimum,
-        int maximum) =>
-        int.TryParse(readEnvironment(name), out var value)
-            ? Math.Clamp(value, minimum, maximum)
-            : fallback;
+        int maximum)
+    {
+        var text = readEnvironment(name);
+        if (string.IsNullOrEmpty(text))
+            return fallback;
+        if (!int.TryParse(
+                text,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var value) ||
+            value < minimum || value > maximum)
+        {
+            throw new InvalidOperationException(
+                $"{name} must be an integer from {minimum} through {maximum}.");
+        }
+        return value;
+    }
 }

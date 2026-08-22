@@ -19,6 +19,9 @@ Set-StrictMode -Version Latest
 
 $violations = [System.Collections.Generic.List[string]]::new()
 $alphaTagPattern = 'v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+'
+$tagIdentity = [regex]::Match(
+    $Tag,
+    '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)-alpha\.(?<alpha>[0-9]+)$')
 
 function Add-Violation {
     param([string]$Message)
@@ -110,7 +113,7 @@ function Get-ZipEntryText {
     }
 }
 
-if ($Tag -cnotmatch "^$alphaTagPattern$") {
+if (-not $tagIdentity.Success) {
     Add-Violation "unsupported Alpha tag: $Tag"
 }
 
@@ -155,22 +158,33 @@ if ($null -ne $propsText) {
 $readmePath = Join-Path $RepositoryRoot 'README.md'
 $readmeText = Get-RequiredText -Path $readmePath -Description 'README'
 if ($null -ne $readmeText) {
-    $currentLines = @([regex]::Matches(
+    $candidateLines = @([regex]::Matches(
         $readmeText,
-        '^>\s+\*\*Current / 현재:\*\*.*$',
+        '^>\s+\*\*Latest published / 최신 공개본:\*\*.*\*\*Current candidate / 현재 후보:\*\*.*$',
         [System.Text.RegularExpressions.RegexOptions]::Multiline))
-    if ($currentLines.Count -ne 1) {
-        Add-Violation "README must contain exactly one 'Current / 현재' release line; found $($currentLines.Count)."
+    if ($candidateLines.Count -ne 1) {
+        Add-Violation "README must contain exactly one latest-published/current-candidate line; found $($candidateLines.Count)."
     }
-    else {
-        $currentLine = $currentLines[0].Value
-        $currentTags = @([regex]::Matches($currentLine, $alphaTagPattern))
-        if ($currentTags.Count -eq 0 -or @($currentTags | Where-Object { $_.Value -cne $Tag }).Count -gt 0) {
-            Add-Violation "README Current line does not consistently identify $Tag."
+    elseif ($tagIdentity.Success) {
+        $candidateLine = $candidateLines[0].Value
+        $alphaNumber = [int]$tagIdentity.Groups['alpha'].Value
+        if ($alphaNumber -lt 2) {
+            Add-Violation 'README candidate contract requires a previously published Alpha tag.'
         }
-        $expectedReleaseUrl = "https://github.com/yongsoocho/sutty/releases/tag/$Tag"
-        if (-not $currentLine.Contains($expectedReleaseUrl, [StringComparison]::Ordinal)) {
-            Add-Violation "README Current line does not link to $expectedReleaseUrl."
+        else {
+            $previousTag = "v$($tagIdentity.Groups['version'].Value)-alpha.$($alphaNumber - 1)"
+            $expectedLatestUrl = "https://github.com/yongsoocho/sutty/releases/tag/$previousTag"
+            $expectedCandidateTarget = "docs/releases/$Tag.md"
+            $lineTags = @([regex]::Matches($candidateLine, $alphaTagPattern) | ForEach-Object Value)
+            if ($lineTags.Count -ne 4 -or
+                @($lineTags | Where-Object { $_ -ceq $previousTag }).Count -ne 2 -or
+                @($lineTags | Where-Object { $_ -ceq $Tag }).Count -ne 2) {
+                Add-Violation "README candidate line must identify exactly latest $previousTag and candidate $Tag."
+            }
+            if (-not $candidateLine.Contains($expectedLatestUrl, [StringComparison]::Ordinal) -or
+                -not $candidateLine.Contains($expectedCandidateTarget, [StringComparison]::Ordinal)) {
+                Add-Violation 'README latest-published/current-candidate links do not match the release contract.'
+            }
         }
     }
 }
@@ -187,8 +201,13 @@ if ($null -ne $releaseNotesText) {
             Add-Violation "release notes do not list $archiveName."
         }
     }
-    if (-not $releaseNotesText.Contains('SHA256SUMS.txt', [StringComparison]::Ordinal)) {
-        Add-Violation 'release notes do not list SHA256SUMS.txt.'
+    foreach ($provenanceAsset in @(
+        'SHA256SUMS.txt',
+        'CANDIDATE-MANIFEST.json',
+        'RELEASE-ATTESTATION.json')) {
+        if (-not $releaseNotesText.Contains($provenanceAsset, [StringComparison]::Ordinal)) {
+            Add-Violation "release notes do not list $provenanceAsset."
+        }
     }
 
     $listedArchives = @([regex]::Matches(

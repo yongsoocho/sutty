@@ -22,7 +22,7 @@ Additional files are allowed only as validated `.json`, strict UTF-8 `.txt`, or 
 
 추가 파일은 redaction했고 `evidence_files`에서 명시적으로 참조하며 gate 검토에 필요한 검증된 `.json`, strict UTF-8 `.txt`, 구조를 제한한 `.png`만 허용합니다. 원본 또는 제한 없는 log, 녹화, 그 밖의 binary 형식은 허용하지 않습니다. `manifest.yml`은 `summary.json`을 반드시 나열하고 자기 자신은 나열하지 않습니다. 디렉터리 tree의 manifest 외 모든 파일은 선언해야 합니다.
 
-Reviewed bundles committed for Alpha 4 use exactly one of these roots and add one immutable bundle directory below it:
+Reviewed bundles committed for Alpha 4 use exactly one of these roots and add one immutable bundle directory below it. The root validator permits only `EVIDENCE_SCHEMA.md`, the Alpha tracker, the four approved scope trackers, and complete declared bundle trees; orphan files, unknown scopes, empty directories, and undeclared files are rejected.
 
 ```text
 docs/evidence/alpha4/ssh-auth/<bundle>/
@@ -33,7 +33,7 @@ docs/evidence/alpha4/connection-info/<bundle>/
 
 The scope trackers in [alpha4](alpha4/README.md) are not evidence bundles. A committed manifest outside `docs/evidence/alpha<integer>/<scope>/<bundle>/manifest.yml` is rejected. Generated unreviewed output must remain outside these committed roots until review.
 
-[alpha4](alpha4/README.md)의 범위 추적 문서는 증거 bundle이 아닙니다. `docs/evidence/alpha<integer>/<scope>/<bundle>/manifest.yml` 밖의 committed manifest는 거부합니다. 검토 전 생성물은 검토가 끝날 때까지 이 committed root 밖에 둡니다.
+[alpha4](alpha4/README.md)의 범위 추적 문서는 증거 bundle이 아닙니다. Root validator는 `EVIDENCE_SCHEMA.md`, Alpha tracker, 승인된 네 scope tracker, 완전하게 선언한 bundle tree만 허용하며 orphan file, 알 수 없는 scope, 빈 directory, 선언하지 않은 file을 거부합니다. `docs/evidence/alpha<integer>/<scope>/<bundle>/manifest.yml` 밖의 committed manifest는 거부합니다. 검토 전 생성물은 검토가 끝날 때까지 이 committed root 밖에 둡니다.
 
 Generated bundles remain CI or local artifacts until a human performs the redaction review. A generator must not set `redaction_reviewed: true` merely because an automated pattern scan passed. Do not add invented `Pass` records, copied sample runs, or placeholder evidence to the repository.
 
@@ -58,7 +58,10 @@ Evidence output is off by default. Activating it requires all mandatory values b
 | `SUTTY_EVIDENCE_PACKAGE_SHA256` | Exact nonzero lowercase SHA-256 of the identical package under test. An operator must independently calculate and compare it; never substitute a checksum-list digest. |
 | `SUTTY_EVIDENCE_SERVER_FAMILY` | Sanitized 1–32-character family label matching the manifest contract. |
 | `SUTTY_EVIDENCE_SERVER_VERSION` | Sanitized 1–32-character version label matching the manifest contract. |
-| `SUTTY_EVIDENCE_REDACTION_REVIEWED` | Optional `0` or `1`; omitted and recommended candidate value is `0`. `1` is a human attestation, never an automatic scan result or CI default. |
+
+The writer does not accept `SUTTY_EVIDENCE_REDACTION_REVIEWED`; supplying it fails closed. Every generated manifest and summary has `redaction_reviewed: false` regardless of the result.
+
+Writer는 `SUTTY_EVIDENCE_REDACTION_REVIEWED`를 받지 않으며 이 값을 제공하면 fail-closed됩니다. 생성한 모든 manifest와 summary는 결과와 관계없이 `redaction_reviewed: false`입니다.
 
 `direct-password-gate` additionally requires an absolute `SUTTY_TEST_PACKAGE_PATH` to the exact x64 ZIP, `SUTTY_TEST_BLACKHOLE_HOST` and `SUTTY_TEST_BLACKHOLE_PORT` for the test-owned silent transport, and `SUTTY_TEST_SERVER_AUDIT_COMMAND=sutty-lab-audit-summary`. It requires Password authentication, a nonempty runtime-only password, an independently provisioned `SUTTY_TEST_HOST_KEY_SHA256`, and forbids trust-new. The disposable approved audit lab is defined under `tests/live-server/openssh`; its runtime password and host keys are never committed.
 
@@ -71,6 +74,42 @@ Evidence generation requires exactly one harness mode. The writer is Direct-only
 Current CI exercises the writer self-test but does not pass live activation values or upload a candidate bundle. In `direct-password-gate`, the writer independently hashes the named ZIP, rejects duplicate/unsafe entries, and compares its root `sutty.Core.dll` bytes with the assembly executing the SSH gate. This binds `SSH-LIVE-001` to the tested Core bytes, but it does not prove UI startup; separate `PKG-001` evidence must execute that exact package before it can map to an immutable release artifact.
 
 현재 CI는 writer self-test만 실행하며 live 활성화 값을 전달하거나 candidate bundle을 업로드하지 않습니다. `direct-password-gate`는 지정 ZIP을 독립 hash하고 중복·unsafe entry를 거부하며 ZIP root `sutty.Core.dll`과 SSH gate를 실행하는 assembly의 byte 동일성을 비교합니다. 이는 `SSH-LIVE-001`을 검사한 Core byte에 묶지만 UI 시작을 증명하지는 않습니다. 동일 package를 실제 실행한 별도 `PKG-001` 증거가 있어야 변경 불가능한 release artifact와 연결할 수 있습니다.
+
+## Post-run human review / 실행 후 사람 검토
+
+Review is a separate, write-once transformation. Inspect the complete unreviewed source bundle first, then run:
+
+```powershell
+.\.github\scripts\Review-LiveEvidence.ps1 `
+  -SourceManifestPath <candidate\manifest.yml> `
+  -DestinationRoot <fresh-reviewed-root> `
+  -ReviewerId github-<public-actor> `
+  -ReviewedAtUtc <RFC3339-UTC> `
+  -PrivacyReview Confirmed `
+  -ExpectedCommit <40-lower-hex> `
+  -ExpectedPackageSha256 <64-lower-hex> `
+  -RequiredGateId SSH-LIVE-001 `
+  -RequiredResult Pass
+```
+
+The command refuses an already reviewed source, validates the source bundle, copies it to a new non-existing directory, changes only the manifest/summary review boolean, declares a new `review.json`, validates the result, and atomically publishes the new reviewed directory. It never edits the source bundle or an existing destination. `ReviewerId` is the public GitHub actor (`github-` plus a valid 1–39-character username), not a display name, email address, machine account, or secret.
+
+검토는 별도 write-once 변환입니다. 먼저 검토 전 source bundle 전체를 사람이 확인하고 위 명령을 실행합니다. 명령은 이미 reviewed인 source를 거부하고 source bundle을 검증한 뒤 존재하지 않는 새 directory로 복사하며, manifest/summary의 review boolean 변경과 새 `review.json` 선언만 수행합니다. 결과를 다시 검증한 뒤 새 directory를 원자적으로 게시하고 source bundle이나 기존 destination은 수정하지 않습니다. `ReviewerId`는 공개 GitHub actor(`github-` + 유효한 1–39자 username)이며 display name, email, machine account, secret이 아닙니다.
+
+`review.json` is strict UTF-8 JSON and contains exactly:
+
+| Property | Exact contract |
+| --- | --- |
+| `schema_version` | JSON integer `1`. |
+| `reviewer_id` | `github-` plus a canonical 1–39-character GitHub username. |
+| `reviewed_at_utc` | RFC 3339 UTC timestamp ending in `Z`. |
+| `source_bundle_sha256` | Lowercase SHA-256 of the canonical source-file record lines. |
+| `source_files` | Ordinally sorted exact records `{name, sha256, size_bytes}` for the original `manifest.yml` and every originally declared evidence file; `review.json` is excluded. |
+| `review_scope` | Exactly `["privacy-redaction", "bundle-integrity"]`. |
+
+Each source line is UTF-8 `<sha256> <size_bytes> <name>\n` with one ASCII space between fields. The aggregate hash and every record are immutable review attestations; they are not permission to recover, attach, or publish secret source material.
+
+각 source line은 field 사이에 ASCII space 하나를 둔 UTF-8 `<sha256> <size_bytes> <name>\n`입니다. Aggregate hash와 각 record는 변경 불가능한 검토 attestation이며 secret source 자료를 복원·첨부·공개할 권한이 아닙니다.
 
 ## `manifest.yml` exact contract / 정확한 계약
 
@@ -85,7 +124,7 @@ The top level is a flat mapping. Schema version 1 permits exactly the following 
 | `commit` | Exactly 40 lowercase hexadecimal characters, not all zeroes | Git commit whose product and harness code ran. |
 | `package_sha256` | Exactly 64 lowercase hexadecimal characters, not all zeroes | SHA-256 of the exact package under test, not `SHA256SUMS.txt` and not a locally edited replacement. |
 | `windows_build` | Numeric build `#####`, optional `10.0.` prefix, and optional 1–6 digit revision | Sanitized Windows build such as `10.0.26100.0`; exclude machine name, installation ID, tenant, and user. |
-| `architecture` | `x64` or `arm64` | Architecture of the Windows process/package under test. |
+| `architecture` | `x64` or `arm64` | `RuntimeInformation.ProcessArchitecture` of the process executing the tested package path; OS architecture alone is not package evidence. |
 | `server_family` | 1–32 characters matching an ASCII letter followed by letters, digits, `_`, `+`, or `-` | Sanitized implementation family only; never a DNS name, IP address, inventory name, or provider/customer identifier. |
 | `server_version` | 1–32 characters using ASCII letters, digits, `.`, `_`, `+`, `~`, or `-`; first character alphanumeric | Sanitized server software version/build only. |
 | `route` | `Direct`, `HttpConnect`, `Socks4`, `Socks5`, `SshJump`, or `ExternalProxyCommand` | Route used by the tested primary SSH connection. Do not include proxy/jump endpoints or expanded commands. |
@@ -122,6 +161,8 @@ Manifest and check results must agree semantically:
 - `Fail` requires at least one `Fail` check.
 - `Blocked` requires at least one `Blocked` check, or exactly one string `blocking_category` matching `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
 
+The canonical writer preserves progress on a failed full gate: completed checks are `Pass`, the exact failing check is `Fail`, and later checks are `Blocked`; `failed_check_id` identifies that single failing check. It does not rewrite earlier successful assertions as failures. Bounded `measurements` contain only safe counts and asserted aggregate values, never endpoint or session content.
+
 Exact duplicate property names are rejected recursively in the root, check objects, scenario objects, and every other nested JSON object. The required envelope and result semantics are stable; additional bounded, non-identifying scenario fields are extensible and are not a compatibility API. Such fields may state the harness mode or package operation and sanitized categories such as key format, forwarding mode, terminal/tool version, SFTP workload, or failure-injection method. They remain subject to duplicate-property, forbidden-property, identifying-text, and redaction checks, must not conflict with the envelope, and must leave the summary useful without optional attachments.
 
 `summary.json`은 사람이 검토할 하나의 유효한 JSON object여야 합니다. Schema version 1은 위 필수 envelope를 호환성 계약으로 고정합니다. `schema_version`은 JSON integer `1`이고 `gate_id`·`result`·`started_at_utc`·`duration_seconds`·`redaction_reviewed`는 JSON type과 값이 manifest와 정확히 같아야 하며 canonical `privacy_notice` 문장도 정확히 일치해야 합니다. `checks`는 1–64개이고 각 항목에 고유한 1–64자 소문자 ASCII/hyphen `id`와 `Pass|Fail|Blocked` `result`가 정확히 하나씩 있어야 합니다.
@@ -130,7 +171,21 @@ Exact duplicate property names are rejected recursively in the root, check objec
 - Manifest `Fail`이면 `Fail` check가 하나 이상 있어야 합니다.
 - Manifest `Blocked`이면 `Blocked` check가 하나 이상 있거나 `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` 형식의 string `blocking_category`가 정확히 하나 있어야 합니다.
 
+표준 writer는 전체 gate 실패 시 진행 상태를 보존합니다. 완료한 check는 `Pass`, 정확한 실패 지점은 `Fail`, 이후 실행하지 않은 check는 `Blocked`이며 `failed_check_id`는 그 단일 실패 check를 가리킵니다. 앞서 성공한 assertion을 실패로 다시 쓰지 않습니다. 제한된 `measurements`에는 안전한 count와 assertion을 거친 aggregate 값만 포함하며 endpoint나 session 내용은 넣지 않습니다.
+
 Root와 모든 중첩 JSON object에서 정확히 같은 property 이름의 중복을 재귀적으로 거부합니다. 필수 envelope와 결과 의미만 안정된 계약입니다. 그 밖의 제한되고 식별 정보 없는 scenario field는 확장 가능하며 호환성 API가 아닙니다. 추가 field도 중복·금지 property·식별 text·redaction 검사를 통과하고 envelope와 충돌하지 않아야 하며 선택 attachment 없이도 summary 자체로 검토할 수 있어야 합니다.
+
+### `SSH-LIVE-001` Pass profile / Pass 프로필
+
+An `SSH-LIVE-001` `Pass` is stricter than a generic summary, even during a whole-root scan. Its `checks` array must contain these 12 entries exactly once, in writer execution order, and every result must be `Pass`:
+
+`package-sha256`, `package-commit-identity`, `package-core-identity`, `authentication-success`, `command-pty-sftp`, `remote-local-cleanup`, `negotiated-reconnect`, `server-session-audit`, `authentication-rejection`, `host-key-rejection`, `connection-cancellation`, `transport-timeout`.
+
+Its `measurements` object contains exactly 25 fields. The following 14 booleans must be JSON `true`: `package_sha256_verified`, `package_commit_identity_verified`, `package_core_identity_verified`, `authentication_success_verified`, `sftp_checksum_verified`, `command_pty_sftp_verified`, `remote_cleanup_verified`, `local_cleanup_verified`, `reconnect_verified`, `server_audit_verified`, `authentication_rejection_verified`, `host_key_rejection_verified`, `cancellation_verified`, and `timeout_verified`.
+
+The canonical nonnegative integer values are `check_count=12`, `passed_count=12`, `failed_count=0`, `blocked_count=0`, `sftp_bytes=65536`, `audit_exec_count=4`, `audit_shell_count=1`, `audit_sftp_count=2`, and `audit_other_count=0`. `cancellation_elapsed_milliseconds` is at least 100 and below 10,000; `timeout_elapsed_milliseconds` is at least 12,000 and below 30,000. Decimal, exponent, negative, string, missing, or extra values are rejected. `Fail` and `Blocked` bundles may retain partial measurements; they never satisfy the release Pass profile.
+
+`SSH-LIVE-001` `Pass`는 전체 root scan에서도 일반 summary보다 엄격합니다. `checks`에는 위 12개 ID가 writer 실행 순서대로 정확히 한 번씩 있고 모두 `Pass`여야 합니다. `measurements`에는 정확히 25개 field만 허용합니다. 위 14개 검증 boolean은 JSON `true`, count·byte·audit 값은 명시한 canonical nonnegative integer여야 하며 cancellation은 100ms 이상 10,000ms 미만, timeout은 12,000ms 이상 30,000ms 미만이어야 합니다. Decimal·지수·음수·string·누락·추가 값은 거부합니다. `Fail`과 `Blocked` bundle은 부분 측정치를 보존할 수 있지만 release Pass profile을 만족하지 않습니다.
 
 ## Attachment validation / Attachment 검증
 
@@ -182,7 +237,8 @@ Allowed evidence is deliberately narrow: the exact commit and package hash, Wind
 2. `result: Pass` with `redaction_reviewed: false` is an unaccepted generated artifact, not **Live Validated** evidence.
 3. `Fail` and `Blocked` bundles may be retained after redaction to explain gaps, but they never promote a support row.
 4. An accepted bundle is immutable. Correct a mistake or rerun a gate by creating a new bundle; do not rewrite a prior `Pass`, `Fail`, or `Blocked` result.
-5. **Released** additionally requires an immutable published artifact whose commit and SHA-256 equal the accepted bundle. The manifest deliberately has no release-tag field; release metadata supplies that mapping.
-6. Evidence is scoped to one declared gate and exact matrix tuple. Multiple partial bundles cannot be combined into a synthetic `Pass`.
+5. `Assert-EvidenceHistory.ps1` compares a Git base and head and permits only new bundle directories. Any file change, deletion, rename, or addition below a bundle that existed at the base is rejected; a correction is another bundle plus a tracker reference.
+6. **Released** additionally requires an immutable published artifact whose commit and SHA-256 equal the accepted bundle. `RELEASE-ATTESTATION.json` binds the candidate workflow artifact, four sealed candidate files, acceptance commit, reviewed manifest/review hashes, declared reviewer/time, gate, and promotion run. The promotion workflow separately byte-verifies the attestation itself and the exact five-asset public inventory.
+7. Evidence is scoped to one declared gate and exact matrix tuple. Multiple partial bundles cannot be combined into a synthetic `Pass`.
 
 Validation and execution order are defined by [Alpha 4 execution plan](../ALPHA4_EXECUTION_PLAN.md). Current claims are listed in [Supported environments](../SUPPORTED_ENVIRONMENTS.md), and release gates are listed in [Release acceptance](../RELEASE_ACCEPTANCE.md).

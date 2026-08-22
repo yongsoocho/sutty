@@ -40,6 +40,7 @@ jobs:
   promote-candidate:
     name: Verify and publish exact Alpha candidate bytes
     runs-on: windows-latest
+    environment: alpha-release
     timeout-minutes: 30
     steps:
       - name: Validate promotion inputs and GitHub provenance
@@ -130,6 +131,11 @@ jobs:
               [long]$artifact.size_in_bytes -le 0 -or [long]$artifact.workflow_run.id -ne [long]$env:CANDIDATE_RUN_ID) {
             throw 'The candidate artifact is expired, empty, or bound to a different workflow run.'
           }
+          if ([string]$artifact.id -cnotmatch '^[1-9][0-9]*$' -or
+              [string]$artifact.digest -cnotmatch '^sha256:[0-9a-f]{64}$' -or
+              [string]$artifact.digest -cmatch '^sha256:0{64}$') {
+            throw 'The candidate artifact API response lacks a canonical immutable ID or SHA-256 digest.'
+          }
 
           $immutable = Invoke-GitHubJson `
             -Endpoint "repos/$repository/immutable-releases" `
@@ -137,6 +143,8 @@ jobs:
           if ($immutable.enabled -ne $true) { throw 'Repository immutable releases must be enabled before Alpha promotion.' }
           Assert-ReleaseAbsent -Repository $repository -Tag $env:CANDIDATE_TAG
           "candidate_sha=$($run.head_sha)" >> $env:GITHUB_OUTPUT
+          "candidate_artifact_id=$($artifact.id)" >> $env:GITHUB_OUTPUT
+          "candidate_artifact_digest=$($artifact.digest)" >> $env:GITHUB_OUTPUT
 
       - name: Check out exact tagged candidate source
         uses: actions/checkout@v4
@@ -173,6 +181,18 @@ jobs:
           & git -C .\acceptance merge-base --is-ancestor $env:CANDIDATE_SHA $env:ACCEPTANCE_COMMIT
           if ($LASTEXITCODE -ne 0) { throw 'acceptance_commit does not descend from the exact candidate commit.' }
 
+      - name: Enforce active repository governance
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.SUTTY_RULESET_AUDIT_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            throw 'SUTTY_RULESET_AUDIT_TOKEN is required to audit ruleset bypass actors before promotion.'
+          }
+          .\source\.github\scripts\Assert-RepositoryGovernance.ps1 `
+            -QueryGitHub `
+            -Repository $env:GITHUB_REPOSITORY
+
       - name: Download exact sealed candidate artifact
         uses: actions/download-artifact@v4
         with:
@@ -190,6 +210,7 @@ jobs:
           CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
           CANDIDATE_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
           CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
+          ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
           EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
         run: |
           .\source\.github\scripts\Assert-AlphaCandidate.ps1 `
@@ -216,6 +237,10 @@ jobs:
             -PackageDirectory .\artifacts\candidate\packages
 
           .\source\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\acceptance\docs\evidence
+          .\source\.github\scripts\Assert-EvidenceHistory.ps1 `
+            -RepositoryRoot .\acceptance `
+            -BaseCommit $env:CANDIDATE_SHA `
+            -HeadCommit $env:ACCEPTANCE_COMMIT
           $evidenceManifest = Join-Path .\acceptance $env:EVIDENCE_MANIFEST_PATH
           $x64Archive = ".\artifacts\candidate\packages\Sutty-$env:CANDIDATE_TAG-win-x64.zip"
           $x64Hash = (Get-FileHash -LiteralPath $x64Archive -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -226,14 +251,78 @@ jobs:
             -RequiredGateId SSH-LIVE-001 `
             -RequiredResult Pass
 
+      - name: Create independently verifiable release attestation
+        shell: pwsh
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+          CANDIDATE_ARTIFACT_ID: ${{ steps.provenance.outputs.candidate_artifact_id }}
+          CANDIDATE_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ steps.provenance.outputs.candidate_artifact_digest }}
+          CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
+          ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
+          EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
+        run: |
+          .\source\.github\scripts\Assert-ReleaseAttestation.ps1 `
+            -AttestationPath .\artifacts\release\RELEASE-ATTESTATION.json `
+            -CandidateManifestPath .\artifacts\candidate\CANDIDATE-MANIFEST.json `
+            -RepositoryRoot .\acceptance `
+            -Repository $env:GITHUB_REPOSITORY `
+            -Tag $env:CANDIDATE_TAG `
+            -CandidateCommit $env:CANDIDATE_SHA `
+            -CandidateRunId $env:CANDIDATE_RUN_ID `
+            -CandidateRunAttempt ([int]$env:CANDIDATE_RUN_ATTEMPT) `
+            -CandidateArtifactId $env:CANDIDATE_ARTIFACT_ID `
+            -CandidateArtifactName $env:CANDIDATE_ARTIFACT_NAME `
+            -CandidateArtifactDigest $env:CANDIDATE_ARTIFACT_DIGEST `
+            -AcceptanceCommit $env:ACCEPTANCE_COMMIT `
+            -EvidenceManifestRepositoryPath $env:EVIDENCE_MANIFEST_PATH `
+            -PromotionRunId $env:GITHUB_RUN_ID `
+            -PromotionRunAttempt ([int]$env:GITHUB_RUN_ATTEMPT) `
+            -WriteAttestation
+
       - name: Recheck immutable publication preconditions
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RULESET_AUDIT_TOKEN: ${{ secrets.SUTTY_RULESET_AUDIT_TOKEN }}
           CANDIDATE_TAG: ${{ inputs.tag }}
           CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
+          ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
         run: |
           $repository = $env:GITHUB_REPOSITORY
+          $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          try {
+            $PSNativeCommandUseErrorActionPreference = $false
+            & gh auth setup-git
+            if ($LASTEXITCODE -ne 0) { throw 'Could not configure authenticated Git access for the final ancestry check.' }
+            & git -C .\acceptance fetch --force --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not refresh origin/main immediately before publication.' }
+            & git -C .\acceptance merge-base --is-ancestor $env:CANDIDATE_SHA $env:ACCEPTANCE_COMMIT
+            if ($LASTEXITCODE -ne 0) { throw 'acceptance_commit no longer descends from the exact candidate commit.' }
+            & git -C .\acceptance merge-base --is-ancestor $env:ACCEPTANCE_COMMIT refs/remotes/origin/main
+            if ($LASTEXITCODE -ne 0) { throw 'acceptance_commit is no longer reachable from the current origin/main history.' }
+          }
+          finally {
+            $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+            $global:LASTEXITCODE = 0
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:RULESET_AUDIT_TOKEN)) {
+            throw 'SUTTY_RULESET_AUDIT_TOKEN is required for the final bypass-actor audit.'
+          }
+          $workflowToken = $env:GH_TOKEN
+          try {
+            $env:GH_TOKEN = $env:RULESET_AUDIT_TOKEN
+            .\source\.github\scripts\Assert-RepositoryGovernance.ps1 `
+              -QueryGitHub `
+              -Repository $repository
+          }
+          finally {
+            $env:GH_TOKEN = $workflowToken
+          }
+
           $immutableJson = & gh api "repos/$repository/immutable-releases" --method GET `
             -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2026-03-10'
           if ($LASTEXITCODE -ne 0) { throw 'Could not recheck immutable release settings.' }
@@ -283,7 +372,8 @@ jobs:
             ".\artifacts\candidate\packages\Sutty-$tag-win-x64.zip",
             ".\artifacts\candidate\packages\Sutty-$tag-win-arm64.zip",
             '.\artifacts\candidate\packages\SHA256SUMS.txt',
-            '.\artifacts\candidate\CANDIDATE-MANIFEST.json'
+            '.\artifacts\candidate\CANDIDATE-MANIFEST.json',
+            '.\artifacts\release\RELEASE-ATTESTATION.json'
           )
           & gh release create $tag @assets --repo $repository --verify-tag --prerelease `
             --title "Sutty $titleVersion" --notes-file ".\source\docs\releases\$tag.md"
@@ -295,6 +385,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_TAG: ${{ inputs.tag }}
           CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+          CANDIDATE_ARTIFACT_ID: ${{ steps.provenance.outputs.candidate_artifact_id }}
+          CANDIDATE_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ steps.provenance.outputs.candidate_artifact_digest }}
+          ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
+          EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
         run: |
           $downloadDirectory = New-Item -ItemType Directory -Force -Path .\artifacts\published
           function Invoke-AttestationVerification {
@@ -325,7 +422,8 @@ jobs:
             "Sutty-$env:CANDIDATE_TAG-win-arm64.zip",
             "Sutty-$env:CANDIDATE_TAG-win-x64.zip",
             'SHA256SUMS.txt',
-            'CANDIDATE-MANIFEST.json'
+            'CANDIDATE-MANIFEST.json',
+            'RELEASE-ATTESTATION.json'
           ) | Sort-Object
           $publishedNames = @(Get-ChildItem -LiteralPath $downloadDirectory.FullName -File | ForEach-Object { $_.Name } | Sort-Object)
           if ([string]::Join('|', $publishedNames) -cne [string]::Join('|', $expectedNames)) {
@@ -333,6 +431,7 @@ jobs:
           }
           foreach ($name in $expectedNames) {
             $candidatePath = if ($name -ceq 'CANDIDATE-MANIFEST.json') { Join-Path .\artifacts\candidate $name }
+              elseif ($name -ceq 'RELEASE-ATTESTATION.json') { Join-Path .\artifacts\release $name }
               else { Join-Path .\artifacts\candidate\packages $name }
             $publishedPath = Join-Path $downloadDirectory.FullName $name
             $candidateHash = (Get-FileHash -LiteralPath $candidatePath -Algorithm SHA256).Hash
@@ -342,6 +441,23 @@ jobs:
               -Arguments @('release', 'verify-asset', $env:CANDIDATE_TAG, $publishedPath, '--repo', $env:GITHUB_REPOSITORY, '--format', 'json') `
               -Description "GitHub release attestation verification for $name"
           }
+
+          .\source\.github\scripts\Assert-ReleaseAttestation.ps1 `
+            -AttestationPath (Join-Path $downloadDirectory.FullName 'RELEASE-ATTESTATION.json') `
+            -CandidateManifestPath .\artifacts\candidate\CANDIDATE-MANIFEST.json `
+            -RepositoryRoot .\acceptance `
+            -Repository $env:GITHUB_REPOSITORY `
+            -Tag $env:CANDIDATE_TAG `
+            -CandidateCommit $env:CANDIDATE_SHA `
+            -CandidateRunId $env:CANDIDATE_RUN_ID `
+            -CandidateRunAttempt ([int]$env:CANDIDATE_RUN_ATTEMPT) `
+            -CandidateArtifactId $env:CANDIDATE_ARTIFACT_ID `
+            -CandidateArtifactName $env:CANDIDATE_ARTIFACT_NAME `
+            -CandidateArtifactDigest $env:CANDIDATE_ARTIFACT_DIGEST `
+            -AcceptanceCommit $env:ACCEPTANCE_COMMIT `
+            -EvidenceManifestRepositoryPath $env:EVIDENCE_MANIFEST_PATH `
+            -PromotionRunId $env:GITHUB_RUN_ID `
+            -PromotionRunAttempt ([int]$env:GITHUB_RUN_ATTEMPT)
 
           Invoke-AttestationVerification `
             -Arguments @('release', 'verify', $env:CANDIDATE_TAG, '--repo', $env:GITHUB_REPOSITORY, '--format', 'json') `
@@ -353,8 +469,8 @@ jobs:
           try { $release = $releaseJson | ConvertFrom-Json }
           catch { throw 'Published release state was not valid JSON.' }
           if ($release.draft -ne $false -or $release.prerelease -ne $true -or
-              $release.immutable -ne $true -or @($release.assets).Count -ne 4) {
-            throw 'Published release is not the expected four-asset immutable prerelease.'
+              $release.immutable -ne $true -or @($release.assets).Count -ne 5) {
+            throw 'Published release is not the expected five-asset immutable prerelease.'
           }
 
           $remoteTagLines = @(& git -C .\source ls-remote origin "refs/tags/$env:CANDIDATE_TAG" "refs/tags/$env:CANDIDATE_TAG^{}")

@@ -14,7 +14,7 @@
 
 > **알파, GA 아님.** Sutty는 개발 중인 엔지니어링 빌드입니다. 중요한 시스템에 사용하기 전에 현재 한계를 확인해야 합니다.
 
-> **Current / 현재:** [`v0.1.0-alpha.4`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.4) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
+> **Latest published / 최신 공개본:** [`v0.1.0-alpha.3`](https://github.com/yongsoocho/sutty/releases/tag/v0.1.0-alpha.3) · **Current candidate / 현재 후보:** [`v0.1.0-alpha.4`](docs/releases/v0.1.0-alpha.4.md) · [Download / 다운로드](https://github.com/yongsoocho/sutty/releases) · [Install / 설치](docs/ALPHA_INSTALL.md)
 
 ## English
 
@@ -68,7 +68,7 @@ The small-team product direction is credential-free, file/Git-based sharing of h
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent local activity export, timeout, or streaming workflow.
 - Local/remote/dynamic forwarding has session lifecycle support and non-loopback binds require an explicit high-risk confirmation, but a post-connect tunnel manager and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed artifact has been supplied. Credential-free sharing packs, local support bundles, and the GA compatibility/accessibility matrices remain planned.
 
-The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Exact compatibility-claim boundaries are in [Supported environments](docs/SUPPORTED_ENVIRONMENTS.md), and live evidence must follow the [evidence schema](docs/evidence/EVIDENCE_SCHEMA.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md), with Alpha 4 ordering and exit criteria in the [Alpha 4 execution plan](docs/ALPHA4_EXECUTION_PLAN.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with longer-term delivery order in the [Roadmap](docs/ROADMAP.md), engineering rules in [Contributing](CONTRIBUTING.md) and the [Development Playbook](docs/DEVELOPMENT_PLAYBOOK.md), and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
+The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Exact compatibility-claim boundaries are in [Supported environments](docs/SUPPORTED_ENVIRONMENTS.md), and live evidence must follow the [evidence schema](docs/evidence/EVIDENCE_SCHEMA.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md), with Alpha 4 ordering and exit criteria in the [Alpha 4 execution plan](docs/ALPHA4_EXECUTION_PLAN.md) and protected publication controls in [Release governance](docs/RELEASE_GOVERNANCE.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with longer-term delivery order in the [Roadmap](docs/ROADMAP.md), engineering rules in [Contributing](CONTRIBUTING.md) and the [Development Playbook](docs/DEVELOPMENT_PLAYBOOK.md), and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
 
 ### Explicitly unsupported scope
 
@@ -130,7 +130,15 @@ Focused self-tests after a Debug build:
 ```powershell
 .\tests\product-scope\Assert-ProductScope.Tests.ps1
 .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
+.\tests\release-candidate\Assert-AlphaCandidate.Tests.ps1
+.\tests\live-evidence\Assert-LiveEvidence.Tests.ps1
+.\tests\live-evidence-review\Review-LiveEvidence.Tests.ps1
+.\tests\evidence-history\Assert-EvidenceHistory.Tests.ps1
+.\tests\release-attestation\Assert-ReleaseAttestation.Tests.ps1
+.\tests\repository-governance\Assert-RepositoryGovernance.Tests.ps1
 .\.github\scripts\Assert-ProductScope.ps1
+.\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
+.\.github\scripts\Assert-EvidenceHistory.ps1 -RepositoryRoot . -BaseCommit HEAD -WorkingTree
 dotnet run --project tests/sutty.Core.Security.SelfTest/sutty.Core.Security.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Command.SelfTest/sutty.Command.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj -c Debug --no-build
@@ -198,7 +206,7 @@ Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/S
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 로컬 활동 내보내기, timeout, streaming 흐름이 없습니다.
 - Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했고 loopback이 아닌 bind는 고위험 확인을 요구하지만 연결 후 tunnel 관리자와 실제 포워딩 매트릭스는 미완성입니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. 자격증명 없는 공유 pack, 로컬 support bundle, GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
-현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md)에 있습니다. 정확한 호환성 주장 경계는 [지원 환경](docs/SUPPORTED_ENVIRONMENTS.md), 실환경 증거 계약은 [증거 스키마](docs/evidence/EVIDENCE_SCHEMA.md)를 따릅니다. 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md), Alpha 4 순서와 종료 기준은 [Alpha 4 실행 계획](docs/ALPHA4_EXECUTION_PLAN.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 장기 개발 순서는 [로드맵](docs/ROADMAP.md), 개발 규칙은 [기여 가이드](CONTRIBUTING.md)와 [개발 Playbook](docs/DEVELOPMENT_PLAYBOOK.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.
+현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md)에 있습니다. 정확한 호환성 주장 경계는 [지원 환경](docs/SUPPORTED_ENVIRONMENTS.md), 실환경 증거 계약은 [증거 스키마](docs/evidence/EVIDENCE_SCHEMA.md)를 따릅니다. 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md), Alpha 4 순서와 종료 기준은 [Alpha 4 실행 계획](docs/ALPHA4_EXECUTION_PLAN.md), 보호된 공개 통제는 [릴리스 거버넌스](docs/RELEASE_GOVERNANCE.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 장기 개발 순서는 [로드맵](docs/ROADMAP.md), 개발 규칙은 [기여 가이드](CONTRIBUTING.md)와 [개발 Playbook](docs/DEVELOPMENT_PLAYBOOK.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.
 
 ### 명시적 미지원 범위
 
@@ -260,7 +268,15 @@ Debug 빌드 뒤 집중형 self-test를 실행할 수 있습니다.
 ```powershell
 .\tests\product-scope\Assert-ProductScope.Tests.ps1
 .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
+.\tests\release-candidate\Assert-AlphaCandidate.Tests.ps1
+.\tests\live-evidence\Assert-LiveEvidence.Tests.ps1
+.\tests\live-evidence-review\Review-LiveEvidence.Tests.ps1
+.\tests\evidence-history\Assert-EvidenceHistory.Tests.ps1
+.\tests\release-attestation\Assert-ReleaseAttestation.Tests.ps1
+.\tests\repository-governance\Assert-RepositoryGovernance.Tests.ps1
 .\.github\scripts\Assert-ProductScope.ps1
+.\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
+.\.github\scripts\Assert-EvidenceHistory.ps1 -RepositoryRoot . -BaseCommit HEAD -WorkingTree
 dotnet run --project tests/sutty.Core.Security.SelfTest/sutty.Core.Security.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Command.SelfTest/sutty.Command.SelfTest.csproj -c Debug --no-build
 dotnet run --project tests/sutty.Terminal.SelfTest/sutty.Terminal.SelfTest.csproj -c Debug --no-build
