@@ -97,7 +97,7 @@ function New-CanonicalSummary {
     foreach ($key in $AdditionalProperties.Keys) {
         $summary[$key] = $AdditionalProperties[$key]
     }
-    return $summary | ConvertTo-Json -Depth 10 -Compress
+    return $summary | ConvertTo-Json -Depth 10
 }
 
 function New-SshLive001Checks {
@@ -106,16 +106,127 @@ function New-SshLive001Checks {
         'package-commit-identity',
         'package-core-identity',
         'authentication-success',
+        'command-pty-sftp',
+        'remote-local-cleanup',
+        'negotiated-reconnect',
+        'server-session-audit',
         'authentication-rejection',
         'host-key-rejection',
         'connection-cancellation',
-        'transport-timeout',
-        'negotiated-reconnect',
-        'command-pty-sftp',
-        'remote-local-cleanup',
-        'server-session-audit')) {
+        'transport-timeout')) {
         [ordered]@{ id = $id; result = 'Pass' }
     }
+}
+
+function New-SshLive001Measurements {
+    return [ordered]@{
+        check_count = 12
+        passed_count = 12
+        failed_count = 0
+        blocked_count = 0
+        package_sha256_verified = $true
+        package_commit_identity_verified = $true
+        package_core_identity_verified = $true
+        authentication_success_verified = $true
+        sftp_bytes = 64 * 1024
+        sftp_checksum_verified = $true
+        command_pty_sftp_verified = $true
+        remote_cleanup_verified = $true
+        local_cleanup_verified = $true
+        reconnect_verified = $true
+        audit_exec_count = 4
+        audit_shell_count = 1
+        audit_sftp_count = 2
+        audit_other_count = 0
+        server_audit_verified = $true
+        authentication_rejection_verified = $true
+        host_key_rejection_verified = $true
+        cancellation_elapsed_milliseconds = 500
+        cancellation_verified = $true
+        timeout_elapsed_milliseconds = 15000
+        timeout_verified = $true
+    }
+}
+
+function New-SshLive001Summary {
+    param([object[]]$Checks = @(New-SshLive001Checks))
+
+    return New-CanonicalSummary `
+        -GateId 'SSH-LIVE-001' `
+        -Checks $Checks `
+        -AdditionalProperties @{ measurements = (New-SshLive001Measurements) }
+}
+
+function New-CanonicalReview {
+    param(
+        [string[]]$SourceNames,
+        [string]$Bundle,
+        [string]$SourceManifestText,
+        [string]$SourceSummaryText
+    )
+
+    $sortedNames = @($SourceNames)
+    [Array]::Sort($sortedNames, [StringComparer]::Ordinal)
+    $records = [System.Collections.Generic.List[object]]::new()
+    $canonicalRecords = [Text.StringBuilder]::new()
+    foreach ($name in $sortedNames) {
+        $sourceBytes = switch ($name) {
+            'manifest.yml' {
+                [System.Text.UTF8Encoding]::new($false).GetBytes($SourceManifestText)
+                break
+            }
+            'summary.json' {
+                [System.Text.UTF8Encoding]::new($false).GetBytes($SourceSummaryText)
+                break
+            }
+            default {
+                $sourcePath = Join-Path $Bundle $name.Replace(
+                    '/',
+                    [System.IO.Path]::DirectorySeparatorChar)
+                if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {
+                    [System.IO.File]::ReadAllBytes($sourcePath)
+                }
+                else {
+                    [System.Text.UTF8Encoding]::new($false).GetBytes("missing source fixture $name")
+                }
+                break
+            }
+        }
+        $sha256 = [Convert]::ToHexString(
+            [System.Security.Cryptography.SHA256]::HashData($sourceBytes)).ToLowerInvariant()
+        $sizeBytes = [long]$sourceBytes.Length
+        $records.Add([ordered]@{
+            name = $name
+            sha256 = $sha256
+            size_bytes = $sizeBytes
+        })
+        $canonicalRecords.Append("$sha256 $sizeBytes $name`n") | Out-Null
+    }
+    $bundleDigestHex = [Convert]::ToHexString(
+        [System.Security.Cryptography.SHA256]::HashData(
+            [System.Text.UTF8Encoding]::new($false).GetBytes($canonicalRecords.ToString())))
+    $bundleDigest = $bundleDigestHex.ToLowerInvariant()
+
+    return [ordered]@{
+        schema_version = 1
+        reviewer_id = 'github-sutty-reviewer'
+        reviewed_at_utc = '2026-08-20T02:03:04Z'
+        source_bundle_sha256 = $bundleDigest
+        source_files = $records
+        review_scope = @('privacy-redaction', 'bundle-integrity')
+    } | ConvertTo-Json -Depth 10 -Compress
+}
+
+function Set-CanonicalFixtureReview {
+    param([Parameter(Mandatory)][hashtable]$Fixture)
+
+    Set-Utf8Text `
+        -Path (Join-Path $Fixture.Bundle 'review.json') `
+        -Content (New-CanonicalReview `
+            -SourceNames $Fixture.SourceNames `
+            -Bundle $Fixture.Bundle `
+            -SourceManifestText $Fixture.SourceManifestText `
+            -SourceSummaryText $Fixture.SourceSummaryText)
 }
 
 function New-EvidenceBundle {
@@ -127,13 +238,17 @@ function New-EvidenceBundle {
         [AllowNull()]
         [string]$Summary,
         [string]$RelativeBundle,
-        [switch]$SkipSummary
+        [switch]$SkipSummary,
+        [switch]$SkipReview
     )
 
     $root = Join-Path $scratch $Name
     if ([string]::IsNullOrWhiteSpace($RelativeBundle)) {
-        $RelativeBundle = "alpha4/ssh-primary/$Name"
+        $RelativeBundle = "alpha4/ssh-auth/$Name"
     }
+    Set-Utf8Text -Path (Join-Path $root 'EVIDENCE_SCHEMA.md') -Content '# Fixture evidence schema.'
+    Set-Utf8Text -Path (Join-Path $root 'alpha4/README.md') -Content '# Fixture Alpha 4 index.'
+    Set-Utf8Text -Path (Join-Path $root 'alpha4/ssh-auth/README.md') -Content '# Fixture SSH authentication index.'
     $bundle = Join-Path $root $RelativeBundle.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
     New-Item -ItemType Directory -Path $bundle -Force | Out-Null
 
@@ -157,6 +272,13 @@ function New-EvidenceBundle {
     foreach ($key in $Overrides.Keys) {
         $fields[$key] = [string]$Overrides[$key]
     }
+    $declaredEvidenceFiles = [System.Collections.Generic.List[string]]::new()
+    foreach ($evidenceFile in $EvidenceFiles) {
+        $declaredEvidenceFiles.Add($evidenceFile)
+    }
+    if (-not $SkipReview -and -not $declaredEvidenceFiles.Contains('review.json')) {
+        $declaredEvidenceFiles.Add('review.json')
+    }
     if (-not $PSBoundParameters.ContainsKey('Summary')) {
         $summaryDuration = [long]0
         [long]::TryParse($fields.duration_seconds, [ref]$summaryDuration) | Out-Null
@@ -170,10 +292,10 @@ function New-EvidenceBundle {
 
     $lines = [System.Collections.Generic.List[string]]::new()
     foreach ($entry in $fields.GetEnumerator()) {
-        if ($entry.Key -cin $Omit) {
+        if ($entry.Key -cin $Omit -or $entry.Key -ceq 'redaction_reviewed') {
             continue
         }
-        if ($entry.Key -cin @('schema_version', 'duration_seconds', 'redaction_reviewed')) {
+        if ($entry.Key -cin @('schema_version', 'duration_seconds')) {
             $lines.Add("$($entry.Key): $($entry.Value)")
         }
         else {
@@ -182,22 +304,85 @@ function New-EvidenceBundle {
     }
     if ('evidence_files' -cnotin $Omit) {
         $lines.Add('evidence_files:')
-        foreach ($evidenceFile in $EvidenceFiles) {
+        foreach ($evidenceFile in $declaredEvidenceFiles) {
             $lines.Add("  - $(ConvertTo-QuotedScalar $evidenceFile)")
         }
     }
-    $manifestPath = Join-Path $bundle 'manifest.yml'
-    Set-Utf8Text -Path $manifestPath -Content (
-        [string]::Join([Environment]::NewLine, $lines) + [Environment]::NewLine)
+    if ('redaction_reviewed' -cnotin $Omit) {
+        $lines.Add("redaction_reviewed: $($fields.redaction_reviewed)")
+    }
 
+    $sourceNames = @('manifest.yml') + @(
+        $declaredEvidenceFiles | Where-Object { $_ -cne 'review.json' })
+    $canonicalPromotionShape = -not $SkipReview -and
+        $fields.redaction_reviewed -ceq 'true' -and
+        @($declaredEvidenceFiles | Where-Object { $_ -ceq 'review.json' }).Count -eq 1 -and
+        $declaredEvidenceFiles[$declaredEvidenceFiles.Count - 1] -ceq 'review.json' -and
+        'redaction_reviewed' -cnotin $Omit -and
+        'evidence_files' -cnotin $Omit
+
+    $sourceManifestText = $null
+    if ($canonicalPromotionShape) {
+        $sourceLines = [System.Collections.Generic.List[string]]::new()
+        foreach ($entry in $fields.GetEnumerator()) {
+            if ($entry.Key -cin $Omit -or $entry.Key -ceq 'redaction_reviewed') {
+                continue
+            }
+            if ($entry.Key -cin @('schema_version', 'duration_seconds')) {
+                $sourceLines.Add("$($entry.Key): $($entry.Value)")
+            }
+            else {
+                $sourceLines.Add("$($entry.Key): $(ConvertTo-QuotedScalar $entry.Value)")
+            }
+        }
+        $sourceLines.Add('evidence_files:')
+        foreach ($evidenceFile in $declaredEvidenceFiles) {
+            if ($evidenceFile -cne 'review.json') {
+                $sourceLines.Add("  - $(ConvertTo-QuotedScalar $evidenceFile)")
+            }
+        }
+        $sourceLines.Add('redaction_reviewed: false')
+        $sourceManifestText = [string]::Join([Environment]::NewLine, $sourceLines) +
+            [Environment]::NewLine
+        $sourcePattern = [regex]::new('(?m)^redaction_reviewed: false\r?$')
+        $replacement = '  - "review.json"' + [Environment]::NewLine +
+            'redaction_reviewed: true'
+        $manifestText = $sourcePattern.Replace($sourceManifestText, $replacement, 1)
+    }
+    else {
+        $manifestText = [string]::Join([Environment]::NewLine, $lines) +
+            [Environment]::NewLine
+        $sourceManifestText = $manifestText
+    }
+    $manifestPath = Join-Path $bundle 'manifest.yml'
+    Set-Utf8Text -Path $manifestPath -Content $manifestText
+
+    $sourceSummaryText = $Summary
+    $reviewedSummaryPattern = [regex]::new(
+        '(?m)(^\s*"redaction_reviewed": )true(?=,?\r?$)')
+    if (@($reviewedSummaryPattern.Matches($Summary)).Count -eq 1) {
+        $sourceSummaryText = $reviewedSummaryPattern.Replace($Summary, '${1}false', 1)
+    }
     if (-not $SkipSummary) {
         Set-Utf8Text -Path (Join-Path $bundle 'summary.json') -Content $Summary
+    }
+    if (-not $SkipReview) {
+        Set-Utf8Text `
+            -Path (Join-Path $bundle 'review.json') `
+            -Content (New-CanonicalReview `
+                -SourceNames $sourceNames `
+                -Bundle $bundle `
+                -SourceManifestText $sourceManifestText `
+                -SourceSummaryText $sourceSummaryText)
     }
 
     return @{
         Root = $root
         Bundle = $bundle
         Manifest = $manifestPath
+        SourceNames = $sourceNames
+        SourceManifestText = $sourceManifestText
+        SourceSummaryText = $sourceSummaryText
     }
 }
 
@@ -305,10 +490,102 @@ try {
 
     $canonical = New-EvidenceBundle 'canonical'
     Assert-Accepted -Fixture $canonical -Name 'canonical quoted YAML and JSON bundle'
+
+    $postReviewMutation = New-EvidenceBundle 'post-review-mutation'
+    $mutatedManifest = Get-Content -LiteralPath $postReviewMutation.Manifest -Raw
+    Set-Utf8Text `
+        -Path $postReviewMutation.Manifest `
+        -Content $mutatedManifest.Replace('duration_seconds: 12', 'duration_seconds: 13')
+    $mutatedSummary = Get-Content `
+        -LiteralPath (Join-Path $postReviewMutation.Bundle 'summary.json') `
+        -Raw | ConvertFrom-Json
+    $mutatedSummary.duration_seconds = 13
+    Set-Utf8Text `
+        -Path (Join-Path $postReviewMutation.Bundle 'summary.json') `
+        -Content ($mutatedSummary | ConvertTo-Json -Depth 10)
+    Assert-Rejected `
+        -Fixture $postReviewMutation `
+        -Name 'post-review manifest and summary mutation with stale source hashes'
+
+    $reviewBeforeRun = New-EvidenceBundle 'review-before-run'
+    $reviewBeforeRunObject = Get-Content `
+        -LiteralPath (Join-Path $reviewBeforeRun.Bundle 'review.json') `
+        -Raw | ConvertFrom-Json
+    $reviewBeforeRunObject.reviewed_at_utc = '2000-01-01T00:00:00Z'
+    Set-Utf8Text `
+        -Path (Join-Path $reviewBeforeRun.Bundle 'review.json') `
+        -Content ($reviewBeforeRunObject | ConvertTo-Json -Depth 10 -Compress)
+    Assert-Rejected -Fixture $reviewBeforeRun -Name 'review timestamp before evidence completion'
+
+    $futureReview = New-EvidenceBundle 'future-review'
+    $futureReviewObject = Get-Content `
+        -LiteralPath (Join-Path $futureReview.Bundle 'review.json') `
+        -Raw | ConvertFrom-Json
+    $futureReviewObject.reviewed_at_utc = '9999-12-31T23:59:59Z'
+    Set-Utf8Text `
+        -Path (Join-Path $futureReview.Bundle 'review.json') `
+        -Content ($futureReviewObject | ConvertTo-Json -Depth 10 -Compress)
+    Assert-Rejected -Fixture $futureReview -Name 'review timestamp more than five minutes in the future'
+
+    $missingReview = New-EvidenceBundle 'missing-review' -SkipReview
+    Assert-Rejected -Fixture $missingReview -Name 'reviewed evidence without review.json'
+
+    $reviewNotLast = New-EvidenceBundle `
+        'review-not-last' `
+        -EvidenceFiles @('summary.json', 'review.json', 'detail.json')
+    Set-Utf8Text -Path (Join-Path $reviewNotLast.Bundle 'detail.json') -Content '{}'
+    Assert-Rejected -Fixture $reviewNotLast -Name 'review.json is not the final declared evidence file'
+
+    $invalidReview = New-EvidenceBundle 'invalid-review-contract'
+    Set-Utf8Text -Path (Join-Path $invalidReview.Bundle 'review.json') -Content '{"schema_version":1}'
+    Assert-Rejected -Fixture $invalidReview -Name 'incomplete review contract'
+
+    $badReviewDigest = New-EvidenceBundle 'review-digest-mismatch'
+    $badReviewObject = Get-Content -LiteralPath (Join-Path $badReviewDigest.Bundle 'review.json') -Raw |
+        ConvertFrom-Json
+    $badReviewObject.source_bundle_sha256 = 'f' * 64
+    Set-Utf8Text `
+        -Path (Join-Path $badReviewDigest.Bundle 'review.json') `
+        -Content ($badReviewObject | ConvertTo-Json -Depth 10 -Compress)
+    Assert-Rejected -Fixture $badReviewDigest -Name 'review source-bundle digest mismatch'
+
+    $badReviewer = New-EvidenceBundle 'reviewer-trailing-hyphen'
+    $badReviewerObject = Get-Content -LiteralPath (Join-Path $badReviewer.Bundle 'review.json') -Raw |
+        ConvertFrom-Json
+    $badReviewerObject.reviewer_id = 'github-reviewer-'
+    Set-Utf8Text `
+        -Path (Join-Path $badReviewer.Bundle 'review.json') `
+        -Content ($badReviewerObject | ConvertTo-Json -Depth 10 -Compress)
+    Assert-Rejected -Fixture $badReviewer -Name 'reviewer identifier trailing hyphen'
+
+    $badReviewScope = New-EvidenceBundle 'review-scope-order'
+    $badReviewScopeObject = Get-Content -LiteralPath (Join-Path $badReviewScope.Bundle 'review.json') -Raw |
+        ConvertFrom-Json
+    $badReviewScopeObject.review_scope = @('bundle-integrity', 'privacy-redaction')
+    Set-Utf8Text `
+        -Path (Join-Path $badReviewScope.Bundle 'review.json') `
+        -Content ($badReviewScopeObject | ConvertTo-Json -Depth 10 -Compress)
+    Assert-Rejected -Fixture $badReviewScope -Name 'review scope order'
+
+    $badSourceOrder = New-EvidenceBundle 'review-source-order'
+    $badSourceOrderObject = Get-Content -LiteralPath (Join-Path $badSourceOrder.Bundle 'review.json') -Raw |
+        ConvertFrom-Json
+    [Array]::Reverse($badSourceOrderObject.source_files)
+    Set-Utf8Text `
+        -Path (Join-Path $badSourceOrder.Bundle 'review.json') `
+        -Content ($badSourceOrderObject | ConvertTo-Json -Depth 10 -Compress)
+    Assert-Rejected -Fixture $badSourceOrder -Name 'review source_files ordinal order'
+
+    $extraReviewProperty = New-EvidenceBundle 'review-extra-property'
+    $extraReviewObject = Get-Content -LiteralPath (Join-Path $extraReviewProperty.Bundle 'review.json') -Raw |
+        ConvertFrom-Json
+    $extraReviewObject | Add-Member -NotePropertyName automation_passed -NotePropertyValue $true
+    Set-Utf8Text `
+        -Path (Join-Path $extraReviewProperty.Bundle 'review.json') `
+        -Content ($extraReviewObject | ConvertTo-Json -Depth 10 -Compress)
+    Assert-Rejected -Fixture $extraReviewProperty -Name 'extra review root property'
     Assert-Accepted -Fixture $canonical -Name 'expected commit, package, and Pass binding' -Direct -RequiredResult Pass
-    $releaseGateSummary = New-CanonicalSummary `
-        -GateId 'SSH-LIVE-001' `
-        -Checks @(New-SshLive001Checks)
+    $releaseGateSummary = New-SshLive001Summary
     $releaseGate = New-EvidenceBundle `
         'release-gate' `
         -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
@@ -316,6 +593,164 @@ try {
     Assert-Accepted `
         -Fixture $releaseGate `
         -Name 'exact SSH-LIVE-001 release gate binding' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    Assert-Accepted `
+        -Fixture $releaseGate `
+        -Name 'root scan enforces and accepts canonical SSH-LIVE-001 Pass profile'
+    $releaseGateMissingMeasurements = New-EvidenceBundle `
+        'release-gate-missing-measurements' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary (New-CanonicalSummary `
+            -GateId 'SSH-LIVE-001' `
+            -Checks @(New-SshLive001Checks))
+    Assert-Rejected `
+        -Fixture $releaseGateMissingMeasurements `
+        -Name 'SSH-LIVE-001 Pass without measurements does not satisfy release gate' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+    Assert-Rejected `
+        -Fixture $releaseGateMissingMeasurements `
+        -Name 'root scan rejects SSH-LIVE-001 Pass without measurements'
+
+    foreach ($measurementCase in @(
+        @{ Name = 'false verification'; Field = 'package_sha256_verified'; Value = $false },
+        @{ Name = 'wrong transfer size'; Field = 'sftp_bytes'; Value = 65535 },
+        @{ Name = 'wrong audit count'; Field = 'audit_exec_count'; Value = 3 },
+        @{ Name = 'short cancellation'; Field = 'cancellation_elapsed_milliseconds'; Value = 99 },
+        @{ Name = 'long cancellation'; Field = 'cancellation_elapsed_milliseconds'; Value = 10000 },
+        @{ Name = 'short timeout'; Field = 'timeout_elapsed_milliseconds'; Value = 11999 },
+        @{ Name = 'long timeout'; Field = 'timeout_elapsed_milliseconds'; Value = 30000 },
+        @{ Name = 'non-integer count'; Field = 'check_count'; Value = '12' })) {
+        $measurements = New-SshLive001Measurements
+        $measurements[$measurementCase.Field] = $measurementCase.Value
+        $fixture = New-EvidenceBundle `
+            "release-gate-measurement-$($measurementCase.Field)-$($measurementCase.Name -replace ' ', '-')" `
+            -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+            -Summary (New-CanonicalSummary `
+                -GateId 'SSH-LIVE-001' `
+                -Checks @(New-SshLive001Checks) `
+                -AdditionalProperties @{ measurements = $measurements })
+        Assert-Rejected `
+            -Fixture $fixture `
+            -Name "SSH-LIVE-001 $($measurementCase.Name) measurement" `
+            -Direct `
+            -RequiredGateId 'SSH-LIVE-001' `
+            -RequiredResult Pass
+    }
+
+    foreach ($numericEncoding in @(
+        @{ Name = 'decimal'; Value = '12.0' },
+        @{ Name = 'exponent'; Value = '1.2e1' })) {
+        $noncanonicalNumberSummary = (New-SshLive001Summary).Replace(
+            '"check_count": 12',
+            "`"check_count`": $($numericEncoding.Value)")
+        $noncanonicalNumberFixture = New-EvidenceBundle `
+            "release-gate-noncanonical-$($numericEncoding.Name)" `
+            -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+            -Summary $noncanonicalNumberSummary
+        Assert-Rejected `
+            -Fixture $noncanonicalNumberFixture `
+            -Name "SSH-LIVE-001 $($numericEncoding.Name) integer encoding" `
+            -Direct `
+            -RequiredGateId 'SSH-LIVE-001' `
+            -RequiredResult Pass
+    }
+
+    $reorderedChecks = @(New-SshLive001Checks)
+    $temporaryCheck = $reorderedChecks[4]
+    $reorderedChecks[4] = $reorderedChecks[5]
+    $reorderedChecks[5] = $temporaryCheck
+    $reorderedCheckFixture = New-EvidenceBundle `
+        'release-gate-reordered-checks' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary (New-SshLive001Summary -Checks $reorderedChecks)
+    Assert-Rejected `
+        -Fixture $reorderedCheckFixture `
+        -Name 'SSH-LIVE-001 checks outside writer order' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+
+    $failedHistorySummary = New-CanonicalSummary `
+        -GateId 'SSH-LIVE-001' `
+        -Result 'Fail' `
+        -Checks @([ordered]@{ id = 'package-sha256'; result = 'Fail' }) `
+        -AdditionalProperties @{
+            measurements = [ordered]@{
+                check_count = 12
+                passed_count = 0
+                failed_count = 1
+                blocked_count = 11
+                package_sha256_verified = $false
+            }
+        }
+    $failedHistoryFixture = New-EvidenceBundle `
+        'release-gate-failed-history' `
+        -Overrides @{
+            gate_id = 'SSH-LIVE-001'
+            authentication = 'Password'
+            result = 'Fail'
+        } `
+        -Summary $failedHistorySummary
+    Assert-Accepted `
+        -Fixture $failedHistoryFixture `
+        -Name 'root scan retains partial SSH-LIVE-001 failure measurements'
+
+    $blockedHistorySummary = New-CanonicalSummary `
+        -GateId 'SSH-LIVE-001' `
+        -Result 'Blocked' `
+        -Checks @([ordered]@{ id = 'package-sha256'; result = 'Blocked' }) `
+        -AdditionalProperties @{
+            measurements = [ordered]@{
+                check_count = 12
+                passed_count = 0
+                failed_count = 0
+                blocked_count = 12
+            }
+        }
+    $blockedHistoryFixture = New-EvidenceBundle `
+        'release-gate-blocked-history' `
+        -Overrides @{
+            gate_id = 'SSH-LIVE-001'
+            authentication = 'Password'
+            result = 'Blocked'
+        } `
+        -Summary $blockedHistorySummary
+    Assert-Accepted `
+        -Fixture $blockedHistoryFixture `
+        -Name 'root scan retains partial SSH-LIVE-001 blocked measurements'
+
+    $missingMeasurementDocument = New-SshLive001Measurements
+    $missingMeasurementDocument.Remove('host_key_rejection_verified')
+    $releaseGateMissingMeasurement = New-EvidenceBundle `
+        'release-gate-missing-measurement' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary (New-CanonicalSummary `
+            -GateId 'SSH-LIVE-001' `
+            -Checks @(New-SshLive001Checks) `
+            -AdditionalProperties @{ measurements = $missingMeasurementDocument })
+    Assert-Rejected `
+        -Fixture $releaseGateMissingMeasurement `
+        -Name 'SSH-LIVE-001 missing canonical measurement property' `
+        -Direct `
+        -RequiredGateId 'SSH-LIVE-001' `
+        -RequiredResult Pass
+
+    $extraMeasurementDocument = New-SshLive001Measurements
+    $extraMeasurementDocument['automation_passed'] = $true
+    $releaseGateExtraMeasurement = New-EvidenceBundle `
+        'release-gate-extra-measurement' `
+        -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
+        -Summary (New-CanonicalSummary `
+            -GateId 'SSH-LIVE-001' `
+            -Checks @(New-SshLive001Checks) `
+            -AdditionalProperties @{ measurements = $extraMeasurementDocument })
+    Assert-Rejected `
+        -Fixture $releaseGateExtraMeasurement `
+        -Name 'SSH-LIVE-001 unexpected measurement property' `
         -Direct `
         -RequiredGateId 'SSH-LIVE-001' `
         -RequiredResult Pass
@@ -349,6 +784,9 @@ try {
         -Direct `
         -RequiredGateId 'SSH-LIVE-001' `
         -RequiredResult Pass
+    Assert-Rejected `
+        -Fixture $publicKeyReleaseGate `
+        -Name 'root scan rejects mislabeled SSH-LIVE-001 PublicKey evidence'
     foreach ($profileCase in @(
         @{ Name = 'ARM64 evidence'; Field = 'architecture'; Value = 'arm64' },
         @{ Name = 'indirect route evidence'; Field = 'route'; Value = 'Socks5' },
@@ -368,12 +806,15 @@ try {
             -Direct `
             -RequiredGateId 'SSH-LIVE-001' `
             -RequiredResult Pass
+        Assert-Rejected `
+            -Fixture $profileFixture `
+            -Name "root scan rejects $($profileCase.Name) labeled as SSH-LIVE-001"
     }
     $missingReleaseChecks = @(New-SshLive001Checks | Select-Object -Skip 1)
     $missingReleaseGate = New-EvidenceBundle `
         'release-gate-missing-check' `
         -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
-        -Summary (New-CanonicalSummary -GateId 'SSH-LIVE-001' -Checks $missingReleaseChecks)
+        -Summary (New-SshLive001Summary -Checks $missingReleaseChecks)
     Assert-Rejected `
         -Fixture $missingReleaseGate `
         -Name 'missing full-gate check does not satisfy SSH-LIVE-001' `
@@ -385,7 +826,7 @@ try {
     $extraReleaseGate = New-EvidenceBundle `
         'release-gate-extra-check' `
         -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
-        -Summary (New-CanonicalSummary -GateId 'SSH-LIVE-001' -Checks $extraReleaseChecks)
+        -Summary (New-SshLive001Summary -Checks $extraReleaseChecks)
     Assert-Rejected `
         -Fixture $extraReleaseGate `
         -Name 'extra check does not satisfy exact SSH-LIVE-001 profile' `
@@ -397,7 +838,7 @@ try {
     $duplicateReleaseGate = New-EvidenceBundle `
         'release-gate-duplicate-check' `
         -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
-        -Summary (New-CanonicalSummary -GateId 'SSH-LIVE-001' -Checks $duplicateReleaseChecks)
+        -Summary (New-SshLive001Summary -Checks $duplicateReleaseChecks)
     Assert-Rejected `
         -Fixture $duplicateReleaseGate `
         -Name 'duplicate check does not satisfy exact SSH-LIVE-001 profile' `
@@ -409,7 +850,7 @@ try {
     $failedReleaseGate = New-EvidenceBundle `
         'release-gate-failed-check' `
         -Overrides @{ gate_id = 'SSH-LIVE-001'; authentication = 'Password' } `
-        -Summary (New-CanonicalSummary -GateId 'SSH-LIVE-001' -Checks $failedReleaseChecks)
+        -Summary (New-SshLive001Summary -Checks $failedReleaseChecks)
     Assert-Rejected `
         -Fixture $failedReleaseGate `
         -Name 'failed check does not satisfy SSH-LIVE-001 Pass profile' `
@@ -430,7 +871,12 @@ try {
     $onePixelPng = [Convert]::FromBase64String(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
     [System.IO.File]::WriteAllBytes((Join-Path $attachments.Bundle 'screen.png'), $onePixelPng)
+    Set-CanonicalFixtureReview -Fixture $attachments
     Assert-Accepted -Fixture $attachments -Name 'safe UTF-8 text and structurally validated PNG attachments'
+    Set-Utf8Text `
+        -Path (Join-Path $attachments.Bundle 'review.txt') `
+        -Content 'check=passed; final attachment changed after review'
+    Assert-Rejected -Fixture $attachments -Name 'post-review attachment mutation with stale source hash'
 
     $failedRecord = New-EvidenceBundle 'failed-record' -Overrides @{ result = 'Fail' }
     Assert-Accepted -Fixture $failedRecord -Name 'Fail is a valid recorded result without a release-result binding'
@@ -462,7 +908,7 @@ try {
     Assert-Rejected -Fixture $missingPrivacy -Name 'summary missing canonical privacy notice'
 
     foreach ($summaryConflict in @(
-        @{ Name = 'schema'; Summary = (New-CanonicalSummary).Replace('"schema_version":1', '"schema_version":2') },
+        @{ Name = 'schema'; Summary = (New-CanonicalSummary).Replace('"schema_version": 1', '"schema_version": 2') },
         @{ Name = 'gate'; Summary = (New-CanonicalSummary -GateId 'SSH-LIVE-001') },
         @{ Name = 'result'; Summary = (New-CanonicalSummary -Result Fail) },
         @{ Name = 'timestamp'; Summary = (New-CanonicalSummary -StartedAtUtc '2026-08-20T01:02:04Z') },
@@ -524,11 +970,9 @@ try {
     $duplicateRootJson = (New-CanonicalSummary).TrimEnd('}') + ',"gate_id":"SSH-LIVE-001"}'
     $duplicateRoot = New-EvidenceBundle 'summary-duplicate-root-property' -Summary $duplicateRootJson
     Assert-Rejected -Fixture $duplicateRoot -Name 'duplicate root JSON property'
-    $duplicateNestedJson = [regex]::Replace(
-        (New-CanonicalSummary),
-        '"id":"smoke","result":"Pass"',
-        '"id":"smoke","result":"Pass","result":"Pass"',
-        1)
+    $duplicateNestedJson = (New-CanonicalSummary).Replace(
+        '"id": "smoke",',
+        '"id": "smoke", "result": "Pass",')
     $duplicateNested = New-EvidenceBundle 'summary-duplicate-nested-property' -Summary $duplicateNestedJson
     Assert-Rejected -Fixture $duplicateNested -Name 'duplicate nested JSON property'
 
@@ -703,6 +1147,31 @@ try {
     $badLayout = New-EvidenceBundle 'bad-layout' -RelativeBundle 'alpha4/too-shallow'
     Assert-Rejected -Fixture $badLayout -Name 'manifest outside canonical root layout'
 
+    $rootOrphan = New-EvidenceBundle 'root-orphan'
+    Set-Utf8Text -Path (Join-Path $rootOrphan.Root 'orphan.txt') -Content 'orphan'
+    Assert-Rejected -Fixture $rootOrphan -Name 'orphan root file'
+
+    $releaseOrphan = New-EvidenceBundle 'release-orphan'
+    Set-Utf8Text -Path (Join-Path $releaseOrphan.Root 'alpha4/orphan.txt') -Content 'orphan'
+    Assert-Rejected -Fixture $releaseOrphan -Name 'orphan release file'
+
+    $scopeOrphan = New-EvidenceBundle 'scope-orphan'
+    Set-Utf8Text -Path (Join-Path $scopeOrphan.Root 'alpha4/ssh-auth/orphan.txt') -Content 'orphan'
+    Assert-Rejected -Fixture $scopeOrphan -Name 'orphan scope file'
+
+    $unknownScope = New-EvidenceBundle 'unknown-scope'
+    New-Item -ItemType Directory -Path (Join-Path $unknownScope.Root 'alpha4/not-approved') -Force | Out-Null
+    Set-Utf8Text -Path (Join-Path $unknownScope.Root 'alpha4/not-approved/README.md') -Content '# Unknown.'
+    Assert-Rejected -Fixture $unknownScope -Name 'unknown evidence scope'
+
+    $caseVariant = New-EvidenceBundle 'case-variant'
+    Move-Item -LiteralPath $caseVariant.Manifest -Destination (Join-Path $caseVariant.Bundle 'MANIFEST.yml')
+    Assert-Rejected -Fixture $caseVariant -Name 'case-variant manifest name'
+
+    $nestedGarbage = New-EvidenceBundle 'nested-garbage'
+    New-Item -ItemType Directory -Path (Join-Path $nestedGarbage.Bundle 'empty') -Force | Out-Null
+    Assert-Rejected -Fixture $nestedGarbage -Name 'undeclared empty nested directory'
+
     $junctionFixture = New-EvidenceBundle 'junction-path' -EvidenceFiles @('summary.json', 'linked/detail.json')
     $junctionTarget = Join-Path $scratch 'junction-target'
     New-Item -ItemType Directory -Path $junctionTarget -Force | Out-Null
@@ -713,8 +1182,11 @@ try {
     $junctionBundleTarget = New-EvidenceBundle 'junction-bundle-target'
     [System.IO.File]::WriteAllBytes($junctionBundleTarget.Manifest, [byte[]](0xff, 0xfe, 0xfd))
     $junctionRoot = Join-Path $scratch 'junction-bundle-root'
-    $junctionScope = Join-Path $junctionRoot 'alpha4\ssh-primary'
+    Set-Utf8Text -Path (Join-Path $junctionRoot 'EVIDENCE_SCHEMA.md') -Content '# Fixture evidence schema.'
+    Set-Utf8Text -Path (Join-Path $junctionRoot 'alpha4/README.md') -Content '# Fixture Alpha 4 index.'
+    $junctionScope = Join-Path $junctionRoot 'alpha4\ssh-auth'
     New-Item -ItemType Directory -Path $junctionScope -Force | Out-Null
+    Set-Utf8Text -Path (Join-Path $junctionScope 'README.md') -Content '# Fixture SSH authentication index.'
     New-Item `
         -ItemType Junction `
         -Path (Join-Path $junctionScope 'linked-bundle') `

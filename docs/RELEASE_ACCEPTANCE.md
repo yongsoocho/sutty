@@ -4,9 +4,9 @@ This checklist separates implemented code from release evidence. A checked sourc
 
 이 체크리스트는 구현 코드와 출시 증거를 구분합니다. 소스 수준 항목이 완료되어도 해당 실서버·패키징 검증 결과가 날짜와 함께 남기 전에는 GA 완료로 간주하지 않습니다.
 
-Compatibility states and exact matrix boundaries are authoritative in [Supported environments](SUPPORTED_ENVIRONMENTS.md). Every real-environment or package result must use the strict, redacted, immutable bundle in [EVIDENCE_SCHEMA.md](evidence/EVIDENCE_SCHEMA.md), following the dependency order in the [Alpha 4 execution plan](ALPHA4_EXECUTION_PLAN.md).
+Compatibility states and exact matrix boundaries are authoritative in [Supported environments](SUPPORTED_ENVIRONMENTS.md). Every real-environment or package result must use the strict, redacted, immutable bundle in [EVIDENCE_SCHEMA.md](evidence/EVIDENCE_SCHEMA.md), following the dependency order in the [Alpha 4 execution plan](ALPHA4_EXECUTION_PLAN.md) and the protected publication sequence in [Release governance](RELEASE_GOVERNANCE.md).
 
-호환성 상태와 정확한 matrix 경계는 [지원 환경](SUPPORTED_ENVIRONMENTS.md)을 기준으로 합니다. 모든 실환경·패키지 결과는 [증거 스키마](evidence/EVIDENCE_SCHEMA.md)의 엄격하고 redaction한 불변 bundle을 사용하고 [Alpha 4 실행 계획](ALPHA4_EXECUTION_PLAN.md)의 의존성 순서를 따라야 합니다.
+호환성 상태와 정확한 matrix 경계는 [지원 환경](SUPPORTED_ENVIRONMENTS.md)을 기준으로 합니다. 모든 실환경·패키지 결과는 [증거 스키마](evidence/EVIDENCE_SCHEMA.md)의 엄격하고 redaction한 불변 bundle을 사용하고 [Alpha 4 실행 계획](ALPHA4_EXECUTION_PLAN.md)의 의존성 순서와 [릴리스 거버넌스](RELEASE_GOVERNANCE.md)의 보호된 공개 순서를 따라야 합니다.
 
 ## P0 transfer gates / P0 전송 게이트
 
@@ -111,6 +111,6 @@ No accepted live or package evidence bundle is recorded in the current tree. Thi
 
 현재 작업 트리에는 인수 완료된 실환경 또는 패키지 증거 bundle이 없습니다. 이 문장은 placeholder `Pass`가 아닙니다.
 
-For every executed gate, retain one canonical directory containing `manifest.yml`, required `summary.json`, and only explicitly listed redacted attachments. `Pass`, `Fail`, and `Blocked` are preserved as run results. A support row becomes **Live Validated** only after a real `Pass` bundle has `redaction_reviewed: true` and passes human review; it becomes **Released** only when the identical commit and package SHA-256 map to an immutable published artifact.
+For every executed gate, retain one canonical unreviewed source directory containing `manifest.yml`, required `summary.json`, and only explicitly listed redacted attachments. `Pass`, `Fail`, and `Blocked` are preserved as run results. The writer always records `redaction_reviewed: false`; after inspecting every file, a human uses `Review-LiveEvidence.ps1` to create a separate write-once reviewed bundle containing `review.json`. Existing committed bundles cannot be edited, deleted, or renamed under the Git-history guard. A support row becomes **Live Validated** only after that reviewed real `Pass` bundle is committed; it becomes **Released** only when `RELEASE-ATTESTATION.json` binds the identical candidate commit/package SHA-256, acceptance commit, review hashes, and promotion run to a five-asset immutable release.
 
-실행한 각 gate에는 `manifest.yml`, 필수 `summary.json`, 명시적으로 나열한 redacted attachment만 있는 표준 디렉터리 하나를 보존합니다. `Pass`·`Fail`·`Blocked`는 실행 결과로 보존합니다. 실제 `Pass` bundle이 `redaction_reviewed: true`이고 사람 검토를 통과해야 지원 행을 **Live Validated**로 바꿀 수 있으며, 동일한 commit과 package SHA-256이 변경 불가능한 공개 산출물에 연결돼야 **Released**로 바꿀 수 있습니다.
+실행한 각 gate에는 `manifest.yml`, 필수 `summary.json`, 명시적으로 나열한 redacted attachment만 있는 검토 전 source 디렉터리를 보존합니다. `Pass`·`Fail`·`Blocked`는 실행 결과로 보존합니다. Writer는 항상 `redaction_reviewed: false`를 기록하며, 사람이 모든 파일을 확인한 뒤 `Review-LiveEvidence.ps1`로 `review.json`을 포함하는 별도 write-once reviewed bundle을 만듭니다. Commit된 기존 bundle의 수정·삭제·rename은 Git history guard가 거부합니다. 검토 완료한 실제 `Pass` bundle을 commit해야 지원 행을 **Live Validated**로 바꿀 수 있으며, `RELEASE-ATTESTATION.json`이 동일 candidate commit/package SHA-256, acceptance commit, review hash, promotion run을 다섯 asset의 immutable release에 연결해야 **Released**로 바꿀 수 있습니다.

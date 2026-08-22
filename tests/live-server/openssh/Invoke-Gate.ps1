@@ -10,9 +10,7 @@ param(
 
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
-    [string]$EvidenceOutputRoot,
-
-    [switch]$RedactionReviewed
+    [string]$EvidenceOutputRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -328,8 +326,7 @@ $environmentNames = @(
     'SUTTY_EVIDENCE_COMMIT',
     'SUTTY_EVIDENCE_PACKAGE_SHA256',
     'SUTTY_EVIDENCE_SERVER_FAMILY',
-    'SUTTY_EVIDENCE_SERVER_VERSION',
-    'SUTTY_EVIDENCE_REDACTION_REVIEWED'
+    'SUTTY_EVIDENCE_SERVER_VERSION'
 )
 $previousEnvironment = @{}
 foreach ($name in $environmentNames) {
@@ -478,7 +475,6 @@ try {
         SUTTY_EVIDENCE_PACKAGE_SHA256 = $packageSha256
         SUTTY_EVIDENCE_SERVER_FAMILY = 'OpenSSH'
         SUTTY_EVIDENCE_SERVER_VERSION = $version
-        SUTTY_EVIDENCE_REDACTION_REVIEWED = $(if ($RedactionReviewed) { '1' } else { '0' })
     }
     foreach ($entry in $values.GetEnumerator()) {
         [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, 'Process')

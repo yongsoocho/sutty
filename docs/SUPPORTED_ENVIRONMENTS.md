@@ -108,8 +108,8 @@ The key format, server OS, algorithms, proxy topology, forwarding mode, terminal
 
 Promotion rules:
 
-1. **Implemented → Live Validated** requires a real approved run, `result: Pass`, `redaction_reviewed: true`, every referenced file present, and review against the gate's exit criteria.
-2. **Live Validated → Released** requires the identical commit and package SHA-256 in an immutable published release plus a direct reference from the release evidence.
+1. **Implemented → Live Validated** requires a real approved run followed by a separate write-once reviewed bundle with `result: Pass`, `redaction_reviewed: true`, a valid `review.json`, every referenced file present, and review against the gate's exit criteria.
+2. **Live Validated → Released** requires the identical commit and package SHA-256 in an immutable published release plus the five-asset promotion and `RELEASE-ATTESTATION.json` mapping.
 3. `Fail` or `Blocked` never promotes a row and must not be rewritten as `Pass`; rerun evidence is a new immutable bundle.
 4. A later failure or security regression can remove a claim. Historical evidence remains preserved and clearly superseded.
 

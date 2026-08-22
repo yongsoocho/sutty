@@ -98,9 +98,50 @@ jobs:
         shell: pwsh
         run: .\tests\live-evidence\Assert-LiveEvidence.Tests.ps1
 
+      - name: Test post-review evidence promotion
+        shell: pwsh
+        run: .\tests\live-evidence-review\Review-LiveEvidence.Tests.ps1
+
+      - name: Test append-only evidence-history guard
+        shell: pwsh
+        run: .\tests\evidence-history\Assert-EvidenceHistory.Tests.ps1
+
+      - name: Test release-attestation guard
+        shell: pwsh
+        run: .\tests\release-attestation\Assert-ReleaseAttestation.Tests.ps1
+
+      - name: Test repository-governance guard
+        shell: pwsh
+        run: .\tests\repository-governance\Assert-RepositoryGovernance.Tests.ps1
+
+      - name: Enforce active repository governance
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .\.github\scripts\Assert-RepositoryGovernance.ps1 -QueryGitHub -Repository $env:GITHUB_REPOSITORY -AllowOmittedBypassActors
+
       - name: Enforce committed live-evidence records
         shell: pwsh
         run: .\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
+
+      - name: Enforce append-only current candidate evidence
+        shell: pwsh
+        env:
+          CANDIDATE_COMMIT: ${{ github.sha }}
+        run: |
+          $head = $env:CANDIDATE_COMMIT
+          if ($head -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'GitHub did not supply an exact lowercase candidate commit.'
+          }
+          $parentLine = @(& git rev-list --parents -n 1 $head)
+          if ($LASTEXITCODE -ne 0 -or $parentLine.Count -ne 1) {
+            throw 'Could not resolve the candidate commit parent.'
+          }
+          $commits = @($parentLine[0].Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+          $base = if ($commits.Count -eq 1) { '0' * 40 } else { $commits[1] }
+          .\.github\scripts\Assert-EvidenceHistory.ps1 `
+            -BaseCommit $base `
+            -HeadCommit $head
 
       - name: Validate source release metadata
         shell: pwsh

@@ -46,20 +46,60 @@ $sshLive001RequiredCheckIds = @(
     'package-commit-identity'
     'package-core-identity'
     'authentication-success'
+    'command-pty-sftp'
+    'remote-local-cleanup'
+    'negotiated-reconnect'
+    'server-session-audit'
     'authentication-rejection'
     'host-key-rejection'
     'connection-cancellation'
     'transport-timeout'
-    'negotiated-reconnect'
-    'command-pty-sftp'
-    'remote-local-cleanup'
-    'server-session-audit'
 )
+$sshLive001TrueMeasurementNames = @(
+    'package_sha256_verified'
+    'package_commit_identity_verified'
+    'package_core_identity_verified'
+    'authentication_success_verified'
+    'sftp_checksum_verified'
+    'command_pty_sftp_verified'
+    'remote_cleanup_verified'
+    'local_cleanup_verified'
+    'reconnect_verified'
+    'server_audit_verified'
+    'authentication_rejection_verified'
+    'host_key_rejection_verified'
+    'cancellation_verified'
+    'timeout_verified'
+)
+$sshLive001ExactIntegerMeasurements = [ordered]@{
+    check_count = [long]12
+    passed_count = [long]12
+    failed_count = [long]0
+    blocked_count = [long]0
+    sftp_bytes = [long](64 * 1024)
+    audit_exec_count = [long]4
+    audit_shell_count = [long]1
+    audit_sftp_count = [long]2
+    audit_other_count = [long]0
+}
+$sshLive001BoundedIntegerMeasurements = [ordered]@{
+    cancellation_elapsed_milliseconds = @([long]100, [long]10000)
+    timeout_elapsed_milliseconds = @([long]12000, [long]30000)
+}
+$approvedEvidenceScopes = [System.Collections.Generic.Dictionary[string, string[]]]::new(
+    [StringComparer]::Ordinal)
+$approvedEvidenceScopes.Add('alpha4', @(
+    'connection-info'
+    'ssh-auth'
+    'ssh-routes'
+    'ssh-transport'
+))
 $requiredKeySet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($requiredKey in $requiredKeys) {
     $requiredKeySet.Add($requiredKey) | Out-Null
 }
 $utf8Strict = [System.Text.UTF8Encoding]::new($false, $true)
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 if ($null -eq ('SuttyLiveEvidencePngCrc' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -367,6 +407,99 @@ function Test-JsonElement {
     }
 }
 
+function Test-SshLive001Measurements {
+    param(
+        [System.Text.Json.JsonElement]$RootElement,
+        [string]$Description
+    )
+
+    $measurementMatches = @(
+        $RootElement.EnumerateObject() | Where-Object { $_.Name -ceq 'measurements' })
+    if ($measurementMatches.Count -ne 1) {
+        Add-Violation "$Description SSH-LIVE-001 must contain exactly one measurements property."
+        return
+    }
+    if ($measurementMatches[0].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+        Add-Violation "$Description SSH-LIVE-001 measurements must be a JSON object."
+        return
+    }
+
+    [string[]]$requiredNames = @(
+        $sshLive001TrueMeasurementNames +
+        @($sshLive001ExactIntegerMeasurements.Keys) +
+        @($sshLive001BoundedIntegerMeasurements.Keys))
+    $requiredNameSet = [System.Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::Ordinal)
+    foreach ($name in $requiredNames) {
+        $requiredNameSet.Add($name) | Out-Null
+    }
+    $measurementsByName = [System.Collections.Generic.Dictionary[
+        string,
+        System.Text.Json.JsonProperty]]::new([StringComparer]::Ordinal)
+    $measurementProperties = @($measurementMatches[0].Value.EnumerateObject())
+    if ($measurementProperties.Count -ne $requiredNames.Count) {
+        Add-Violation (
+            "$Description SSH-LIVE-001 measurements must contain exactly the " +
+            "$($requiredNames.Count) canonical properties.")
+    }
+    foreach ($property in $measurementProperties) {
+        if (-not $requiredNameSet.Contains($property.Name)) {
+            Add-Violation "$Description SSH-LIVE-001 measurements contains an unexpected property."
+        }
+        if ($measurementsByName.ContainsKey($property.Name)) {
+            Add-Violation "$Description SSH-LIVE-001 measurements contains a duplicate property."
+        }
+        else {
+            $measurementsByName.Add($property.Name, $property)
+        }
+    }
+
+    foreach ($name in $requiredNames) {
+        if (-not $measurementsByName.ContainsKey($name)) {
+            Add-Violation "$Description SSH-LIVE-001 measurements is missing $name."
+        }
+    }
+    foreach ($name in $sshLive001TrueMeasurementNames) {
+        if ($measurementsByName.ContainsKey($name) -and
+            $measurementsByName[$name].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::True) {
+            Add-Violation "$Description SSH-LIVE-001 measurement $name must be the JSON boolean true."
+        }
+    }
+    foreach ($entry in $sshLive001ExactIntegerMeasurements.GetEnumerator()) {
+        if (-not $measurementsByName.ContainsKey($entry.Key)) {
+            continue
+        }
+        $parsedValue = [long]0
+        $propertyValue = $measurementsByName[$entry.Key].Value
+        if ($propertyValue.ValueKind -ne [System.Text.Json.JsonValueKind]::Number -or
+            $propertyValue.GetRawText() -cnotmatch '^(?:0|[1-9][0-9]*)$' -or
+            -not $propertyValue.TryGetInt64([ref]$parsedValue) -or
+            $parsedValue -ne [long]$entry.Value) {
+            Add-Violation (
+                "$Description SSH-LIVE-001 measurement $($entry.Key) must be the JSON integer " +
+                "$($entry.Value).")
+        }
+    }
+    foreach ($entry in $sshLive001BoundedIntegerMeasurements.GetEnumerator()) {
+        if (-not $measurementsByName.ContainsKey($entry.Key)) {
+            continue
+        }
+        $parsedValue = [long]0
+        $propertyValue = $measurementsByName[$entry.Key].Value
+        $minimum = [long]$entry.Value[0]
+        $exclusiveMaximum = [long]$entry.Value[1]
+        if ($propertyValue.ValueKind -ne [System.Text.Json.JsonValueKind]::Number -or
+            $propertyValue.GetRawText() -cnotmatch '^(?:0|[1-9][0-9]*)$' -or
+            -not $propertyValue.TryGetInt64([ref]$parsedValue) -or
+            $parsedValue -lt $minimum -or
+            $parsedValue -ge $exclusiveMaximum) {
+            Add-Violation (
+                "$Description SSH-LIVE-001 measurement $($entry.Key) must be a JSON integer " +
+                "from $minimum through $($exclusiveMaximum - 1).")
+        }
+    }
+}
+
 function Test-SummaryContract {
     param(
         [System.Text.Json.JsonElement]$RootElement,
@@ -445,6 +578,7 @@ function Test-SummaryContract {
 
     $checksProperty = Get-RequiredSummaryProperty 'checks'
     $checkResults = [System.Collections.Generic.List[string]]::new()
+    $checkIdsInOrder = [System.Collections.Generic.List[string]]::new()
     $checkResultsById = [System.Collections.Generic.Dictionary[string, string]]::new(
         [StringComparer]::Ordinal)
     if ($null -ne $checksProperty) {
@@ -476,6 +610,7 @@ function Test-SummaryContract {
                     }
                     else {
                         $validCheckId = $checkId
+                        $checkIdsInOrder.Add($checkId)
                     }
                 }
                 if ($resultProperties.Count -ne 1 -or
@@ -513,15 +648,394 @@ function Test-SummaryContract {
         }
     }
 
-    if ($RequiredGateId -ceq 'SSH-LIVE-001') {
+    $enforceSshLive001PassProfile =
+        (Get-ManifestValue 'gate_id') -ceq 'SSH-LIVE-001' -and
+        $manifestResult -ceq 'Pass'
+    if ($enforceSshLive001PassProfile) {
+        Test-SshLive001Measurements -RootElement $RootElement -Description $Description
         if ($checkResultsById.Count -ne $sshLive001RequiredCheckIds.Count) {
             Add-Violation "$Description SSH-LIVE-001 must contain exactly the 12 complete gate checks."
         }
-        foreach ($requiredCheckId in $sshLive001RequiredCheckIds) {
+        for ($index = 0; $index -lt $sshLive001RequiredCheckIds.Count; $index++) {
+            $requiredCheckId = $sshLive001RequiredCheckIds[$index]
             if (-not $checkResultsById.ContainsKey($requiredCheckId) -or
                 $checkResultsById[$requiredCheckId] -cne 'Pass') {
                 Add-Violation "$Description SSH-LIVE-001 check $requiredCheckId must appear exactly once as Pass."
             }
+            if ($checkIdsInOrder.Count -le $index -or
+                $checkIdsInOrder[$index] -cne $requiredCheckId) {
+                Add-Violation (
+                    "$Description SSH-LIVE-001 check position $($index + 1) must be " +
+                    "$requiredCheckId.")
+            }
+        }
+    }
+}
+
+function New-ReviewSourceCandidate {
+    param([Parameter(Mandatory)][byte[]]$Bytes)
+
+    return [pscustomobject]@{
+        Sha256 = [Convert]::ToHexString(
+            [System.Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
+        SizeBytes = [long]$Bytes.Length
+    }
+}
+
+function Get-ReviewSourceCandidates {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$BundleDirectory,
+        [Parameter(Mandatory)][string]$Description
+    )
+
+    $bundlePrefix = $BundleDirectory.TrimEnd('\', '/') +
+        [System.IO.Path]::DirectorySeparatorChar
+    $path = [System.IO.Path]::GetFullPath((Join-Path `
+        $BundleDirectory `
+        $Name.Replace('/', [System.IO.Path]::DirectorySeparatorChar)))
+    if (-not $path.StartsWith($bundlePrefix, [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Add-Violation "$Description source file is missing or escapes its evidence bundle: $Name"
+        return @()
+    }
+    $item = Get-Item -LiteralPath $path -Force
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Add-Violation "$Description source file must not be a symbolic link or reparse point: $Name"
+        return @()
+    }
+
+    if ($Name -cnotin @('manifest.yml', 'summary.json')) {
+        return @(New-ReviewSourceCandidate -Bytes ([System.IO.File]::ReadAllBytes($item.FullName)))
+    }
+
+    $text = Get-StrictUtf8Text `
+        -Path $item.FullName `
+        -MaximumBytes 1048576 `
+        -Description "$Description reviewed $Name"
+    if ($null -eq $text) {
+        return @()
+    }
+
+    $sourceTexts = [System.Collections.Generic.List[string]]::new()
+    if ($Name -ceq 'manifest.yml') {
+        $reviewMarker = [regex]::new(
+            '(?m)^  - "review\.json"(?<marker>\r\n|\n)redaction_reviewed: true(?<tail>\n|\z)')
+        $reviewMatches = @($reviewMarker.Matches($text))
+        if ($reviewMatches.Count -ne 1) {
+            Add-Violation "$Description manifest.yml is not an exact post-review manifest transformation."
+            return @()
+        }
+
+        $match = $reviewMatches[0]
+        $prefix = $text.Substring(0, $match.Index)
+        $suffix = $text.Substring($match.Index + $match.Length)
+        $lineEndings = if ($match.Groups['tail'].Value.Length -eq 0) {
+            @('')
+        }
+        elseif ($match.Groups['marker'].Value -ceq "`r`n") {
+            @("`n", "`r`n")
+        }
+        else {
+            @("`n")
+        }
+
+        $sourcePattern = [regex]::new('(?m)^redaction_reviewed: false\r?$')
+        foreach ($lineEnding in $lineEndings) {
+            $sourceText = $prefix + 'redaction_reviewed: false' + $lineEnding + $suffix
+            if (@($sourcePattern.Matches($sourceText)).Count -ne 1 -or
+                [regex]::IsMatch($sourceText, '(?m)^redaction_reviewed: true\r?$')) {
+                continue
+            }
+            $writerNewline = if ($sourceText.Contains("`r`n", [StringComparison]::Ordinal)) {
+                "`r`n"
+            }
+            else {
+                "`n"
+            }
+            $replacement = '  - "review.json"' + $writerNewline + 'redaction_reviewed: true'
+            $roundTrip = $sourcePattern.Replace($sourceText, $replacement, 1)
+            if ($roundTrip -ceq $text) {
+                $sourceTexts.Add($sourceText)
+            }
+        }
+    }
+    else {
+        $reviewedPattern = [regex]::new(
+            '(?m)(^\s*"redaction_reviewed": )true(?=,?\r?$)')
+        if (@($reviewedPattern.Matches($text)).Count -ne 1) {
+            Add-Violation "$Description summary.json is not an exact post-review summary transformation."
+            return @()
+        }
+        $sourceText = $reviewedPattern.Replace($text, '${1}false', 1)
+        $sourcePattern = [regex]::new(
+            '(?m)(^\s*"redaction_reviewed": )false(?=,?\r?$)')
+        if (@($sourcePattern.Matches($sourceText)).Count -eq 1 -and
+            $sourcePattern.Replace($sourceText, '${1}true', 1) -ceq $text) {
+            $sourceTexts.Add($sourceText)
+        }
+    }
+
+    if ($sourceTexts.Count -eq 0) {
+        Add-Violation "$Description $Name cannot be reversed to bytes accepted by Review-LiveEvidence.ps1."
+        return @()
+    }
+
+    $candidates = [System.Collections.Generic.List[object]]::new()
+    $identities = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($sourceText in $sourceTexts) {
+        $candidate = New-ReviewSourceCandidate -Bytes $utf8NoBom.GetBytes($sourceText)
+        $identity = "$($candidate.Sha256):$($candidate.SizeBytes)"
+        if ($identities.Add($identity)) {
+            $candidates.Add($candidate)
+        }
+    }
+    return @($candidates)
+}
+
+function Test-ReviewContract {
+    param(
+        [System.Text.Json.JsonElement]$RootElement,
+        [System.Collections.Generic.Dictionary[string, object]]$ManifestValues,
+        [string]$ReviewPath,
+        [string]$Description
+    )
+
+    $requiredProperties = @(
+        'schema_version'
+        'reviewer_id'
+        'reviewed_at_utc'
+        'source_bundle_sha256'
+        'source_files'
+        'review_scope'
+    )
+    $actualProperties = @($RootElement.EnumerateObject())
+    if ($actualProperties.Count -ne $requiredProperties.Count -or
+        @($actualProperties | Where-Object { $_.Name -cnotin $requiredProperties }).Count -gt 0) {
+        Add-Violation "$Description must contain only the exact review-contract root properties."
+    }
+
+    function Get-ReviewProperty([string]$Name) {
+        $matches = @($actualProperties | Where-Object { $_.Name -ceq $Name })
+        if ($matches.Count -ne 1) {
+            Add-Violation "$Description must contain exactly one $Name property."
+            return $null
+        }
+        return $matches[0]
+    }
+
+    $schemaVersion = Get-ReviewProperty 'schema_version'
+    $parsedSchemaVersion = 0
+    if ($null -ne $schemaVersion -and
+        ($schemaVersion.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Number -or
+        -not $schemaVersion.Value.TryGetInt32([ref]$parsedSchemaVersion) -or
+        $parsedSchemaVersion -ne 1)) {
+        Add-Violation "$Description schema_version must be the JSON integer 1."
+    }
+
+    $reviewerId = Get-ReviewProperty 'reviewer_id'
+    if ($null -ne $reviewerId -and
+        ($reviewerId.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
+        $reviewerId.Value.GetString() -cnotmatch '^github-[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$')) {
+        Add-Violation "$Description reviewer_id must be a bounded github- reviewer identifier."
+    }
+
+    $reviewedAt = Get-ReviewProperty 'reviewed_at_utc'
+    $parsedReviewedAt = [DateTimeOffset]::MinValue
+    $timestampStyles = [Globalization.DateTimeStyles]::AssumeUniversal -bor
+        [Globalization.DateTimeStyles]::AdjustToUniversal
+    $reviewedAtIsValid = $false
+    if ($null -ne $reviewedAt) {
+        $reviewedAtIsValid = $reviewedAt.Value.ValueKind -eq
+            [System.Text.Json.JsonValueKind]::String -and
+            $reviewedAt.Value.GetString() -cmatch
+                '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$' -and
+            [DateTimeOffset]::TryParse(
+                $reviewedAt.Value.GetString(),
+                [Globalization.CultureInfo]::InvariantCulture,
+                $timestampStyles,
+                [ref]$parsedReviewedAt)
+    }
+    if (-not $reviewedAtIsValid) {
+        Add-Violation "$Description reviewed_at_utc must be a valid RFC3339 UTC timestamp ending in Z."
+    }
+    else {
+        if ($parsedReviewedAt -gt [DateTimeOffset]::UtcNow.AddMinutes(5)) {
+            Add-Violation "$Description reviewed_at_utc must not be more than five minutes in the future."
+        }
+        if ($ManifestValues.ContainsKey('started_at_utc') -and
+            $ManifestValues.ContainsKey('duration_seconds')) {
+            $startedAt = [DateTimeOffset]::MinValue
+            $durationSeconds = [long]0
+            $startedAtText = [string]$ManifestValues['started_at_utc']
+            $durationText = [string]$ManifestValues['duration_seconds']
+            if ($startedAtText -cmatch
+                    '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$' -and
+                [DateTimeOffset]::TryParse(
+                    $startedAtText,
+                    [Globalization.CultureInfo]::InvariantCulture,
+                    $timestampStyles,
+                    [ref]$startedAt) -and
+                $durationText -cmatch '^(?:0|[1-9][0-9]*)$' -and
+                [long]::TryParse(
+                    $durationText,
+                    [Globalization.NumberStyles]::None,
+                    [Globalization.CultureInfo]::InvariantCulture,
+                    [ref]$durationSeconds)) {
+                try {
+                    $completedAt = $startedAt.AddSeconds($durationSeconds)
+                    if ($parsedReviewedAt -lt $completedAt) {
+                        Add-Violation "$Description reviewed_at_utc must be at or after the evidence run completed."
+                    }
+                }
+                catch {
+                    Add-Violation "$Description evidence completion time is outside the supported timestamp range."
+                }
+            }
+        }
+    }
+
+    $sourceBundleSha256 = Get-ReviewProperty 'source_bundle_sha256'
+    $declaredBundleDigest = $null
+    if ($null -ne $sourceBundleSha256 -and
+        $sourceBundleSha256.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::String) {
+        $declaredBundleDigest = $sourceBundleSha256.Value.GetString()
+    }
+    if ($declaredBundleDigest -cnotmatch '^[0-9a-f]{64}$' -or
+        $declaredBundleDigest -cmatch '^0{64}$') {
+        Add-Violation "$Description source_bundle_sha256 must be a nonzero lowercase SHA-256 digest."
+    }
+
+    $expectedSourceNames = [System.Collections.Generic.List[string]]::new()
+    $expectedSourceNames.Add('manifest.yml')
+    if ($ManifestValues.ContainsKey('evidence_files') -and
+        $ManifestValues['evidence_files'] -is [System.Collections.Generic.List[string]]) {
+        foreach ($evidenceFile in [System.Collections.Generic.List[string]]$ManifestValues['evidence_files']) {
+            if ($evidenceFile -cne 'review.json') {
+                $expectedSourceNames.Add($evidenceFile)
+            }
+        }
+    }
+    $expectedSourceNameArray = $expectedSourceNames.ToArray()
+    [Array]::Sort($expectedSourceNameArray, [StringComparer]::Ordinal)
+
+    $sourceFiles = Get-ReviewProperty 'source_files'
+    $sourceRecords = [System.Collections.Generic.List[object]]::new()
+    if ($null -ne $sourceFiles) {
+        if ($sourceFiles.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
+            Add-Violation "$Description source_files must be a JSON array."
+        }
+        else {
+            foreach ($sourceFile in $sourceFiles.Value.EnumerateArray()) {
+                if ($sourceFile.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+                    Add-Violation "$Description source_files items must be JSON objects."
+                    continue
+                }
+                $properties = @($sourceFile.EnumerateObject())
+                if ($properties.Count -ne 3 -or
+                    @($properties | Where-Object { $_.Name -cnotin @('name', 'sha256', 'size_bytes') }).Count -gt 0) {
+                    Add-Violation "$Description source_files items must contain only name, sha256, and size_bytes."
+                    continue
+                }
+
+                $nameProperties = @($properties | Where-Object { $_.Name -ceq 'name' })
+                $shaProperties = @($properties | Where-Object { $_.Name -ceq 'sha256' })
+                $sizeProperties = @($properties | Where-Object { $_.Name -ceq 'size_bytes' })
+                if ($nameProperties.Count -ne 1 -or
+                    $shaProperties.Count -ne 1 -or
+                    $sizeProperties.Count -ne 1 -or
+                    $nameProperties[0].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
+                    $shaProperties[0].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
+                    $sizeProperties[0].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Number) {
+                    Add-Violation "$Description source_files item types are invalid."
+                    continue
+                }
+
+                $name = $nameProperties[0].Value.GetString()
+                $sha256 = $shaProperties[0].Value.GetString()
+                $sizeBytes = [long]0
+                if (-not (Test-SafeEvidencePath -RelativePath $name -Description "$Description source file name") -or
+                    $name -ceq 'review.json' -or
+                    $sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                    $sha256 -cmatch '^0{64}$' -or
+                    -not $sizeProperties[0].Value.TryGetInt64([ref]$sizeBytes) -or
+                    $sizeBytes -lt 0) {
+                    Add-Violation "$Description source_files contains an invalid source record."
+                    continue
+                }
+                $sourceRecords.Add([pscustomobject]@{
+                    Name = $name
+                    Sha256 = $sha256
+                    SizeBytes = $sizeBytes
+                })
+            }
+        }
+    }
+
+    $actualSourceNames = @($sourceRecords | ForEach-Object { $_.Name })
+    if ($actualSourceNames.Count -ne $expectedSourceNameArray.Count) {
+        Add-Violation "$Description source_files must cover the source manifest and every original declared file exactly once."
+    }
+    else {
+        for ($index = 0; $index -lt $expectedSourceNameArray.Count; $index++) {
+            if ($actualSourceNames[$index] -cne $expectedSourceNameArray[$index]) {
+                Add-Violation "$Description source_files must be unique and sorted by ordinal name."
+                break
+            }
+        }
+    }
+
+    if ($sourceRecords.Count -gt 0 -and
+        -not [string]::IsNullOrWhiteSpace($ReviewPath)) {
+        $bundleDirectory = Split-Path -Parent $ReviewPath
+        foreach ($record in $sourceRecords) {
+            $candidates = @(Get-ReviewSourceCandidates `
+                -Name $record.Name `
+                -BundleDirectory $bundleDirectory `
+                -Description $Description)
+            if (@($candidates | Where-Object {
+                        $_.Sha256 -ceq $record.Sha256 -and
+                        $_.SizeBytes -eq $record.SizeBytes
+                    }).Count -ne 1) {
+                Add-Violation "$Description source_files does not bind the exact reviewed source bytes for $($record.Name)."
+            }
+        }
+    }
+
+    if ($sourceRecords.Count -gt 0) {
+        $canonicalRecords = [Text.StringBuilder]::new()
+        foreach ($record in $sourceRecords) {
+            $canonicalRecords.Append($record.Sha256) | Out-Null
+            $canonicalRecords.Append(' ') | Out-Null
+            $canonicalRecords.Append($record.SizeBytes.ToString(
+                [Globalization.CultureInfo]::InvariantCulture)) | Out-Null
+            $canonicalRecords.Append(' ') | Out-Null
+            $canonicalRecords.Append($record.Name) | Out-Null
+            $canonicalRecords.Append("`n") | Out-Null
+        }
+        $canonicalBytes = [System.Text.UTF8Encoding]::new($false).GetBytes(
+            $canonicalRecords.ToString())
+        $computedDigest = [Convert]::ToHexString(
+            [System.Security.Cryptography.SHA256]::HashData($canonicalBytes)).ToLowerInvariant()
+        if ($declaredBundleDigest -cne $computedDigest) {
+            Add-Violation "$Description source_bundle_sha256 does not match the canonical source_files digest."
+        }
+    }
+
+    $reviewScope = Get-ReviewProperty 'review_scope'
+    if ($null -ne $reviewScope) {
+        $scopeValues = if ($reviewScope.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) {
+            @($reviewScope.Value.EnumerateArray())
+        }
+        else {
+            @()
+        }
+        if ($scopeValues.Count -ne 2 -or
+            $scopeValues[0].ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
+            $scopeValues[0].GetString() -cne 'privacy-redaction' -or
+            $scopeValues[1].ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
+            $scopeValues[1].GetString() -cne 'bundle-integrity') {
+            Add-Violation "$Description review_scope must be exactly privacy-redaction followed by bundle-integrity."
         }
     }
 }
@@ -531,14 +1045,17 @@ function Test-EvidenceJson {
         [string]$Path,
         [string]$Description,
         [System.Collections.Generic.Dictionary[string, object]]$ManifestValues,
-        [switch]$Summary
+        [switch]$Summary,
+        [switch]$Review
     )
 
     $text = Get-StrictUtf8Text -Path $Path -MaximumBytes 1048576 -Description $Description
     if ($null -eq $text) {
         return
     }
-    Test-ForbiddenText -Text $text -Description $Description
+    if (-not $Review) {
+        Test-ForbiddenText -Text $text -Description $Description
+    }
 
     try {
         $document = [System.Text.Json.JsonDocument]::Parse($text)
@@ -547,11 +1064,20 @@ function Test-EvidenceJson {
                 Add-Violation "$Description must contain one JSON object."
                 return
             }
-            Test-JsonElement -Element $document.RootElement -Description $Description
+            if (-not $Review) {
+                Test-JsonElement -Element $document.RootElement -Description $Description
+            }
             if ($Summary) {
                 Test-SummaryContract `
                     -RootElement $document.RootElement `
                     -ManifestValues $ManifestValues `
+                    -Description $Description
+            }
+            if ($Review) {
+                Test-ReviewContract `
+                    -RootElement $document.RootElement `
+                    -ManifestValues $ManifestValues `
+                    -ReviewPath $Path `
                     -Description $Description
             }
         }
@@ -933,7 +1459,10 @@ function Test-LiveEvidenceManifest {
         Add-Violation "$Description expected_host_fingerprint must be a redacted contract value."
     }
 
-    if ($RequiredGateId -ceq 'SSH-LIVE-001') {
+    # The gate identifier defines its environment tuple even during whole-root
+    # repository scans.  RequiredGateId is only an additional caller binding;
+    # relying on it here would let a mislabeled SSH-LIVE-001 bundle pass CI.
+    if ($gateId -ceq 'SSH-LIVE-001') {
         if (-not $windowsBuildMatch.Success -or [int]$windowsBuildMatch.Groups[1].Value -lt 26100) {
             Add-Violation "$Description SSH-LIVE-001 requires Windows 11 24H2 build 26100 or newer."
         }
@@ -1000,6 +1529,12 @@ function Test-LiveEvidenceManifest {
     if (@($evidenceFiles | Where-Object { $_ -ceq 'summary.json' }).Count -ne 1) {
         Add-Violation "$Description evidence_files must contain summary.json exactly once."
     }
+    if ($redactionReviewed -ceq 'true') {
+        if (@($evidenceFiles | Where-Object { $_ -ceq 'review.json' }).Count -ne 1 -or
+            $evidenceFiles[$evidenceFiles.Count - 1] -cne 'review.json') {
+            Add-Violation "$Description reviewed evidence must declare review.json exactly once as its final evidence_files item."
+        }
+    }
 
     $bundleDirectory = (Get-Item -LiteralPath (Split-Path -Parent $Path) -Force).FullName
     $bundleItem = Get-Item -LiteralPath $bundleDirectory -Force
@@ -1057,7 +1592,8 @@ function Test-LiveEvidenceManifest {
                     -Path $fullPath `
                     -Description $pathDescription `
                     -ManifestValues $values `
-                    -Summary:($relativePath -ceq 'summary.json')
+                    -Summary:($relativePath -ceq 'summary.json') `
+                    -Review:($relativePath -ceq 'review.json')
             }
             '.txt' { Test-EvidenceText -Path $fullPath -Description $pathDescription }
             '.png' { Test-EvidencePng -Path $fullPath -Description $pathDescription }
@@ -1070,6 +1606,34 @@ function Test-LiveEvidenceManifest {
     }).Count -gt 0) {
         Add-Violation "$Description bundle contains a symbolic link or reparse-point directory."
         return
+    }
+    $expectedDirectories = [System.Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::Ordinal)
+    foreach ($declaredFile in $normalizedEvidenceFiles) {
+        $segments = @($declaredFile.Split('/'))
+        if ($segments.Count -le 1) {
+            continue
+        }
+        $relativeDirectory = [System.Collections.Generic.List[string]]::new()
+        for ($segmentIndex = 0; $segmentIndex -lt $segments.Count - 1; $segmentIndex++) {
+            $relativeDirectory.Add($segments[$segmentIndex])
+            $expectedDirectories.Add(($relativeDirectory -join '/')) | Out-Null
+        }
+    }
+    $actualDirectories = @(
+        $descendantDirectories | ForEach-Object {
+            [System.IO.Path]::GetRelativePath($bundleDirectory, $_.FullName).Replace('\', '/')
+        }
+    )
+    foreach ($actualDirectory in $actualDirectories) {
+        if (-not $expectedDirectories.Contains($actualDirectory)) {
+            Add-Violation "$Description bundle contains an undeclared or empty directory."
+        }
+    }
+    foreach ($expectedDirectory in $expectedDirectories) {
+        if ($expectedDirectory -cnotin $actualDirectories) {
+            Add-Violation "$Description evidence_files references a missing directory."
+        }
     }
     $actualFiles = @(
         Get-ChildItem -LiteralPath $bundleDirectory -File -Recurse -Force |
@@ -1123,30 +1687,95 @@ else {
         if (Test-DirectoryAncestorsArePhysical `
             -DirectoryPath $resolvedRoot `
             -Description 'Live-evidence root') {
-            $rootDirectories = @(Get-ChildItem -LiteralPath $resolvedRoot -Directory -Recurse -Force)
-            if (@($rootDirectories | Where-Object {
+            $rootItems = @(Get-ChildItem -LiteralPath $resolvedRoot -Recurse -Force)
+            if (@($rootItems | Where-Object {
                 ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
             }).Count -gt 0) {
-                Add-Violation 'Live-evidence root contains a symbolic link or reparse-point directory.'
+                Add-Violation 'Live-evidence root contains a symbolic link or reparse point.'
             }
             else {
-                $manifests = @(
-                    Get-ChildItem -LiteralPath $resolvedRoot -File -Recurse -Force |
-                        Where-Object { $_.Name -ieq 'manifest.yml' } |
-                        Sort-Object FullName
-                )
-                foreach ($manifest in $manifests) {
-                    $relativeManifest = [System.IO.Path]::GetRelativePath(
-                        $resolvedRoot,
-                        $manifest.FullName).Replace('\', '/')
-                    if ($relativeManifest -cnotmatch '^alpha[0-9]+/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,63}/manifest\.yml$') {
-                        Add-Violation 'A live-evidence manifest is outside docs/evidence/alpha*/<slice>/<bundle>/manifest.yml.'
+                $rootChildren = @(Get-ChildItem -LiteralPath $resolvedRoot -Force)
+                $schemaFiles = @($rootChildren | Where-Object {
+                    -not $_.PSIsContainer -and $_.Name -ceq 'EVIDENCE_SCHEMA.md'
+                })
+                if ($schemaFiles.Count -ne 1) {
+                    Add-Violation 'Live-evidence root must contain exactly one EVIDENCE_SCHEMA.md file.'
+                }
+
+                foreach ($rootChild in $rootChildren) {
+                    if (-not $rootChild.PSIsContainer) {
+                        if ($rootChild.Name -cne 'EVIDENCE_SCHEMA.md') {
+                            Add-Violation 'Live-evidence root contains a file outside the exact allowlist.'
+                        }
                         continue
                     }
-                    Test-LiveEvidenceManifest `
-                        -Path $manifest.FullName `
-                        -Description "live-evidence manifest $relativeManifest"
-                    $validatedCount++
+
+                    $releaseDirectoryName = $rootChild.Name
+                    if (-not $approvedEvidenceScopes.ContainsKey($releaseDirectoryName)) {
+                        Add-Violation 'Live-evidence root contains an unapproved or non-canonical release directory.'
+                        continue
+                    }
+
+                    $releaseChildren = @(Get-ChildItem -LiteralPath $rootChild.FullName -Force)
+                    $releaseReadmes = @($releaseChildren | Where-Object {
+                        -not $_.PSIsContainer -and $_.Name -ceq 'README.md'
+                    })
+                    if ($releaseReadmes.Count -ne 1) {
+                        Add-Violation "Live-evidence release directory $releaseDirectoryName must contain exactly one README.md file."
+                    }
+
+                    foreach ($releaseChild in $releaseChildren) {
+                        if (-not $releaseChild.PSIsContainer) {
+                            if ($releaseChild.Name -cne 'README.md') {
+                                Add-Violation "Live-evidence release directory $releaseDirectoryName contains a file outside the exact allowlist."
+                            }
+                            continue
+                        }
+
+                        $scopeName = $releaseChild.Name
+                        if ($scopeName -cnotin $approvedEvidenceScopes[$releaseDirectoryName]) {
+                            Add-Violation "Live-evidence release directory $releaseDirectoryName contains an unapproved or non-canonical scope directory."
+                            continue
+                        }
+
+                        $scopeChildren = @(Get-ChildItem -LiteralPath $releaseChild.FullName -Force)
+                        $scopeReadmes = @($scopeChildren | Where-Object {
+                            -not $_.PSIsContainer -and $_.Name -ceq 'README.md'
+                        })
+                        if ($scopeReadmes.Count -ne 1) {
+                            Add-Violation "Live-evidence scope $releaseDirectoryName/$scopeName must contain exactly one README.md file."
+                        }
+
+                        foreach ($scopeChild in $scopeChildren) {
+                            if (-not $scopeChild.PSIsContainer) {
+                                if ($scopeChild.Name -cne 'README.md') {
+                                    Add-Violation "Live-evidence scope $releaseDirectoryName/$scopeName contains a file outside the exact allowlist."
+                                }
+                                continue
+                            }
+
+                            $bundleName = $scopeChild.Name
+                            if ($bundleName -cnotmatch '^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$') {
+                                Add-Violation "Live-evidence scope $releaseDirectoryName/$scopeName contains a non-canonical bundle directory."
+                                continue
+                            }
+
+                            $bundleChildren = @(Get-ChildItem -LiteralPath $scopeChild.FullName -Force)
+                            $manifests = @($bundleChildren | Where-Object {
+                                -not $_.PSIsContainer -and $_.Name -ceq 'manifest.yml'
+                            })
+                            if ($manifests.Count -ne 1) {
+                                Add-Violation "Live-evidence bundle $releaseDirectoryName/$scopeName/$bundleName must contain exactly one manifest.yml file."
+                                continue
+                            }
+
+                            $relativeManifest = "$releaseDirectoryName/$scopeName/$bundleName/manifest.yml"
+                            Test-LiveEvidenceManifest `
+                                -Path $manifests[0].FullName `
+                                -Description "live-evidence manifest $relativeManifest"
+                            $validatedCount++
+                        }
+                    }
                 }
             }
         }

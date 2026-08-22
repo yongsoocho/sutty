@@ -30,6 +30,94 @@ env:
   ContinuousIntegrationBuild: true
 
 jobs:
+  governance:
+    name: Governance guards
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test product-scope guard
+        shell: pwsh
+        run: .\tests\product-scope\Assert-ProductScope.Tests.ps1
+
+      - name: Enforce product scope
+        shell: pwsh
+        run: .\.github\scripts\Assert-ProductScope.ps1
+
+      - name: Test release-metadata and pipeline guards
+        shell: pwsh
+        run: .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
+
+      - name: Test Alpha candidate manifest guard
+        shell: pwsh
+        run: .\tests\release-candidate\Assert-AlphaCandidate.Tests.ps1
+
+      - name: Test live-evidence guard
+        shell: pwsh
+        run: .\tests\live-evidence\Assert-LiveEvidence.Tests.ps1
+
+      - name: Test post-review evidence promotion
+        shell: pwsh
+        run: .\tests\live-evidence-review\Review-LiveEvidence.Tests.ps1
+
+      - name: Enforce committed live-evidence records
+        shell: pwsh
+        run: .\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
+
+      - name: Test append-only evidence-history guard
+        shell: pwsh
+        run: .\tests\evidence-history\Assert-EvidenceHistory.Tests.ps1
+
+      - name: Test release-attestation guard
+        shell: pwsh
+        run: .\tests\release-attestation\Assert-ReleaseAttestation.Tests.ps1
+
+      - name: Test repository-governance guard
+        shell: pwsh
+        run: .\tests\repository-governance\Assert-RepositoryGovernance.Tests.ps1
+
+      - name: Enforce append-only evidence history
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          $head = $env:HEAD_SHA
+          if ($head -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'GitHub did not supply an exact lowercase head commit.'
+          }
+
+          switch ($env:EVENT_NAME) {
+            'pull_request' {
+              $base = $env:EVENT_BASE_SHA
+            }
+            'push' {
+              $base = $env:EVENT_BEFORE_SHA
+            }
+            'workflow_dispatch' {
+              $parentLine = @(& git rev-list --parents -n 1 $head)
+              if ($LASTEXITCODE -ne 0 -or $parentLine.Count -ne 1) {
+                throw 'Could not resolve the manually dispatched commit parent.'
+              }
+              $commits = @($parentLine[0].Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+              $base = if ($commits.Count -eq 1) { '0' * 40 } else { $commits[1] }
+            }
+            default {
+              throw "Unsupported CI event for evidence-history validation: $($env:EVENT_NAME)"
+            }
+          }
+
+          if ($base -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'CI did not supply an exact lowercase base commit or the all-zero first-push sentinel.'
+          }
+          .\.github\scripts\Assert-EvidenceHistory.ps1 `
+            -BaseCommit $base `
+            -HeadCommit $head
+
   x64:
     name: x64 ${{ matrix.configuration }}
     runs-on: windows-latest
@@ -39,36 +127,6 @@ jobs:
         configuration: [Debug, Release]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Test product-scope guard
-        if: matrix.configuration == 'Debug'
-        shell: pwsh
-        run: .\tests\product-scope\Assert-ProductScope.Tests.ps1
-
-      - name: Test release-metadata guard
-        if: matrix.configuration == 'Debug'
-        shell: pwsh
-        run: .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
-
-      - name: Test Alpha candidate manifest guard
-        if: matrix.configuration == 'Debug'
-        shell: pwsh
-        run: .\tests\release-candidate\Assert-AlphaCandidate.Tests.ps1
-
-      - name: Test live-evidence guard
-        if: matrix.configuration == 'Debug'
-        shell: pwsh
-        run: .\tests\live-evidence\Assert-LiveEvidence.Tests.ps1
-
-      - name: Enforce committed live-evidence records
-        if: matrix.configuration == 'Debug'
-        shell: pwsh
-        run: .\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
-
-      - name: Enforce product scope
-        if: matrix.configuration == 'Debug'
-        shell: pwsh
-        run: .\.github\scripts\Assert-ProductScope.ps1
 
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v4

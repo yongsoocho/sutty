@@ -27,7 +27,15 @@ Build one reviewable vertical slice in this order:
 ```powershell
 .\tests\product-scope\Assert-ProductScope.Tests.ps1
 .\tests\release-metadata\Assert-ReleaseMetadata.Tests.ps1
+.\tests\release-candidate\Assert-AlphaCandidate.Tests.ps1
+.\tests\live-evidence\Assert-LiveEvidence.Tests.ps1
+.\tests\live-evidence-review\Review-LiveEvidence.Tests.ps1
+.\tests\evidence-history\Assert-EvidenceHistory.Tests.ps1
+.\tests\release-attestation\Assert-ReleaseAttestation.Tests.ps1
+.\tests\repository-governance\Assert-RepositoryGovernance.Tests.ps1
 .\.github\scripts\Assert-ProductScope.ps1
+.\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
+.\.github\scripts\Assert-EvidenceHistory.ps1 -RepositoryRoot . -BaseCommit HEAD -WorkingTree
 dotnet restore .\sutty.slnx --locked-mode -p:Platform=x64
 dotnet build .\sutty.slnx -c Debug --no-restore -p:Platform=x64
 dotnet run --project .\tests\sutty.Core.Security.SelfTest\sutty.Core.Security.SelfTest.csproj -c Debug --no-build
