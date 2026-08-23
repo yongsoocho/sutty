@@ -5,6 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:h="using:sutty.UI.Helpers"
+    xmlns:local="using:sutty.UI.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Unloaded="SettingsPanel_Unloaded">
@@ -62,6 +63,16 @@
                 <NavigationViewItem Content="{x:Bind h:Loc.T('연결', 'Connection')}" FontSize="12.5" Tag="Connection">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE968;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="{x:Bind h:Loc.T('보안', 'Security')}" FontSize="12.5" Tag="Security">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE72E;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="{x:Bind h:Loc.T('지원', 'Support')}" FontSize="12.5" Tag="Support">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE897;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="{x:Bind h:Loc.T('창', 'Window')}" FontSize="12.5" Tag="Window">
@@ -408,6 +419,20 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                    </StackPanel>
+
+                    <!--  ── Security / Known Hosts ──  -->
+                    <StackPanel
+                        x:Name="SecurityPane"
+                        Visibility="Collapsed">
+                        <local:KnownHostsManagerPanel x:Name="KnownHostsPanel" />
+                    </StackPanel>
+
+                    <!--  ── Privacy-safe product Support Bundle ──  -->
+                    <StackPanel
+                        x:Name="SupportPane"
+                        Visibility="Collapsed">
+                        <local:SupportBundlePanel x:Name="SupportBundlePanel" />
                     </StackPanel>
 
                     <!--  ── Window ──  -->

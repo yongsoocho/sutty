@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="sutty.UI.Views.SupportBundlePanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:h="using:sutty.UI.Helpers">
+
+    <StackPanel Spacing="12">
+        <StackPanel Spacing="3">
+            <TextBlock
+                FontSize="15"
+                FontWeight="SemiBold"
+                Foreground="{ThemeResource TextPrimary}"
+                Text="{x:Bind h:Loc.T('지원 번들', 'Support bundle')}" />
+            <TextBlock
+                FontSize="10.5"
+                Foreground="{ThemeResource TextMuted}"
+                Text="{x:Bind h:Loc.T('선택했거나 가장 최근인 SSH 연결 시도의 비식별 진단 정보만 ZIP으로 저장합니다.', 'Save only de-identified diagnostics for the selected or most recent SSH connection attempt as a ZIP.')}"
+                TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Border
+            Padding="12"
+            Background="{ThemeResource CardBg}"
+            BorderBrush="{ThemeResource CardBorder}"
+            BorderThickness="1"
+            CornerRadius="8">
+            <StackPanel Spacing="8">
+                <TextBlock
+                    CharacterSpacing="55"
+                    FontSize="10.5"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource AccentTeal}"
+                    Text="{x:Bind h:Loc.T('포함', 'INCLUDED')}" />
+                <TextBlock
+                    FontSize="10.5"
+                    Foreground="{ThemeResource TextPrimary}"
+                    Text="{x:Bind h:Loc.T('앱 버전·Commit, Windows Build, Process Architecture, Route·인증 형식, 안정적 Error Code, Correlation ID, 설정 Schema Version, 최근 구조화 단계 이벤트', 'App version and commit, Windows build, process architecture, route and authentication types, stable error code, correlation ID, settings schema version, and recent structured stage events')}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <Border
+            Padding="12"
+            Background="{ThemeResource CardBg}"
+            BorderBrush="{ThemeResource CardBorder}"
+            BorderThickness="1"
+            CornerRadius="8">
+            <StackPanel Spacing="8">
+                <TextBlock
+                    CharacterSpacing="55"
+                    FontSize="10.5"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource StatusAmber}"
+                    Text="{x:Bind h:Loc.T('제외', 'EXCLUDED')}" />
+                <TextBlock
+                    FontSize="10.5"
+                    Foreground="{ThemeResource TextMuted}"
+                    Text="{x:Bind h:Loc.T('Password·OTP·Private Key, Hostname·IP, Username, Host Key Fingerprint, 파일 경로·내용, Terminal Transcript, Command·Output, 원시 로그', 'Passwords, OTPs, private keys, hostnames, IP addresses, usernames, host-key fingerprints, file paths or contents, terminal transcripts, commands or output, and raw logs')}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <Button
+            x:Name="CreateBundleButton"
+            Height="38"
+            HorizontalAlignment="Stretch"
+            AutomationProperties.Name="{x:Bind h:Loc.T('비식별 지원 번들 저장', 'Save de-identified support bundle')}"
+            Background="{ThemeResource AccentGradient}"
+            BorderThickness="0"
+            Click="CreateBundleButton_Click"
+            Content="{x:Bind h:Loc.T('지원 번들 저장…', 'Save support bundle…')}"
+            CornerRadius="8"
+            FontWeight="SemiBold"
+            Foreground="#FFFFFF" />
+
+        <TextBlock
+            x:Name="StatusText"
+            AutomationProperties.LiveSetting="Polite"
+            FontSize="10.5"
+            Foreground="{ThemeResource TextMuted}"
+            TextAlignment="Center"
+            TextWrapping="Wrap"
+            Visibility="Collapsed" />
+    </StackPanel>
+</UserControl>

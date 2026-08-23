@@ -15,6 +15,36 @@
         x:Name="Root"
         Background="{ThemeResource AppBg}"
         PreviewKeyDown="Root_PreviewKeyDown">
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator
+                Key="Number1"
+                Modifiers="Menu"
+                Invoked="NavigationKeyboardAccelerator_Invoked" />
+            <KeyboardAccelerator
+                Key="Number2"
+                Modifiers="Menu"
+                Invoked="NavigationKeyboardAccelerator_Invoked" />
+            <KeyboardAccelerator
+                Key="Number3"
+                Modifiers="Menu"
+                Invoked="NavigationKeyboardAccelerator_Invoked" />
+            <KeyboardAccelerator
+                Key="Number4"
+                Modifiers="Menu"
+                Invoked="NavigationKeyboardAccelerator_Invoked" />
+            <KeyboardAccelerator
+                Key="Number5"
+                Modifiers="Menu"
+                Invoked="NavigationKeyboardAccelerator_Invoked" />
+            <KeyboardAccelerator
+                Key="Number6"
+                Modifiers="Menu"
+                Invoked="NavigationKeyboardAccelerator_Invoked" />
+            <KeyboardAccelerator
+                Key="Number7"
+                Modifiers="Menu"
+                Invoked="NavigationKeyboardAccelerator_Invoked" />
+        </Grid.KeyboardAccelerators>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />

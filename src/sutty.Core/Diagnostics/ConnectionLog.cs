@@ -59,22 +59,22 @@ public static class ConnectionLogStore
         string messageEn,
         string? detail = null)
     {
-        var entry = new ConnectionLogEntry(
-            Interlocked.Increment(ref _nextSequence),
-            DateTimeOffset.UtcNow,
-            sessionId,
-            ConnectionLogSanitizer.Clean(sessionTitle, 256),
-            ConnectionLogSanitizer.Clean(endpoint, 512),
-            severity,
-            ConnectionLogSanitizer.Clean(category, 256),
-            ConnectionLogSanitizer.Clean(messageKo, 16_384),
-            ConnectionLogSanitizer.Clean(messageEn, 16_384),
-            string.IsNullOrWhiteSpace(detail)
-                ? null
-                : ConnectionLogSanitizer.Clean(detail, 65_536));
-
+        ConnectionLogEntry entry;
         lock (Gate)
         {
+            entry = new ConnectionLogEntry(
+                ++_nextSequence,
+                DateTimeOffset.UtcNow,
+                sessionId,
+                ConnectionLogSanitizer.Clean(sessionTitle, 256),
+                ConnectionLogSanitizer.Clean(endpoint, 512),
+                severity,
+                ConnectionLogSanitizer.Clean(category, 256),
+                ConnectionLogSanitizer.Clean(messageKo, 16_384),
+                ConnectionLogSanitizer.Clean(messageEn, 16_384),
+                string.IsNullOrWhiteSpace(detail)
+                    ? null
+                    : ConnectionLogSanitizer.Clean(detail, 65_536));
             Entries.AddLast(entry);
             while (Entries.Count > MaxEntries)
                 Entries.RemoveFirst();

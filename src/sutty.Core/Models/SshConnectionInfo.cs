@@ -82,10 +82,20 @@ public sealed class SshConnectionInfo
     /// Called only when the server presents an unknown public host key. The first
     /// handshake is rejected before this callback runs; a positive decision causes
     /// the session to create a fresh SSH client and retry. Changed keys never reach
-    /// this callback and are always rejected.
+    /// this callback; they require the separate deliberate-rotation callback below.
     /// </summary>
     public Func<HostKeyVerification, CancellationToken, Task<HostKeyDecision>>?
         HostKeyPromptAsync
+    { get; set; }
+
+    /// <summary>
+    /// Called after a persisted endpoint presents a different public host key. The
+    /// first handshake remains rejected. A deliberate confirmation with a non-empty
+    /// reason can atomically rotate the exact old key and retry with a fresh client;
+    /// no callback or cancellation leaves fail-closed behaviour unchanged.
+    /// </summary>
+    public Func<HostKeyVerification, CancellationToken, Task<HostKeyRotationDecision>>?
+        HostKeyRotationPromptAsync
     { get; set; }
 
     /// <summary>

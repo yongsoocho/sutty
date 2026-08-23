@@ -150,9 +150,9 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 | ID | Priority | Status | Evidence and remaining gap / 증거와 남은 차이 |
 | --- | --- | --- | --- |
 | SEC-HK-001 | P0 | Implemented | Unknown keys default to rejection and expose full endpoint, algorithm, SHA-256 fingerprint, Trust and save, Connect once, and Cancel.<br>알 수 없는 키는 기본 거부하며 전체 endpoint·algorithm·SHA-256 지문과 신뢰하고 저장·이번만 연결·취소를 제공합니다. |
-| SEC-HK-002 | P0 | Implemented | Changed keys are blocked; the error retains trusted and presented algorithms/fingerprints and cannot be overridden by Trust once.<br>변경 키는 차단하며 오류에 기존·제시 algorithm/fingerprint가 있고 이번만 연결로 우회할 수 없습니다. |
+| SEC-HK-002 | P0 | Implemented | Changed keys fail closed and cannot be overridden by Trust once. A separate default-cancel rotation prompt shows the exact old/new algorithms and fingerprints and requires both independent-verification confirmation and a reason before an atomic compare-and-swap replacement.<br>변경 키는 기본 차단하며 이번만 연결로 우회할 수 없습니다. 별도의 기본 취소 rotation 창에서 정확한 기존·새 algorithm/fingerprint를 보여주고, 독립 확인 checkbox와 사유가 모두 있어야 원자적 compare-and-swap 교체를 허용합니다. |
 | SEC-HK-003 | P1 | Planned | A saved-host strict-trust option cannot yet disable Connect once for that host.<br>저장 Host별 엄격 신뢰 옵션으로 해당 Host의 이번만 연결을 비활성화할 수 없습니다. |
-| SEC-HK-004 | P1 | Planned | Known-host management, rotation workflow, and local security activity records are unavailable.<br>Known-host 관리·rotation 흐름·로컬 보안 활동 기록이 없습니다. |
+| SEC-HK-004 | P1 | Implemented | Settings exposes host/port, algorithm, full SHA-256 fingerprint, first-trusted and last-used times, refresh, and default-cancel compare-and-swap deletion. The v2 store migrates v1 safely and keeps bounded local trust/rotation/removal activity; real changed-key acceptance remains pending.<br>설정에서 Host·Port, algorithm, 전체 SHA-256 fingerprint, 최초 신뢰·마지막 사용 시각, 새로고침, 기본 취소 compare-and-swap 삭제를 제공합니다. v2 저장소는 v1을 안전하게 마이그레이션하고 제한된 로컬 신뢰·rotation·삭제 활동을 유지하며 실제 변경-key 인수는 남아 있습니다. |
 
 ## Support and evidence governance / 지원·증거 거버넌스
 
@@ -173,7 +173,7 @@ The package-local renderer is integrated, but GA requires the remaining compatib
 | NFR-006 | Availability / 가용성 | Partial | SSH/Terminal/SFTP states and failures are isolated; systematic network fault injection is missing.<br>SSH·Terminal·SFTP 상태와 실패는 분리되지만 체계적 network fault injection이 없습니다. |
 | NFR-007 | Accessibility / 접근성 | Partial | Basic WinUI accessibility exists; the required checklist and automation do not.<br>기본 WinUI 접근성은 있지만 필수 checklist와 자동화가 없습니다. |
 | NFR-008 | Localization / 지역화 | Partial | Korean/English localization infrastructure exists; hardcoded user-visible strings and complete language coverage still need review.<br>한국어/영어 지역화 구조는 있지만 사용자 표시 hardcoded 문자열과 완전한 언어 적용 범위를 점검해야 합니다. |
-| NFR-009 | Supportability / 지원성 | Partial | Bounded in-memory connection diagnostics, structured severities, and per-session correlation metadata exist. A user-created redacted support bundle with a reviewed inclusion manifest is unavailable.<br>제한된 메모리 연결 진단, 구조화 severity, 세션별 correlation metadata가 있습니다. 검토된 포함 manifest를 사용하는 사용자 생성형 redacted support bundle은 아직 없습니다. |
+| NFR-009 | Supportability / 지원성 | Partial | Connection Doctor classifies nine stages with stable codes, user actions, safe copy summaries, and correlation-scoped structured events. A user-created ZIP contains only the reviewed manifest/report allowlist and excludes endpoints, users, paths, fingerprints, transcripts, commands, output, secrets, and raw logs; real support workflow and accessibility acceptance remain.<br>Connection Doctor는 9단계를 안정적 code·사용자 조치·안전한 복사 요약·correlation별 구조화 event로 분류합니다. 사용자가 만드는 ZIP은 검토된 manifest/report allowlist만 포함하고 endpoint·사용자·경로·fingerprint·transcript·command·output·secret·raw log를 제외하며 실제 지원 흐름과 접근성 인수는 남아 있습니다. |
 | NFR-010 | Compatibility / 호환성 | Partial | The project targets Windows 11 24H2+ x64/ARM64; locked restore, build, publish, and package paths cover both architectures, while real-VM support evidence is not complete.<br>프로젝트는 Windows 11 24H2+ x64/ARM64를 대상으로 하고 두 아키텍처의 잠금 복원·빌드·게시·패키징 경로가 있지만 실제 VM 지원 증거는 완성되지 않았습니다. |
 
 ## Scope decisions / 범위 결정

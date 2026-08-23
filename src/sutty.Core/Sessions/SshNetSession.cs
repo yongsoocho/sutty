@@ -48,9 +48,11 @@ public sealed partial class SshNetSession : ISshSession
     public ConnectionCorrelationContext CorrelationContext { get; }
     public SshNegotiatedConnectionInfo? NegotiatedInfo => Volatile.Read(ref _negotiatedInfo);
     public string? LastError { get; private set; }
+    public ConnectionDiagnosticResult? LastDiagnostic { get; private set; }
     public ISftpService Sftp => _sftpService;
     public SftpConnectionState SftpState { get; private set; } = SftpConnectionState.NotConnected;
     public string? LastSftpError { get; private set; }
+    public ConnectionDiagnosticResult? LastSftpDiagnostic { get; private set; }
     public TerminalState TerminalState { get; private set; } = TerminalState.Closed;
     public string? LastTerminalError { get; private set; }
 
@@ -64,6 +66,7 @@ public sealed partial class SshNetSession : ISshSession
 
     public SshNetSession(SshConnectionInfo info)
     {
+        SshConnectionPreflightValidator.Validate(info);
         Info = info;
         _password = info.Password;
         _passphrase = info.Passphrase;
@@ -93,7 +96,14 @@ public sealed partial class SshNetSession : ISshSession
             ClearNegotiatedInfo();
             LastError = null;
             LastSftpError = null;
+            LastDiagnostic = null;
+            LastSftpDiagnostic = null;
             var connectionStarted = Stopwatch.GetTimestamp();
+            RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                ConnectionDiagnosticStage.InputValidation));
+            RecordDiagnostic(_route.Type == ConnectionRouteType.Direct
+                ? ConnectionDiagnosticResult.Skipped(ConnectionDiagnosticStage.ProxyOrJumpRoute)
+                : ConnectionDiagnosticResult.Running(ConnectionDiagnosticStage.ProxyOrJumpRoute));
             Log(
                 ConnectionLogSeverity.Information,
                 "SSH",
@@ -111,28 +121,91 @@ public sealed partial class SshNetSession : ISshSession
             _activeTrustContext = trustContext;
             SetSftpState(SftpConnectionState.NotConnected);
             SetState(SessionState.Connecting);
+            var currentStage = _route.Type == ConnectionRouteType.Direct
+                ? ConnectionDiagnosticStage.SshHandshake
+                : ConnectionDiagnosticStage.ProxyOrJumpRoute;
+            var targetConnectionAttemptStarted = false;
             try
             {
                 await PrepareConnectionRouteAsync(trustContext, ct);
-                var connected = await ConnectSshClientAsync(trustContext, ct);
+                // For SSH jump routes, PrepareConnectionRouteAsync connects and verifies
+                // the jump host and starts its local forward. Failures before this point
+                // belong to the route itself, even when their actionable classification
+                // is HostKey. Only failures after this boundary are target-side failures.
+                targetConnectionAttemptStarted = true;
+                currentStage = ConnectionDiagnosticStage.SshHandshake;
+                var connected = await ConnectSshClientAsync(
+                    trustContext,
+                    ct,
+                    stage => currentStage = stage);
                 PublishPrimaryTransport(connected.Client, connected.NegotiatedInfo);
-                StartConfiguredForwardings(connected.Client);
+                RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                    ConnectionDiagnosticStage.DnsAndTcp));
+                if (_route.Type != ConnectionRouteType.Direct)
+                {
+                    RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                        ConnectionDiagnosticStage.ProxyOrJumpRoute));
+                }
+                RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                    ConnectionDiagnosticStage.SshHandshake));
+                RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                    ConnectionDiagnosticStage.HostKey));
+                RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                    ConnectionDiagnosticStage.Authentication));
+
+                currentStage = ConnectionDiagnosticStage.PortForwarding;
+                if (Info.PortForwardings.Count == 0)
+                {
+                    RecordDiagnostic(ConnectionDiagnosticResult.Skipped(
+                        ConnectionDiagnosticStage.PortForwarding));
+                }
+                else
+                {
+                    BeginPortForwardingDiagnostics();
+                    StartConfiguredForwardings(connected.Client);
+                    RecordPortForwardingStarted();
+                }
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (Exception error) when (IsKeyboardInteractiveAuthenticationCancellation(error))
             {
-                Log(
-                    ConnectionLogSeverity.Warning,
-                    "SSH",
-                    "SSH 연결 시도가 취소되었습니다.",
-                    "The SSH connection attempt was cancelled.");
-                await CleanUpAsync();
-                SetSftpState(SftpConnectionState.NotConnected);
-                SetState(SessionState.Disconnected);
+                await CompleteCancelledConnectionAttemptAsync(
+                    error,
+                    targetConnectionAttemptStarted
+                        ? ConnectionDiagnosticStage.Authentication
+                        : currentStage,
+                    connectionStarted,
+                    targetConnectionAttemptStarted);
+                // SSH.NET may wrap exceptions raised by AuthenticationPrompt. Always
+                // surface a cancellation to the UI so history cannot relabel a dialog
+                // dismissal as a failed connection.
+                throw new OperationCanceledException(
+                    "Keyboard-interactive authentication was cancelled.",
+                    error,
+                    ct);
+            }
+            catch (OperationCanceledException error) when (ct.IsCancellationRequested)
+            {
+                await CompleteCancelledConnectionAttemptAsync(
+                    error,
+                    currentStage,
+                    connectionStarted,
+                    targetConnectionAttemptStarted);
                 throw;
             }
             catch (Exception ex)
             {
                 LastError = ex.Message;
+                LastDiagnostic = ConnectionExceptionClassifier.Classify(
+                    ex,
+                    currentStage,
+                    _route.Type);
+                RecordCompletedConnectionStagesBefore(
+                    LastDiagnostic,
+                    ex,
+                    targetConnectionAttemptStarted);
+                RecordDiagnostic(
+                    LastDiagnostic,
+                    Stopwatch.GetElapsedTime(connectionStarted));
                 LogFailure("SSH", ex, ConnectionLogSeverity.Error);
                 await CleanUpAsync();
                 SetSftpState(SftpConnectionState.NotConnected);
@@ -152,21 +225,31 @@ public sealed partial class SshNetSession : ISshSession
 
             try
             {
+                RecordDiagnostic(ConnectionDiagnosticResult.Running(
+                    ConnectionDiagnosticStage.SftpSubsystem));
                 Log(
                     ConnectionLogSeverity.Verbose,
                     "SFTP",
                     "SFTP subsystem 연결을 시작합니다.",
                     "Starting SFTP subsystem connection.");
                 _sftpClient = await ConnectSftpClientAsync(trustContext, ct);
+                LastSftpDiagnostic = null;
                 SetSftpState(SftpConnectionState.Ready);
+                RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                    ConnectionDiagnosticStage.SftpSubsystem));
                 Log(
                     ConnectionLogSeverity.Information,
                     "SFTP",
                     "SFTP subsystem을 사용할 수 있습니다.",
                     "SFTP subsystem is ready.");
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException error) when (ct.IsCancellationRequested)
             {
+                LastSftpDiagnostic = ConnectionExceptionClassifier.Classify(
+                    error,
+                    ConnectionDiagnosticStage.SftpSubsystem,
+                    _route.Type);
+                RecordSftpDiagnostic(LastSftpDiagnostic);
                 Log(
                     ConnectionLogSeverity.Warning,
                     "SFTP",
@@ -180,6 +263,11 @@ public sealed partial class SshNetSession : ISshSession
             catch (Exception ex)
             {
                 LastSftpError = ex.Message;
+                LastSftpDiagnostic = ConnectionExceptionClassifier.Classify(
+                    ex,
+                    ConnectionDiagnosticStage.SftpSubsystem,
+                    _route.Type);
+                RecordSftpDiagnostic(LastSftpDiagnostic);
                 LogFailure("SFTP", ex, ConnectionLogSeverity.Warning);
                 await CleanUpSftpAsync();
                 SetSftpState(SftpConnectionState.Unavailable);
@@ -242,6 +330,8 @@ public sealed partial class SshNetSession : ISshSession
 
             LastTerminalError = null;
             SetTerminalState(TerminalState.Opening);
+            RecordDiagnostic(ConnectionDiagnosticResult.Running(
+                ConnectionDiagnosticStage.Pty));
             var requested = size.Clamp();
             ShellStream? stream = null;
 
@@ -276,11 +366,20 @@ public sealed partial class SshNetSession : ISshSession
                 // Output can arrive between channel creation and event subscription.
                 // Drain the ShellStream buffer once so that startup prompts are not lost.
                 DrainTerminalOutput(stream);
+                if (LastDiagnostic?.Stage == ConnectionDiagnosticStage.Pty)
+                    LastDiagnostic = null;
+                RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                    ConnectionDiagnosticStage.Pty));
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException error) when (ct.IsCancellationRequested)
             {
                 DisposeTerminalCandidate(stream);
                 SetTerminalState(TerminalState.Closed);
+                LastDiagnostic = ConnectionExceptionClassifier.Classify(
+                    error,
+                    ConnectionDiagnosticStage.Pty,
+                    _route.Type);
+                RecordDiagnostic(LastDiagnostic);
                 throw;
             }
             catch (Exception ex)
@@ -288,6 +387,11 @@ public sealed partial class SshNetSession : ISshSession
                 DisposeTerminalCandidate(stream);
                 LastTerminalError = ex.Message;
                 SetTerminalState(TerminalState.Failed);
+                LastDiagnostic = ConnectionExceptionClassifier.Classify(
+                    ex,
+                    ConnectionDiagnosticStage.Pty,
+                    _route.Type);
+                RecordDiagnostic(LastDiagnostic);
             }
         }
         finally
@@ -667,6 +771,14 @@ public sealed partial class SshNetSession : ISshSession
         }
 
         try { lifetime?.Cancel(); } catch (ObjectDisposedException) { }
+        if (error is not null)
+        {
+            LastDiagnostic = ConnectionExceptionClassifier.Classify(
+                error,
+                ConnectionDiagnosticStage.Pty,
+                _route.Type);
+            RecordDiagnostic(LastDiagnostic);
+        }
         if (closeStream)
         {
             try { stream.Close(); } catch { /* failed transport is already closing */ }
@@ -678,13 +790,16 @@ public sealed partial class SshNetSession : ISshSession
     private async Task<(SshClient Client, SshNegotiatedConnectionInfo NegotiatedInfo)>
         ConnectSshClientAsync(
         HostKeyTrustContext trustContext,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<ConnectionDiagnosticStage>? stageChanged = null)
     {
         var mayPrompt = true;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
+            stageChanged?.Invoke(ConnectionDiagnosticStage.Authentication);
             var client = new SshClient(BuildConnectionInfo(ct));
+            stageChanged?.Invoke(ConnectionDiagnosticStage.SshHandshake);
             if (Info.KeepAliveSeconds > 0)
                 client.KeepAliveInterval = TimeSpan.FromSeconds(Info.KeepAliveSeconds);
             var verifier = new SshNetHostKeyVerifier(_hostEndpoint, trustContext);
@@ -695,6 +810,7 @@ public sealed partial class SshNetSession : ISshSession
                 using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
                 await Task.Run(() => client.ConnectAsync(ct), ct).ConfigureAwait(false);
                 var negotiatedInfo = CaptureNegotiatedInfo(client, verifier);
+                TryMarkHostKeyUsed(verifier, _hostEndpoint);
                 client.ErrorOccurred += PrimarySsh_ErrorOccurred;
                 if (!client.IsConnected)
                     throw new InvalidOperationException(
@@ -811,6 +927,11 @@ public sealed partial class SshNetSession : ISshSession
             }
 
             LastError = error.Message;
+            LastDiagnostic = ConnectionExceptionClassifier.Classify(
+                error,
+                ConnectionDiagnosticStage.SshHandshake,
+                _route.Type);
+            RecordDiagnostic(LastDiagnostic);
             try
             {
                 LogFailure("SSH transport", error, ConnectionLogSeverity.Error);
@@ -910,6 +1031,7 @@ public sealed partial class SshNetSession : ISshSession
             {
                 using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
                 await Task.Run(() => client.ConnectAsync(ct), ct).ConfigureAwait(false);
+                TryMarkHostKeyUsed(verifier, _hostEndpoint);
                 return client;
             }
             catch (Exception ex)
@@ -930,7 +1052,8 @@ public sealed partial class SshNetSession : ISshSession
     /// SSH.NET host-key callbacks are synchronous, so unknown keys fail closed first.
     /// This method runs after that handshake unwinds, awaits UI asynchronously, applies
     /// the decision to the shared connection context, then allows one fresh-client retry.
-    /// Changed keys and verifier/storage errors never prompt.
+    /// Changed keys remain blocked unless the UI supplies a separate deliberate rotation
+    /// callback. Verifier/storage errors never prompt.
     /// </summary>
     private async Task<bool> HandleHostKeyConnectFailureAsync(
         SshNetHostKeyVerifier verifier,
@@ -957,10 +1080,35 @@ public sealed partial class SshNetSession : ISshSession
                 $"The server host key has changed: {verification.Endpoint.Value}",
                 $"trusted={verification.TrustedKey?.Algorithm} {verification.TrustedKey?.Sha256Fingerprint}\n" +
                 $"presented={verification.PresentedKey.Algorithm} {verification.PresentedKey.Sha256Fingerprint}");
-            throw new HostKeyChangedException(
-                verification.Endpoint,
-                verification.TrustedKey!,
-                verification.PresentedKey);
+            if (!mayPrompt || Info.HostKeyRotationPromptAsync is null)
+            {
+                throw new HostKeyChangedException(
+                    verification.Endpoint,
+                    verification.TrustedKey!,
+                    verification.PresentedKey);
+            }
+
+            var rotation = await Info.HostKeyRotationPromptAsync(verification, ct);
+            ct.ThrowIfCancellationRequested();
+            if (!rotation.Confirmed || !verifier.ApplyLastRotation(rotation))
+            {
+                Log(
+                    ConnectionLogSeverity.Warning,
+                    "Host key",
+                    "호스트 키 변경을 승인하지 않아 연결을 취소했습니다.",
+                    "The connection was cancelled because host-key rotation was not approved.");
+                throw new HostKeyChangedException(
+                    verification.Endpoint,
+                    verification.TrustedKey!,
+                    verification.PresentedKey);
+            }
+
+            Log(
+                ConnectionLogSeverity.Information,
+                "Host key",
+                "사용자가 기존 키와 새 키를 확인해 저장된 호스트 키를 교체했습니다. 새 연결로 다시 시도합니다.",
+                "The user verified the old and new keys and rotated the saved host key. Retrying with a fresh connection.");
+            return true;
         }
 
         if (verification?.State != HostKeyTrustState.Unknown)
@@ -1014,6 +1162,28 @@ public sealed partial class SshNetSession : ISshSession
                 : "The server host key is trusted for this connection only. Retrying with a fresh connection.");
 
         return true;
+    }
+
+    private void TryMarkHostKeyUsed(
+        SshNetHostKeyVerifier verifier,
+        HostEndpointIdentity endpoint)
+    {
+        try
+        {
+            verifier.MarkLastKeyUsed();
+        }
+        catch (Exception error) when (error is IOException or
+                                      UnauthorizedAccessException or
+                                      KeyNotFoundException or
+                                      HostKeyChangedException)
+        {
+            Log(
+                ConnectionLogSeverity.Warning,
+                "Host key metadata",
+                $"{endpoint.Value}의 마지막 사용 시각을 저장하지 못했습니다.",
+                $"Could not persist the last-used time for {endpoint.Value}.",
+                error.GetType().Name);
+        }
     }
 
     private Renci.SshNet.ConnectionInfo BuildConnectionInfo(CancellationToken ct)
@@ -1087,14 +1257,17 @@ public sealed partial class SshNetSession : ISshSession
                 ? new PrivateKeyFile(path)
                 : new PrivateKeyFile(path, passphrase);
         }
-        catch (Renci.SshNet.Common.SshPassPhraseNullOrEmptyException)
+        catch (Renci.SshNet.Common.SshPassPhraseNullOrEmptyException error)
         {
-            throw new InvalidOperationException("이 키는 passphrase가 필요합니다. Key passphrase를 입력하세요.");
+            throw new InvalidOperationException(
+                "이 키는 passphrase가 필요합니다. Key passphrase를 입력하세요.",
+                error);
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
             throw new InvalidOperationException(
-                $"키 파일을 읽을 수 없습니다 ({Path.GetFileName(path)}): {ex.Message}");
+                $"키 파일을 읽을 수 없습니다 ({Path.GetFileName(path)}): {ex.Message}",
+                ex);
         }
     }
 
@@ -1189,7 +1362,7 @@ public sealed partial class SshNetSession : ISshSession
                 .GetAwaiter()
                 .GetResult();
             if (answers is null)
-                throw new OperationCanceledException("Keyboard-interactive authentication was cancelled.", ct);
+                throw new KeyboardInteractiveAuthenticationCancelledException(ct);
             if (answers.Count != unanswered.Count)
                 throw new InvalidOperationException(
                     "Keyboard-interactive response count did not match the server prompts.");
@@ -1198,6 +1371,42 @@ public sealed partial class SshNetSession : ISshSession
         };
         return kbi;
     }
+
+    private async Task CompleteCancelledConnectionAttemptAsync(
+        Exception error,
+        ConnectionDiagnosticStage stage,
+        long connectionStarted,
+        bool targetConnectionAttemptStarted)
+    {
+        LastDiagnostic = ConnectionExceptionClassifier.Classify(
+            error,
+            stage,
+            _route.Type);
+        RecordCompletedConnectionStagesBefore(
+            LastDiagnostic,
+            error,
+            targetConnectionAttemptStarted);
+        RecordDiagnostic(
+            LastDiagnostic,
+            Stopwatch.GetElapsedTime(connectionStarted));
+        Log(
+            ConnectionLogSeverity.Warning,
+            "SSH",
+            "SSH 연결 시도가 취소되었습니다.",
+            "The SSH connection attempt was cancelled.");
+        await CleanUpAsync();
+        SetSftpState(SftpConnectionState.NotConnected);
+        SetState(SessionState.Disconnected);
+    }
+
+    private static bool IsKeyboardInteractiveAuthenticationCancellation(Exception error)
+        => ContainsException<KeyboardInteractiveAuthenticationCancelledException>(error);
+
+    private sealed class KeyboardInteractiveAuthenticationCancelledException(
+        CancellationToken cancellationToken)
+        : OperationCanceledException(
+            "Keyboard-interactive authentication was cancelled.",
+            cancellationToken);
 
     private void SetState(SessionState state)
     {
@@ -1226,6 +1435,150 @@ public sealed partial class SshNetSession : ISshSession
     private string DescribeRoute() => _route.Type == ConnectionRouteType.Direct
         ? "direct"
         : $"{_route.Type}({_route.Host}:{_route.Port})";
+
+    private void RecordDiagnostic(
+        ConnectionDiagnosticResult? result,
+        TimeSpan? elapsed = null)
+    {
+        if (result is null)
+            return;
+
+        try
+        {
+            ConnectionDiagnosticEventStore.Shared.Append(
+                CorrelationContext.CorrelationId,
+                result,
+                elapsed);
+        }
+        catch (Exception error) when (error is ArgumentException or ArgumentOutOfRangeException)
+        {
+            // Connection diagnostics are observational and must never change SSH behaviour.
+            Debug.WriteLine($"Connection diagnostic event rejected: {error.GetType().Name}");
+        }
+    }
+
+    private void RecordSftpDiagnostic(ConnectionDiagnosticResult? outcome)
+    {
+        if (outcome is
+            {
+                Stage: ConnectionDiagnosticStage.HostKey,
+                Status: ConnectionDiagnosticStatus.Failed,
+            })
+        {
+            // SFTP opens its own SSH transport. A host-key failure is the causal
+            // security result, but it must also close the SFTP stage that was already
+            // marked Running. Keep HostKey last so it remains the representative code.
+            RecordDiagnostic(ConnectionDiagnosticResult.Failure(
+                ConnectionDiagnosticStage.SftpSubsystem,
+                outcome.ErrorCode,
+                outcome.UserActionKo,
+                outcome.UserActionEn,
+                outcome.TechnicalDetail));
+        }
+
+        RecordDiagnostic(outcome);
+    }
+
+    private void RecordCompletedConnectionStagesBefore(
+        ConnectionDiagnosticResult outcome,
+        Exception error,
+        bool targetConnectionAttemptStarted)
+    {
+        var targetAuthenticationPromptCancelled =
+            outcome is
+            {
+                Stage: ConnectionDiagnosticStage.Authentication,
+                Status: ConnectionDiagnosticStatus.Cancelled,
+            } &&
+            IsKeyboardInteractiveAuthenticationCancellation(error);
+        if (!targetConnectionAttemptStarted)
+        {
+            if (_route.Type == ConnectionRouteType.SshJump &&
+                outcome is
+                {
+                    Stage: ConnectionDiagnosticStage.HostKey,
+                    Status: ConnectionDiagnosticStatus.Failed,
+                })
+            {
+                // Host-key errors intentionally retain their actionable HostKey stage,
+                // even when the rejected key belongs to the jump host. Close the route's
+                // earlier Running event first with the same causal code; the caller then
+                // records the original HostKey failure as the final diagnostic outcome.
+                RecordDiagnostic(ConnectionDiagnosticResult.Failure(
+                    ConnectionDiagnosticStage.ProxyOrJumpRoute,
+                    outcome.ErrorCode,
+                    outcome.UserActionKo,
+                    outcome.UserActionEn,
+                    outcome.TechnicalDetail));
+            }
+            return;
+        }
+
+        if (outcome.Status != ConnectionDiagnosticStatus.Failed &&
+            !targetAuthenticationPromptCancelled)
+            return;
+
+        if (outcome.Status == ConnectionDiagnosticStatus.Failed &&
+            outcome.Stage == ConnectionDiagnosticStage.Authentication &&
+            !ContainsException<SshAuthenticationException>(error) &&
+            !ContainsException<SshOperationTimeoutException>(error) &&
+            !ContainsException<TimeoutException>(error))
+        {
+            // Authentication material is prepared before a socket is opened. A local
+            // key/agent/configuration failure must not claim that target network stages
+            // passed. An SSH jump forward, however, was fully established before target
+            // authentication material was built and can be reported as completed.
+            if (_route.Type == ConnectionRouteType.SshJump)
+            {
+                RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                    ConnectionDiagnosticStage.ProxyOrJumpRoute));
+            }
+            return;
+        }
+
+        if (_route.Type != ConnectionRouteType.Direct &&
+            outcome.Stage is ConnectionDiagnosticStage.SshHandshake or
+                ConnectionDiagnosticStage.HostKey or
+                ConnectionDiagnosticStage.Authentication)
+        {
+            RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                ConnectionDiagnosticStage.ProxyOrJumpRoute));
+        }
+
+        if (outcome.Stage is ConnectionDiagnosticStage.SshHandshake or
+            ConnectionDiagnosticStage.HostKey or
+            ConnectionDiagnosticStage.Authentication)
+        {
+            RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                ConnectionDiagnosticStage.DnsAndTcp));
+        }
+        if (outcome.Stage is ConnectionDiagnosticStage.HostKey or
+            ConnectionDiagnosticStage.Authentication)
+        {
+            RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                ConnectionDiagnosticStage.SshHandshake));
+        }
+        if (outcome.Stage == ConnectionDiagnosticStage.Authentication)
+        {
+            RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                ConnectionDiagnosticStage.HostKey));
+        }
+    }
+
+    private static bool ContainsException<TException>(Exception? error)
+        where TException : Exception
+    {
+        var inspected = 0;
+        while (error is not null && inspected++ < 16)
+        {
+            if (error is TException)
+                return true;
+            if (error is AggregateException aggregate)
+                return aggregate.Flatten().InnerExceptions.Any(ContainsException<TException>);
+            error = error.InnerException;
+        }
+        return false;
+    }
 
     private void LogFailure(
         string category,

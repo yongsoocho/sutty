@@ -15,6 +15,7 @@ internal sealed class KnownHostsDocument
 {
     public int Version { get; set; }
     public List<KnownHostDocumentEntry>? Hosts { get; set; }
+    public List<KnownHostActivityDocumentEntry>? Activity { get; set; }
 }
 
 internal sealed class KnownHostDocumentEntry
@@ -24,6 +25,19 @@ internal sealed class KnownHostDocumentEntry
     public string Sha256Fingerprint { get; set; } = "";
     public string RawKey { get; set; } = "";
     public DateTimeOffset TrustedAtUtc { get; set; }
+    public DateTimeOffset LastUsedAtUtc { get; set; }
+}
+
+internal sealed class KnownHostActivityDocumentEntry
+{
+    public DateTimeOffset TimestampUtc { get; set; }
+    public string Type { get; set; } = "";
+    public string Identity { get; set; } = "";
+    public string? PreviousAlgorithm { get; set; }
+    public string? PreviousSha256Fingerprint { get; set; }
+    public string? CurrentAlgorithm { get; set; }
+    public string? CurrentSha256Fingerprint { get; set; }
+    public string Reason { get; set; } = "";
 }
 
 internal sealed class CredentialVaultDocument
