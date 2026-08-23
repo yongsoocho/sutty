@@ -62,6 +62,59 @@ public sealed class HostKeyTrustContext
         }
     }
 
+    /// <summary>
+    /// Applies a deliberate changed-key rotation. The persisted key must still match
+    /// the key that was shown to the user, and both explicit confirmation and a reason
+    /// are required. Cancellation leaves the store untouched.
+    /// </summary>
+    public bool ApplyRotation(
+        HostKeyVerification verification,
+        HostKeyRotationDecision decision)
+    {
+        ArgumentNullException.ThrowIfNull(verification);
+        ArgumentNullException.ThrowIfNull(decision);
+
+        lock (_gate)
+        {
+            if (!decision.Confirmed)
+                return false;
+
+            if (verification is not
+                {
+                    State: HostKeyTrustState.Changed,
+                    Source: HostKeyTrustSource.Persistent,
+                    TrustedKey: not null,
+                })
+            {
+                throw new InvalidOperationException(
+                    "Host-key rotation requires a changed persisted key.");
+            }
+
+            _knownHosts.Rotate(
+                verification.Endpoint,
+                verification.TrustedKey,
+                verification.PresentedKey,
+                decision.Reason);
+            return true;
+        }
+    }
+
+    /// <summary>Updates last-used time only for an exact persisted-key match.</summary>
+    public void MarkPersistentKeyUsed(
+        HostEndpointIdentity endpoint,
+        HostKeyData presentedKey)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        ArgumentNullException.ThrowIfNull(presentedKey);
+
+        lock (_gate)
+        {
+            var current = EvaluateCore(endpoint, presentedKey);
+            if (current is { State: HostKeyTrustState.Trusted, Source: HostKeyTrustSource.Persistent })
+                _knownHosts.MarkUsed(endpoint, presentedKey);
+        }
+    }
+
     private HostKeyVerification EvaluateCore(
         HostEndpointIdentity endpoint,
         HostKeyData presentedKey)

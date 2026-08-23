@@ -23,6 +23,12 @@ public readonly record struct SettingsSaveResult(bool Succeeded, Exception? Erro
 /// </summary>
 public static class SettingsService
 {
+    /// <summary>
+    /// Public compatibility identity for the normalized settings contract. Support
+    /// bundles include only this number and never serialize the user's settings file.
+    /// </summary>
+    public const int SchemaVersion = 1;
+
     private static AppSettings? _current;
     private static readonly object SaveGate = new();
 

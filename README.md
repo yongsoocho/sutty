@@ -57,7 +57,7 @@ The small-team product direction is credential-free, file/Git-based sharing of h
 - Session-scoped local, remote, and dynamic forwarding rules that start after SSH authentication and stop with the owning session.
 - Saved Hosts restore route and tunnel definitions while route credentials remain in the encrypted vault. Settings can import credential-free OpenSSH config, Windows saved-session registry entries, and legacy INI profiles with duplicate suppression.
 - REPL JSON/YAML syntax highlighting, red critical/error and amber warning marking, and history/saved-command suggestions accepted with Right Arrow or Tab.
-- Keyboard-first navigation: `Ctrl+1`–`Ctrl+9` tabs, `Ctrl+T` local tab, `Alt+1`–`Alt+6` work surfaces/settings, `Ctrl+,` settings, and Insert-style copy/paste.
+- Keyboard-first navigation: `Ctrl+1`–`Ctrl+9` tabs, `Ctrl+T` local tab, `Alt+1`–`Alt+7` work surfaces/settings, `Ctrl+,` settings, and Insert-style copy/paste. Alt navigation uses registered accelerators, so Windows does not treat the number as an unmatched system-menu character.
 
 ### Why this is not GA
 
@@ -66,7 +66,7 @@ The small-team product direction is credential-free, file/Git-based sharing of h
 - Saved Hosts support create/update, favorite, search, and delete, but duplicate-profile UX, bulk management, and operating-system credential-broker integration remain planned.
 - SFTP recursive transfer, durable restart queue/checkpoints, retry/resume, pause, checksum verification, five collision policies, recursive deletion, `chmod`, filename search, cross-directory move, 1→N/N→1 Multi transfer, and failed-target-only retry are implemented. Synchronized browsing, directory comparison, and large/deep-path live multi-host acceptance remain incomplete.
 - REPL output is completion-based rather than streamed. Multi uses structured per-host results, but its UI truncates output to a compact preview and has no persistent local activity export, timeout, or streaming workflow.
-- Local/remote/dynamic forwarding has session lifecycle support and non-loopback binds require an explicit high-risk confirmation, but a post-connect tunnel manager and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed artifact has been supplied. Credential-free sharing packs, local support bundles, and the GA compatibility/accessibility matrices remain planned.
+- Local/remote/dynamic forwarding has session lifecycle support and non-loopback binds require an explicit high-risk confirmation, but a post-connect tunnel manager and the live forwarding matrix remain incomplete. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed artifact has been supplied. Connection Doctor, deliberate Known Host rotation/management, and an allowlist-only local support bundle are implemented; credential-free sharing packs and the GA compatibility/accessibility matrices remain planned.
 
 The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Exact compatibility-claim boundaries are in [Supported environments](docs/SUPPORTED_ENVIRONMENTS.md), and live evidence must follow the [evidence schema](docs/evidence/EVIDENCE_SCHEMA.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md), with Alpha 4 ordering and exit criteria in the [Alpha 4 execution plan](docs/ALPHA4_EXECUTION_PLAN.md) and protected publication controls in [Release governance](docs/RELEASE_GOVERNANCE.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with longer-term delivery order in the [Roadmap](docs/ROADMAP.md), engineering rules in [Contributing](CONTRIBUTING.md) and the [Development Playbook](docs/DEVELOPMENT_PLAYBOOK.md), and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
 
@@ -195,7 +195,7 @@ Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/S
 - SSH 인증 후 시작하고 해당 세션과 함께 종료하는 Local·Remote·Dynamic 포워딩 규칙
 - 저장 Host는 route·tunnel 정의를 복원하고 route 자격증명은 암호화 Vault에만 둡니다. 설정에서 비밀정보 없이 OpenSSH config·Windows 저장 세션 registry·레거시 INI profile을 가져오며 중복은 건너뜁니다.
 - REPL JSON/YAML 문법 강조, critical/error 빨간색·warning 노란색 표시, 최근/저장 명령 제안과 오른쪽 화살표·Tab 적용
-- `Ctrl+1`–`Ctrl+9` 탭, `Ctrl+T` 로컬 탭, `Alt+1`–`Alt+6` 작업 화면/설정, `Ctrl+,` 설정, Insert 방식 복사·붙여넣기 단축키
+- `Ctrl+1`–`Ctrl+9` 탭, `Ctrl+T` 로컬 탭, `Alt+1`–`Alt+7` 작업 화면/설정, `Ctrl+,` 설정, Insert 방식 복사·붙여넣기 단축키. Alt 화면 전환은 등록된 accelerator가 처리하므로 Windows가 숫자를 처리되지 않은 시스템 메뉴 문자로 해석하지 않습니다.
 
 ### GA가 아닌 이유
 
@@ -204,7 +204,7 @@ Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/S
 - 저장 호스트는 생성·수정·즐겨찾기·검색·삭제를 지원하지만 프로필 복제 UX, 일괄 관리, 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - SFTP 재귀 전송, 영속 재시작 queue·checkpoint, 재시도·재개·일시정지, checksum 검증, 다섯 충돌 정책, 재귀 삭제, `chmod`, 파일명 검색, 디렉터리 간 이동, 1→N/N→1 Multi 전송, 실패 대상만 재시도를 구현했습니다. 동기 탐색·디렉터리 비교와 대용량·깊은 경로·실제 다중 Host 인수는 미완성입니다.
 - REPL 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과를 사용하지만 UI 출력은 짧게 잘린 미리보기이며 영속 로컬 활동 내보내기, timeout, streaming 흐름이 없습니다.
-- Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했고 loopback이 아닌 bind는 고위험 확인을 요구하지만 연결 후 tunnel 관리자와 실제 포워딩 매트릭스는 미완성입니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. 자격증명 없는 공유 pack, 로컬 support bundle, GA 호환성·접근성 매트릭스는 계획 상태입니다.
+- Local·Remote·Dynamic 포워딩은 세션 수명주기에 연결했고 loopback이 아닌 bind는 고위험 확인을 요구하지만 연결 후 tunnel 관리자와 실제 포워딩 매트릭스는 미완성입니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 인수 완료된 서명 산출물은 아직 없습니다. Connection Doctor, 명시적 Known Host rotation·관리, allowlist 전용 로컬 support bundle은 구현했으며 자격증명 없는 공유 pack과 GA 호환성·접근성 매트릭스는 계획 상태입니다.
 
 현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md)에 있습니다. 정확한 호환성 주장 경계는 [지원 환경](docs/SUPPORTED_ENVIRONMENTS.md), 실환경 증거 계약은 [증거 스키마](docs/evidence/EVIDENCE_SCHEMA.md)를 따릅니다. 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md), Alpha 4 순서와 종료 기준은 [Alpha 4 실행 계획](docs/ALPHA4_EXECUTION_PLAN.md), 보호된 공개 통제는 [릴리스 거버넌스](docs/RELEASE_GOVERNANCE.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 장기 개발 순서는 [로드맵](docs/ROADMAP.md), 개발 규칙은 [기여 가이드](CONTRIBUTING.md)와 [개발 Playbook](docs/DEVELOPMENT_PLAYBOOK.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.
 

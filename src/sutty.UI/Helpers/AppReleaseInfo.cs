@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Reflection;
 
 namespace sutty.UI.Helpers;
@@ -6,10 +8,20 @@ namespace sutty.UI.Helpers;
 public static class AppReleaseInfo
 {
     private static readonly string InformationalVersion = ResolveInformationalVersion();
+    private static readonly string FullBuildMetadata = ResolveFullBuildMetadata();
 
     public static string Version { get; } = InformationalVersion.Split('+', 2)[0];
 
-    public static string BuildMetadata { get; } = ResolveBuildMetadata();
+    public static string BuildMetadata { get; } = FullBuildMetadata.Length > 12
+        ? FullBuildMetadata[..12]
+        : FullBuildMetadata;
+
+    /// <summary>Full source revision when the SDK embedded a hexadecimal commit id.</summary>
+    public static string Commit { get; } =
+        FullBuildMetadata.Length is >= 7 and <= 64 &&
+        FullBuildMetadata.All(Uri.IsHexDigit)
+            ? FullBuildMetadata.ToLowerInvariant()
+            : "";
 
     public static string DisplayVersion => $"Sutty {Version}";
 
@@ -30,13 +42,12 @@ public static class AppReleaseInfo
             : "0.0.0-unknown";
     }
 
-    private static string ResolveBuildMetadata()
+    private static string ResolveFullBuildMetadata()
     {
         var separator = InformationalVersion.IndexOf('+');
         if (separator < 0 || separator == InformationalVersion.Length - 1)
             return "";
 
-        var metadata = InformationalVersion[(separator + 1)..].Trim();
-        return metadata.Length > 12 ? metadata[..12] : metadata;
+        return InformationalVersion[(separator + 1)..].Trim();
     }
 }

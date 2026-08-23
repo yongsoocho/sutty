@@ -14,6 +14,10 @@
 | `Right Arrow` | 입력 끝에서 보이는 제안 적용 | Accept a visible suggestion at the input end |
 | `Tab` | 설정된 경우 보이는 제안 적용 | Accept a visible suggestion when enabled |
 
+`Alt+1` … `Alt+7`은 문자 키 위의 상단 숫자열을 사용합니다. 숫자 키패드의 숫자는 이
+단축키에 포함되지 않습니다. `Alt+1` … `Alt+7` use the top number row above the letter
+keys; numeric-keypad digits are not included in these shortcuts.
+
 REPL에서 현재 줄이 Bash의 `\` 또는 PowerShell의 backtick으로 끝나면 Enter는 명령을
 보내지 않고 다음 줄을 추가합니다. Terminal 모드에서는 Tab과 방향키를 원격 PTY에 그대로
 전달하므로 원격 셸의 완성 기능을 사용할 수 있습니다.

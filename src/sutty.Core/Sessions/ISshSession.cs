@@ -3,6 +3,7 @@ using sutty.Core.Commands;
 using sutty.Core.Sftp;
 using sutty.Core.Terminal;
 using sutty.Core.Routing;
+using sutty.Core.Diagnostics;
 
 namespace sutty.Core.Sessions;
 
@@ -29,6 +30,9 @@ public interface ISshSession : IInteractiveTerminal
     /// <summary>State가 Failed일 때 마지막 오류 메시지.</summary>
     string? LastError { get; }
 
+    /// <summary>Latest stable Connection Doctor outcome for the primary SSH attempt.</summary>
+    ConnectionDiagnosticResult? LastDiagnostic { get; }
+
     /// <summary>이 세션의 인증 정보를 사용하는 선택적 SFTP subsystem.</summary>
     ISftpService Sftp { get; }
 
@@ -40,6 +44,9 @@ public interface ISshSession : IInteractiveTerminal
 
     /// <summary>The most recent SFTP connection error, when SFTP is unavailable.</summary>
     string? LastSftpError { get; }
+
+    /// <summary>Latest stable Connection Doctor outcome for the SFTP subsystem.</summary>
+    ConnectionDiagnosticResult? LastSftpDiagnostic { get; }
 
     event EventHandler<SessionState>? StateChanged;
     event EventHandler<SftpConnectionState>? SftpStateChanged;

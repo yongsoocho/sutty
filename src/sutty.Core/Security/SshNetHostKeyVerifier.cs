@@ -96,6 +96,36 @@ public sealed class SshNetHostKeyVerifier
             decision);
     }
 
+    public bool ApplyLastRotation(HostKeyRotationDecision decision)
+    {
+        HostKeyVerification verification;
+        lock (_observationGate)
+        {
+            verification = _lastVerification
+                ?? throw new InvalidOperationException("No host-key verification is available.");
+        }
+
+        return _trustContext.ApplyRotation(verification, decision);
+    }
+
+    /// <summary>
+    /// Called only after the client handshake has completed so management UI can show
+    /// the last time an exact persisted key was successfully used.
+    /// </summary>
+    public void MarkLastKeyUsed()
+    {
+        HostKeyVerification? verification;
+        lock (_observationGate)
+            verification = _lastVerification;
+
+        if (verification is { State: HostKeyTrustState.Trusted })
+        {
+            _trustContext.MarkPersistentKeyUsed(
+                verification.Endpoint,
+                verification.PresentedKey);
+        }
+    }
+
     public void ResetObservation()
     {
         lock (_observationGate)

@@ -11,6 +11,8 @@ namespace sutty.Core.Sessions;
 public sealed partial class SshNetSession
 {
     private readonly List<ForwardedPort> _configuredForwardedPorts = [];
+    private readonly object _portForwardingDiagnosticGate = new();
+    private bool _portForwardingRuntimeFailed;
     private SshClient? _jumpClient;
     private ForwardedPortLocal? _jumpForward;
     private ProxyCommandBridge? _proxyCommandBridge;
@@ -130,6 +132,7 @@ public sealed partial class SshNetSession
             {
                 using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
                 await Task.Run(() => client.ConnectAsync(ct), ct).ConfigureAwait(false);
+                TryMarkHostKeyUsed(verifier, endpoint);
                 return client;
             }
             catch (Exception error)
@@ -222,7 +225,37 @@ public sealed partial class SshNetSession
     }
 
     private void ForwardedPort_Exception(object? sender, ExceptionEventArgs e)
-        => LogFailure("Port forwarding", e.Exception, ConnectionLogSeverity.Error);
+    {
+        var diagnosis = ConnectionExceptionClassifier.Classify(
+            e.Exception,
+            ConnectionDiagnosticStage.PortForwarding,
+            _route.Type);
+        lock (_portForwardingDiagnosticGate)
+        {
+            _portForwardingRuntimeFailed = true;
+            LastDiagnostic = diagnosis;
+            RecordDiagnostic(diagnosis);
+        }
+        LogFailure("Port forwarding", e.Exception, ConnectionLogSeverity.Error);
+    }
+
+    private void BeginPortForwardingDiagnostics()
+    {
+        lock (_portForwardingDiagnosticGate)
+            _portForwardingRuntimeFailed = false;
+    }
+
+    private void RecordPortForwardingStarted()
+    {
+        lock (_portForwardingDiagnosticGate)
+        {
+            if (!_portForwardingRuntimeFailed)
+            {
+                RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                    ConnectionDiagnosticStage.PortForwarding));
+            }
+        }
+    }
 
     private static string DescribeForwarding(SshPortForwardingRule rule) => rule.Type switch
     {
@@ -286,6 +319,8 @@ public sealed partial class SshNetSession
         try { previous?.Disconnect(); } catch { }
         previous?.Dispose();
 
+        RecordDiagnostic(ConnectionDiagnosticResult.Running(
+            ConnectionDiagnosticStage.SftpSubsystem));
         try
         {
             await PrepareConnectionRouteAsync(trustContext, ct).ConfigureAwait(false);
@@ -297,12 +332,30 @@ public sealed partial class SshNetSession
             }
             _sftpClient = replacement;
             LastSftpError = null;
+            LastSftpDiagnostic = null;
             SetSftpState(SftpConnectionState.Ready);
+            RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
+                ConnectionDiagnosticStage.SftpSubsystem));
             return replacement;
+        }
+        catch (OperationCanceledException error)
+        {
+            LastSftpDiagnostic = ConnectionExceptionClassifier.Classify(
+                error,
+                ConnectionDiagnosticStage.SftpSubsystem,
+                _route.Type);
+            RecordSftpDiagnostic(LastSftpDiagnostic);
+            SetSftpState(SftpConnectionState.Unavailable);
+            throw;
         }
         catch (Exception error)
         {
             LastSftpError = error.Message;
+            LastSftpDiagnostic = ConnectionExceptionClassifier.Classify(
+                error,
+                ConnectionDiagnosticStage.SftpSubsystem,
+                _route.Type);
+            RecordSftpDiagnostic(LastSftpDiagnostic);
             SetSftpState(SftpConnectionState.Unavailable);
             throw;
         }

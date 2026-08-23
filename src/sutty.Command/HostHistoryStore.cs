@@ -492,9 +492,13 @@ public static class HostHistoryStore
     private static int NormalizePort(int port) => port is >= 1 and <= 65535 ? port : 22;
 
     private static string NormalizeAuthMethod(string? authMethod) =>
-        string.Equals(authMethod, "PublicKey", StringComparison.OrdinalIgnoreCase)
-            ? "PublicKey"
-            : "Password";
+        authMethod?.Trim().ToLowerInvariant() switch
+        {
+            "publickey" => "PublicKey",
+            "agent" => "Agent",
+            "keyboardinteractive" => "KeyboardInteractive",
+            _ => "Password",
+        };
 
     private static string NormalizeOutcome(string? outcome) => outcome?.Trim().ToLowerInvariant() switch
     {

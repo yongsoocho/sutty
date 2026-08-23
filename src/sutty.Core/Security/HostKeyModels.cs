@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace sutty.Core.Security;
 
@@ -21,6 +23,13 @@ public enum HostKeyTrustSource
     None,
     Connection,
     Persistent,
+}
+
+public enum KnownHostActivityType
+{
+    Trusted,
+    Rotated,
+    Removed,
 }
 
 /// <summary>A public SSH host key. This contains no credentials or other secrets.</summary>
@@ -132,7 +141,125 @@ public sealed class HostKeyData : IEquatable<HostKeyData>
 public sealed record KnownHostRecord(
     HostEndpointIdentity Endpoint,
     HostKeyData Key,
-    DateTimeOffset TrustedAtUtc);
+    DateTimeOffset TrustedAtUtc,
+    DateTimeOffset LastUsedAtUtc);
+
+/// <summary>
+/// Local public-key management activity. It intentionally contains no credentials,
+/// private-key material, command text, or terminal data.
+/// </summary>
+public sealed record KnownHostActivityRecord(
+    DateTimeOffset TimestampUtc,
+    KnownHostActivityType Type,
+    HostEndpointIdentity Endpoint,
+    string? PreviousAlgorithm,
+    string? PreviousSha256Fingerprint,
+    string? CurrentAlgorithm,
+    string? CurrentSha256Fingerprint,
+    string Reason);
+
+/// <summary>
+/// One atomically loaded view of the persisted host keys and their newest-first
+/// management activity. Both collections come from the same on-disk document.
+/// </summary>
+public sealed record KnownHostsSnapshot(
+    IReadOnlyList<KnownHostRecord> Hosts,
+    IReadOnlyList<KnownHostActivityRecord> Activity);
+
+/// <summary>
+/// Result of the deliberate changed-key prompt. Confirmation and a reason are both
+/// required before Core can replace a persisted public host key.
+/// </summary>
+public sealed record HostKeyRotationDecision(bool Confirmed, string Reason)
+{
+    public static HostKeyRotationDecision Cancelled { get; } = new(false, "");
+}
+
+/// <summary>
+/// Single normalization and validation policy for user-entered host-key rotation
+/// reasons. Hidden formatting cannot make an apparently blank or reordered reason.
+/// </summary>
+public static class HostKeyRotationReason
+{
+    public const int MaximumLength = 256;
+
+    public static bool TryNormalize(string? reason, out string normalizedReason)
+    {
+        try
+        {
+            normalizedReason = Normalize(reason);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            normalizedReason = string.Empty;
+            return false;
+        }
+    }
+
+    public static string Normalize(string? reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        string compatibilityNormalized;
+        try
+        {
+            compatibilityNormalized = reason.Normalize(NormalizationForm.FormKC);
+        }
+        catch (ArgumentException error)
+        {
+            throw new ArgumentException(
+                "The host-key rotation reason contains invalid Unicode.",
+                nameof(reason),
+                error);
+        }
+
+        var normalized = new StringBuilder(
+            Math.Min(compatibilityNormalized.Length, MaximumLength));
+        var pendingSpace = false;
+        var hasVisibleBase = false;
+        foreach (var rune in compatibilityNormalized.EnumerateRunes())
+        {
+            var category = Rune.GetUnicodeCategory(rune);
+            if (category is UnicodeCategory.Control or UnicodeCategory.Format or
+                UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator)
+            {
+                throw new ArgumentException(
+                    "The host-key rotation reason contains hidden or directional formatting.",
+                    nameof(reason));
+            }
+
+            if (Rune.IsWhiteSpace(rune))
+            {
+                pendingSpace = normalized.Length > 0;
+                continue;
+            }
+
+            if (category is not UnicodeCategory.NonSpacingMark and
+                not UnicodeCategory.SpacingCombiningMark and
+                not UnicodeCategory.EnclosingMark)
+            {
+                hasVisibleBase = true;
+            }
+
+            if (pendingSpace)
+            {
+                normalized.Append(' ');
+                pendingSpace = false;
+            }
+            normalized.Append(rune.ToString());
+            if (normalized.Length > MaximumLength)
+            {
+                throw new ArgumentException(
+                    "The host-key rotation reason is too long.",
+                    nameof(reason));
+            }
+        }
+
+        if (normalized.Length == 0 || !hasVisibleBase)
+            throw new ArgumentException("The host-key rotation reason is invalid.", nameof(reason));
+        return normalized.ToString();
+    }
+}
 
 public sealed record HostKeyVerification(
     HostEndpointIdentity Endpoint,

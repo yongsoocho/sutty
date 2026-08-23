@@ -2,6 +2,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using sutty.Command;
+using sutty.Core.Diagnostics;
 using sutty.Setting;
 using sutty.UI.Helpers;
 using System;
@@ -51,7 +52,23 @@ namespace sutty.UI.Views
     /// </summary>
     public sealed partial class SettingsPanel : UserControl
     {
-        public IntPtr OwnerWindowHandle { get; set; }
+        private IntPtr _ownerWindowHandle;
+
+        public IntPtr OwnerWindowHandle
+        {
+            get => _ownerWindowHandle;
+            set
+            {
+                _ownerWindowHandle = value;
+                SupportBundlePanel.OwnerWindowHandle = value;
+            }
+        }
+
+        public Func<SupportBundleContext?>? SupportBundleContextProvider
+        {
+            get => SupportBundlePanel.ContextProvider;
+            set => SupportBundlePanel.ContextProvider = value;
+        }
         /// <summary>Raised after settings have been written. Kept for existing consumers.</summary>
         public event EventHandler? Saved;
 
@@ -194,6 +211,8 @@ namespace sutty.UI.Views
             AppearancePane.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
             TerminalPane.Visibility = tag == "Terminal" ? Visibility.Visible : Visibility.Collapsed;
             ConnectionPane.Visibility = tag == "Connection" ? Visibility.Visible : Visibility.Collapsed;
+            SecurityPane.Visibility = tag == "Security" ? Visibility.Visible : Visibility.Collapsed;
+            SupportPane.Visibility = tag == "Support" ? Visibility.Visible : Visibility.Collapsed;
             WindowPane.Visibility = tag == "Window" ? Visibility.Visible : Visibility.Collapsed;
             AboutPane.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -621,7 +640,11 @@ namespace sutty.UI.Views
             _pendingChanges &= ~changes;
 
             if (changes.HasFlag(SettingChangeKind.Language))
+            {
                 Bindings.Update();
+                KnownHostsPanel.RefreshLanguage();
+                SupportBundlePanel.RefreshLanguage();
+            }
 
             ShowSaveStatus("자동 저장됨", "Saved automatically", "StatusGreen");
 

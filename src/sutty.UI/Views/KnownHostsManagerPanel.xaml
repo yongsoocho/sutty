@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="sutty.UI.Views.KnownHostsManagerPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:h="using:sutty.UI.Helpers"
+    xmlns:local="using:sutty.UI.Views"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Loaded="KnownHostsManagerPanel_Loaded"
+    mc:Ignorable="d">
+
+    <StackPanel Spacing="12">
+        <Grid ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="3">
+                <TextBlock
+                    FontSize="15"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextPrimary}"
+                    Text="{x:Bind h:Loc.T('보안 / Known Hosts', 'Security / Known Hosts')}" />
+                <TextBlock
+                    FontSize="10.5"
+                    Foreground="{ThemeResource TextMuted}"
+                    Text="{x:Bind h:Loc.T('SSH 서버의 공개 키 신뢰 기록을 확인하고 관리합니다.', 'Inspect and manage trusted public keys for SSH servers.')}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+            <Button
+                x:Name="RefreshButton"
+                Grid.Column="1"
+                MinWidth="76"
+                Padding="10,5"
+                VerticalAlignment="Top"
+                AutomationProperties.Name="{x:Bind h:Loc.T('Known Hosts 목록 새로고침', 'Refresh the Known Hosts list')}"
+                Click="RefreshButton_Click"
+                Content="{x:Bind h:Loc.T('새로고침', 'Refresh')}"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('저장된 Host key와 최근 활동을 다시 읽습니다.', 'Reload saved host keys and recent activity.')}" />
+        </Grid>
+
+        <Border
+            Padding="10"
+            Background="{ThemeResource PillBg}"
+            BorderBrush="{ThemeResource StatusAmber}"
+            BorderThickness="1"
+            CornerRadius="7">
+            <TextBlock
+                FontSize="10.5"
+                Foreground="{ThemeResource TextMuted}"
+                Text="{x:Bind h:Loc.T('Host key를 삭제하면 다음 연결에서 다시 확인해야 합니다. 변경된 key는 이 화면에서 자동 교체되지 않습니다.', 'Deleting a host key requires verification again on the next connection. Changed keys are never replaced automatically here.')}"
+                TextWrapping="Wrap" />
+        </Border>
+
+        <Border
+            x:Name="ErrorState"
+            Padding="12"
+            AutomationProperties.LiveSetting="Assertive"
+            Background="{ThemeResource CardBg}"
+            BorderBrush="{ThemeResource StatusRed}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Visibility="Collapsed">
+            <StackPanel Spacing="6">
+                <TextBlock
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource StatusRed}"
+                    Text="{x:Bind h:Loc.T('Known Hosts를 읽을 수 없습니다', 'Known Hosts could not be loaded')}" />
+                <TextBlock
+                    x:Name="ErrorText"
+                    FontSize="10.5"
+                    Foreground="{ThemeResource TextMuted}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel x:Name="ContentState" Spacing="14">
+            <StackPanel Spacing="7">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        CharacterSpacing="55"
+                        FontSize="10.5"
+                        FontWeight="SemiBold"
+                        Foreground="{ThemeResource TextMuted}"
+                        Text="{x:Bind h:Loc.T('신뢰한 HOST KEY', 'TRUSTED HOST KEYS')}" />
+                    <TextBlock
+                        x:Name="HostCountText"
+                        Grid.Column="1"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('신뢰한 Host key 수', 'Trusted host key count')}"
+                        FontFamily="Cascadia Mono, Consolas"
+                        FontSize="10"
+                        Foreground="{ThemeResource TextFaint}" />
+                </Grid>
+
+                <Border
+                    x:Name="HostsEmptyState"
+                    Padding="18"
+                    Background="{ThemeResource CardBg}"
+                    BorderBrush="{ThemeResource CardBorder}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <StackPanel HorizontalAlignment="Center" Spacing="6">
+                        <FontIcon
+                            HorizontalAlignment="Center"
+                            FontSize="23"
+                            Foreground="{ThemeResource TextFaint}"
+                            Glyph="&#xE72E;" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            FontSize="11"
+                            Foreground="{ThemeResource TextMuted}"
+                            Text="{x:Bind h:Loc.T('저장된 Host key가 없습니다.', 'No host keys are saved.')}"
+                            TextAlignment="Center" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            FontSize="10"
+                            Foreground="{ThemeResource TextFaint}"
+                            Text="{x:Bind h:Loc.T('처음 연결할 때 “신뢰하고 저장”을 선택하면 여기에 표시됩니다.', 'Choose “Trust and save” on first connection to add one here.')}"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <ListView
+                    x:Name="HostsList"
+                    MaxHeight="310"
+                    AutomationProperties.Name="{x:Bind h:Loc.T('신뢰한 SSH Host key 목록', 'Trusted SSH host key list')}"
+                    Background="Transparent"
+                    IsItemClickEnabled="False"
+                    ItemsSource="{x:Bind Hosts}"
+                    SelectionMode="None">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Margin" Value="0,0,0,7" />
+                            <Setter Property="Padding" Value="0" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:KnownHostItemVm">
+                            <Border
+                                Padding="10"
+                                AutomationProperties.Name="{x:Bind AccessibilityName}"
+                                Background="{ThemeResource CardBg}"
+                                BorderBrush="{ThemeResource CardBorder}"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <TextBlock
+                                                FontSize="12"
+                                                FontWeight="SemiBold"
+                                                Foreground="{ThemeResource TextPrimary}"
+                                                Text="{x:Bind Host}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <Border
+                                                Padding="6,2"
+                                                Background="{ThemeResource PillBg}"
+                                                CornerRadius="8">
+                                                <TextBlock
+                                                    FontFamily="Cascadia Mono, Consolas"
+                                                    FontSize="9.5"
+                                                    Foreground="{ThemeResource TextMuted}"
+                                                    Text="{x:Bind PortText}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <Button
+                                            Grid.Column="1"
+                                            MinWidth="56"
+                                            Padding="8,4"
+                                            AutomationProperties.Name="{x:Bind DeleteAccessibilityName}"
+                                            Click="DeleteHost_Click"
+                                            Content="{x:Bind h:Loc.T('삭제', 'Delete')}"
+                                            Tag="{x:Bind Record}"
+                                            ToolTipService.ToolTip="{x:Bind DeleteAccessibilityName}" />
+                                    </Grid>
+
+                                    <StackPanel Spacing="3">
+                                        <TextBlock
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="10"
+                                            Foreground="{ThemeResource AccentViolet}"
+                                            Text="{x:Bind Algorithm}" />
+                                        <TextBlock
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="10"
+                                            Foreground="{ThemeResource AccentTeal}"
+                                            IsTextSelectionEnabled="True"
+                                            Text="{x:Bind Fingerprint}"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock
+                                                FontSize="9"
+                                                Foreground="{ThemeResource TextFaint}"
+                                                Text="{x:Bind h:Loc.T('최초 신뢰', 'FIRST TRUSTED')}" />
+                                            <TextBlock
+                                                FontFamily="Cascadia Mono, Consolas"
+                                                FontSize="9.5"
+                                                Foreground="{ThemeResource TextMuted}"
+                                                Text="{x:Bind TrustedAtText}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock
+                                                FontSize="9"
+                                                Foreground="{ThemeResource TextFaint}"
+                                                Text="{x:Bind h:Loc.T('마지막 사용', 'LAST USED')}" />
+                                            <TextBlock
+                                                FontFamily="Cascadia Mono, Consolas"
+                                                FontSize="9.5"
+                                                Foreground="{ThemeResource TextMuted}"
+                                                Text="{x:Bind LastUsedAtText}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </StackPanel>
+
+            <StackPanel Spacing="7">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        CharacterSpacing="55"
+                        FontSize="10.5"
+                        FontWeight="SemiBold"
+                        Foreground="{ThemeResource TextMuted}"
+                        Text="{x:Bind h:Loc.T('로컬 보안 활동', 'LOCAL SECURITY ACTIVITY')}" />
+                    <TextBlock
+                        x:Name="ActivityCountText"
+                        Grid.Column="1"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('표시한 보안 활동 수', 'Displayed security activity count')}"
+                        FontFamily="Cascadia Mono, Consolas"
+                        FontSize="10"
+                        Foreground="{ThemeResource TextFaint}" />
+                </Grid>
+
+                <Border
+                    x:Name="ActivityEmptyState"
+                    Padding="14"
+                    Background="{ThemeResource CardBg}"
+                    BorderBrush="{ThemeResource CardBorder}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontSize="10.5"
+                        Foreground="{ThemeResource TextMuted}"
+                        Text="{x:Bind h:Loc.T('기록된 신뢰·회전·삭제 활동이 없습니다.', 'No trust, rotation, or removal activity is recorded.')}"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                </Border>
+
+                <ListView
+                    x:Name="ActivityList"
+                    MaxHeight="230"
+                    AutomationProperties.Name="{x:Bind h:Loc.T('Known Hosts 보안 활동 목록', 'Known Hosts security activity list')}"
+                    Background="Transparent"
+                    ItemsSource="{x:Bind Activity}"
+                    SelectionMode="None">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Margin" Value="0,0,0,6" />
+                            <Setter Property="Padding" Value="0" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:KnownHostActivityItemVm">
+                            <Border
+                                Padding="9"
+                                AutomationProperties.Name="{x:Bind AccessibilityName}"
+                                Background="{ThemeResource CardBg}"
+                                BorderBrush="{ThemeResource CardBorder}"
+                                BorderThickness="1"
+                                CornerRadius="7">
+                                <StackPanel Spacing="5">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            FontSize="10.5"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource AccentTeal}"
+                                            Text="{x:Bind TypeText}" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="9"
+                                            Foreground="{ThemeResource TextFaint}"
+                                            Text="{x:Bind TimestampText}" />
+                                    </Grid>
+                                    <TextBlock
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="9.5"
+                                        Foreground="{ThemeResource TextMuted}"
+                                        Text="{x:Bind EndpointText}"
+                                        TextWrapping="Wrap" />
+                                    <TextBlock
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="9.5"
+                                        Foreground="{ThemeResource TextPrimary}"
+                                        IsTextSelectionEnabled="True"
+                                        Text="{x:Bind KeyChangeText}"
+                                        TextWrapping="Wrap" />
+                                    <TextBlock
+                                        FontSize="10"
+                                        Foreground="{ThemeResource TextMuted}"
+                                        Text="{x:Bind ReasonText}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </StackPanel>
+        </StackPanel>
+
+        <TextBlock
+            x:Name="StatusText"
+            AutomationProperties.LiveSetting="Polite"
+            FontSize="10.5"
+            Foreground="{ThemeResource StatusGreen}"
+            TextAlignment="Center"
+            TextWrapping="Wrap"
+            Visibility="Collapsed" />
+    </StackPanel>
+</UserControl>

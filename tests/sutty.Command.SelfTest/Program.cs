@@ -314,11 +314,20 @@ try
     HostHistoryStore.Append(
         "Build host", "build.example", "builder", 22, "Password", "",
         ["build"], "Success", null, 50);
+    HostHistoryStore.Append(
+        "Agent host", "agent.example", "agent-user", 22, "Agent", "",
+        [], "Failed", "AUTHENTICATION_FAILED", 75);
+    HostHistoryStore.Append(
+        "MFA host", "mfa.example", "mfa-user", 22, "KeyboardInteractive", "",
+        [], "Cancelled", "CONNECTION_CANCELLED", 60);
 
     var recent = HostHistoryStore.GetRecent(10);
-    Assert(recent.Count == 4, "append-only duplicate history");
+    Assert(recent.Count == 6, "append-only duplicate history");
     Assert(recent.Any(item => item.Outcome == "Failed" && item.ErrorCode == "SSH.CONNECT.FAILED"),
         "failure outcome and diagnostic code");
+    Assert(recent.Any(item => item.AuthMethod == "Agent") &&
+           recent.Any(item => item.AuthMethod == "KeyboardInteractive"),
+        "connection history preserves all four authentication types");
     Assert(recent.All(item => item.DurationMilliseconds is >= 0), "connection duration");
 
     var frequent = HostHistoryStore.GetMostFrequent(4);

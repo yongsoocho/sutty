@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Graphics;
@@ -33,6 +34,7 @@ namespace sutty.UI.Views
 
         private readonly SessionManager _sessions = new();
         private readonly SemaphoreSlim _hostKeyPromptGate = new(1, 1);
+        private SupportBundleContext? _lastStandaloneSupportContext;
         private Window? _settingWindow;
         private FileTreePanel? _fileTreePanel;
         private string _appIconPath = "";
@@ -1713,8 +1715,14 @@ namespace sutty.UI.Views
                 }
                 return;
             }
+        }
 
-            if (!altDown || controlDown || shortcutNumber is not int navigationNumber)
+        private void NavigationKeyboardAccelerator_Invoked(
+            KeyboardAccelerator sender,
+            KeyboardAcceleratorInvokedEventArgs args)
+        {
+            args.Handled = true;
+            if (ShortcutNumber(sender.Key) is not int navigationNumber)
                 return;
 
             var items = LeftNav.MenuItems
@@ -1725,7 +1733,6 @@ namespace sutty.UI.Views
             if (navigationIndex < 0 || navigationIndex >= items.Length)
                 return;
 
-            e.Handled = true;
             var item = items[navigationIndex];
             if (item.Tag is "Setting")
                 OpenSettingWindow();
@@ -1847,36 +1854,24 @@ namespace sutty.UI.Views
 
             try
             {
-                _ = HostEndpointIdentity.Create(info.Host, info.Port);
+                SshConnectionPreflightValidator.Validate(info);
+                _lastStandaloneSupportContext = null;
             }
-            catch (ArgumentException ex)
+            catch (Exception error) when (error is not OutOfMemoryException and not AccessViolationException)
             {
-                ConnectionLogStore.Append(
-                    Guid.Empty,
-                    info.Title,
-                    $"{info.Host}:{info.Port}",
-                    ConnectionLogSeverity.Error,
-                    "Validation",
-                    "SSH 연결 주소가 올바르지 않습니다.",
-                    "The SSH connection address is invalid.",
-                    ex.Message);
-                var invalidHostDialog = new ContentDialog
-                {
-                    Title = Helpers.Loc.T("연결 주소 확인", "Check connection address"),
-                    Content = Helpers.Loc.T(
-                        $"호스트 또는 포트가 올바르지 않습니다.\n\n{ex.Message}",
-                        $"The host or port is invalid.\n\n{ex.Message}"),
-                    CloseButtonText = "OK",
-                    XamlRoot = Content.XamlRoot,
-                };
-                await invalidHostDialog.ShowAsync();
+                await HandlePreflightFailureAsync(info, error);
                 return;
             }
 
             if (!await ConfirmHighRiskConnectionFeaturesAsync(info))
                 return;
 
-            info.HostKeyPromptAsync ??= PromptUnknownHostKeyAsync;
+            info.HostKeyPromptAsync ??= (verification, ct) => DispatchPromptToUiAsync(
+                () => PromptUnknownHostKeyAsync(verification, ct),
+                ct);
+            info.HostKeyRotationPromptAsync ??= (verification, ct) => DispatchPromptToUiAsync(
+                () => PromptChangedHostKeyRotationAsync(verification, ct),
+                ct);
             info.KeyboardInteractivePromptAsync ??= PromptKeyboardInteractiveAsync;
 
             ISshSession session;
@@ -1884,30 +1879,9 @@ namespace sutty.UI.Views
             {
                 session = _sessions.Create(info);
             }
-            catch (RoutePolicyViolationException error)
+            catch (Exception error) when (error is not OutOfMemoryException and not AccessViolationException)
             {
-                var reason = error.Code == ConnectionRouteErrorCodes.StrictRouteDirectBlocked
-                    ? Helpers.Loc.T(
-                        "엄격 경로가 Direct 연결을 차단했습니다. Proxy 또는 SSH Jump를 선택하거나 Host 설정에서 엄격 경로를 해제하세요.",
-                        "Strict route blocked a Direct connection. Select Proxy or SSH Jump, or turn off Strict route in the host settings.")
-                    : error.Message;
-                ConnectionLogStore.Append(
-                    Guid.Empty,
-                    info.Title,
-                    $"{info.Host}:{info.Port}",
-                    ConnectionLogSeverity.Error,
-                    "Route policy",
-                    "연결 경로 정책이 SSH 연결을 차단했습니다.",
-                    "The connection route policy blocked this SSH connection.",
-                    $"{error.Code}: {error.Message}");
-                var routeDialog = new ContentDialog
-                {
-                    Title = Helpers.Loc.T("연결 경로 정책", "Connection route policy"),
-                    Content = $"{reason}\n\n{Helpers.Loc.T("오류 코드", "Error code")}: {error.Code}",
-                    CloseButtonText = "OK",
-                    XamlRoot = Content.XamlRoot,
-                };
-                await routeDialog.ShowAsync();
+                await HandlePreflightFailureAsync(info, error);
                 return;
             }
             var savedProfile = await PersistSavedProfileAsync(info);
@@ -1973,7 +1947,7 @@ namespace sutty.UI.Views
 
             var timer = Stopwatch.StartNew();
             var outcome = "Failed";
-            string? errorCode = "SSH.CONNECT.FAILED";
+            string? errorCode = ConnectionDiagnosticErrorCodes.UnexpectedFailure;
             try
             {
                 await session.ConnectAsync();
@@ -1985,14 +1959,23 @@ namespace sutty.UI.Views
                     if (!string.IsNullOrWhiteSpace(connectedProfileId))
                         sutty.Command.HostProfileStore.MarkConnected(connectedProfileId);
                 }
+                else if (session.LastDiagnostic is { } failure)
+                {
+                    errorCode = failure.ErrorCode;
+                }
             }
             catch (OperationCanceledException)
             {
                 outcome = "Cancelled";
-                errorCode = "SSH.CONNECT.CANCELLED";
+                errorCode = session.LastDiagnostic?.ErrorCode ??
+                    ConnectionDiagnosticErrorCodes.ConnectionCancelled;
             }
             catch (Exception error)
             {
+                errorCode = session.LastDiagnostic?.ErrorCode ??
+                    ConnectionExceptionClassifier.Classify(
+                        error,
+                        routeType: session.CorrelationContext.RouteType).ErrorCode;
                 Debug.WriteLine($"Unexpected connection failure: {error.GetType().Name}");
                 ConnectionLogStore.Append(
                     session.Id,
@@ -2043,37 +2026,115 @@ namespace sutty.UI.Views
                 await ShowConnectionFailureAsync(session);
         }
 
-        private async Task ShowConnectionFailureAsync(ISshSession session)
+        private async Task HandlePreflightFailureAsync(
+            SshConnectionInfo info,
+            Exception error)
         {
-            var diagnostic = ConnectionLogStore.Snapshot()
-                .LastOrDefault(entry => entry.SessionId == session.Id &&
-                                        entry.Severity >= ConnectionLogSeverity.Error);
+            var routeType = info.Route is { Type: var requestedRoute } &&
+                            Enum.IsDefined(requestedRoute)
+                ? requestedRoute
+                : ConnectionRouteType.Direct;
+            var authenticationType = Enum.IsDefined(info.AuthMethod)
+                ? info.AuthMethod
+                : SshAuthMethod.Password;
+            var diagnosis = ConnectionExceptionClassifier.Classify(
+                error,
+                error is RoutePolicyViolationException
+                    ? ConnectionDiagnosticStage.ProxyOrJumpRoute
+                    : null,
+                routeType);
+            var correlationId = Guid.NewGuid().ToString("N");
+            ConnectionDiagnosticEventStore.Shared.Append(correlationId, diagnosis);
+            _lastStandaloneSupportContext = BuildSupportBundleContext(
+                routeType,
+                authenticationType,
+                diagnosis.ErrorCode,
+                correlationId);
+
+            ConnectionLogStore.Append(
+                Guid.ParseExact(correlationId, "N"),
+                info.Title,
+                $"{info.Host}:{info.Port}",
+                ConnectionLogSeverity.Error,
+                "Connection Doctor",
+                "네트워크 연결 전에 설정 검증이 실패했습니다.",
+                "Connection settings failed validation before network access.",
+                diagnosis.TechnicalDetail);
+
+            await ShowPreflightFailureAsync(
+                diagnosis,
+                routeType,
+                authenticationType,
+                correlationId);
+        }
+
+        private async Task ShowPreflightFailureAsync(
+            ConnectionDiagnosticResult diagnosis,
+            ConnectionRouteType routeType,
+            SshAuthMethod authenticationType,
+            string correlationId)
+        {
             var content = new StackPanel { Spacing = 8 };
             content.Children.Add(new TextBlock
             {
-                Text = diagnostic is null
-                    ? Helpers.Loc.T(
-                        "SSH 연결을 완료하지 못했습니다.",
-                        "The SSH connection could not be completed.")
-                    : Helpers.Loc.T(diagnostic.MessageKo, diagnostic.MessageEn),
+                Text = Helpers.Loc.T(
+                    "네트워크에 연결하기 전에 설정을 확인해야 합니다.",
+                    "Review the settings before a network connection can start."),
                 Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
             });
-            content.Children.Add(new TextBlock
+            content.Children.Add(CreateConnectionStageSummary(correlationId));
+
+            var identity = new StackPanel { Spacing = 3 };
+            identity.Children.Add(new TextBlock
             {
-                Text = session.LastError ?? Helpers.Loc.T("알 수 없는 오류", "Unknown error"),
+                Text = diagnosis.ErrorCode,
                 Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
                 FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 IsTextSelectionEnabled = true,
+            });
+            identity.Children.Add(new TextBlock
+            {
+                Text = $"{Helpers.Loc.T("실패 단계", "Failed stage")}: {LocalizeDiagnosticStage(diagnosis.Stage)}",
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                FontSize = 10.5,
+            });
+            content.Children.Add(new Border
+            {
+                Padding = new Thickness(10),
+                Background = Helpers.ThemeResources.Brush(Root, "CardBg"),
+                BorderBrush = Helpers.ThemeResources.Brush(Root, "CardBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7),
+                Child = identity,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(diagnosis.UserActionKo, diagnosis.UserActionEn),
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(new Expander
+            {
+                Header = Helpers.Loc.T("기술 상세", "Technical details"),
+                IsExpanded = false,
+                Content = new TextBlock
+                {
+                    Text = $"{diagnosis.TechnicalDetail}{Environment.NewLine}correlation={correlationId}",
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    FontSize = 10.5,
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true,
+                },
             });
             content.Children.Add(new TextBlock
             {
                 Text = Helpers.Loc.T(
-                    "DNS·소켓·키 교환·호스트 키·인증 단계의 상세 기록은 로그 화면에서 확인할 수 있습니다.",
-                    "Detailed DNS, socket, key-exchange, host-key, and authentication diagnostics are available in Logs."),
+                    "복사 요약과 지원 번들은 Hostname·사용자 이름·비밀번호·경로를 포함하지 않습니다.",
+                    "The copied summary and support bundle exclude hostnames, usernames, passwords, and paths."),
                 Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
@@ -2081,16 +2142,280 @@ namespace sutty.UI.Views
 
             var dialog = new ContentDialog
             {
-                Title = Helpers.Loc.T("SSH 연결 실패", "SSH connection failed"),
-                Content = content,
-                PrimaryButtonText = Helpers.Loc.T("로그 열기", "Open logs"),
+                Title = "Connection Doctor",
+                Content = new ScrollViewer
+                {
+                    MaxHeight = 580,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Content = content,
+                },
+                PrimaryButtonText = Helpers.Loc.T("상세 로그 열기", "Open detailed logs"),
+                SecondaryButtonText = Helpers.Loc.T("안전한 요약 복사", "Copy safe summary"),
+                CloseButtonText = Helpers.Loc.T("닫기", "Close"),
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+                SelectNavigationItem("Logs");
+            else if (result == ContentDialogResult.Secondary)
+            {
+                Helpers.ClipboardHelper.CopyText(BuildSafeDiagnosticSummary(
+                    diagnosis,
+                    routeType,
+                    authenticationType,
+                    correlationId));
+            }
+        }
+
+        private async Task ShowConnectionFailureAsync(ISshSession session)
+        {
+            var logEntry = ConnectionLogStore.Snapshot()
+                .LastOrDefault(entry => entry.SessionId == session.Id &&
+                                        entry.Severity >= ConnectionLogSeverity.Error);
+            var diagnosis = session.LastDiagnostic;
+            var content = new StackPanel { Spacing = 8 };
+            content.Children.Add(new TextBlock
+            {
+                Text = logEntry is null
+                    ? Helpers.Loc.T(
+                        "SSH 연결을 완료하지 못했습니다.",
+                        "The SSH connection could not be completed.")
+                    : Helpers.Loc.T(logEntry.MessageKo, logEntry.MessageEn),
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(CreateConnectionStageSummary(
+                session.CorrelationContext.CorrelationId));
+
+            if (diagnosis is not null)
+            {
+                var identity = new StackPanel { Spacing = 3 };
+                identity.Children.Add(new TextBlock
+                {
+                    Text = diagnosis.ErrorCode,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    IsTextSelectionEnabled = true,
+                });
+                identity.Children.Add(new TextBlock
+                {
+                    Text = $"{Helpers.Loc.T("실패 단계", "Failed stage")}: {LocalizeDiagnosticStage(diagnosis.Stage)}",
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                    FontSize = 10.5,
+                });
+                content.Children.Add(new Border
+                {
+                    Padding = new Thickness(10),
+                    Background = Helpers.ThemeResources.Brush(Root, "CardBg"),
+                    BorderBrush = Helpers.ThemeResources.Brush(Root, "CardBorder"),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(7),
+                    Child = identity,
+                });
+                content.Children.Add(new TextBlock
+                {
+                    Text = Helpers.Loc.T(diagnosis.UserActionKo, diagnosis.UserActionEn),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+            }
+
+            var technicalText = string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    diagnosis?.TechnicalDetail,
+                    $"correlation={session.CorrelationContext.CorrelationId}",
+                }.Where(value => !string.IsNullOrWhiteSpace(value)));
+            content.Children.Add(new Expander
+            {
+                Header = Helpers.Loc.T("기술 상세", "Technical details"),
+                IsExpanded = false,
+                Content = new TextBlock
+                {
+                    Text = technicalText,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    FontSize = 10.5,
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true,
+                },
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    "복사 요약에는 Hostname·사용자 이름·비밀번호·경로·터미널 내용이 포함되지 않습니다.",
+                    "The copied summary excludes hostnames, usernames, passwords, paths, and terminal content."),
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+            var dialog = new ContentDialog
+            {
+                Title = Helpers.Loc.T("Connection Doctor", "Connection Doctor"),
+                Content = new ScrollViewer
+                {
+                    MaxHeight = 580,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Content = content,
+                },
+                PrimaryButtonText = Helpers.Loc.T("상세 로그 열기", "Open detailed logs"),
+                SecondaryButtonText = Helpers.Loc.T("안전한 요약 복사", "Copy safe summary"),
                 CloseButtonText = Helpers.Loc.T("닫기", "Close"),
                 DefaultButton = ContentDialogButton.Primary,
                 XamlRoot = Content.XamlRoot,
             };
 
-            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
                 SelectNavigationItem("Logs");
+            else if (result == ContentDialogResult.Secondary)
+                Helpers.ClipboardHelper.CopyText(BuildSafeConnectionSummary(session));
+        }
+
+        private Border CreateConnectionStageSummary(string correlationId)
+        {
+            var latestByStage = ConnectionDiagnosticEventStore.Shared
+                .Snapshot(correlationId, 128)
+                .GroupBy(entry => entry.Stage)
+                .ToDictionary(group => group.Key, group => group.Last());
+            var stages = new StackPanel { Spacing = 5 };
+            stages.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T("연결 단계", "Connection stages"),
+                CharacterSpacing = 55,
+                FontSize = 10.5,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+            });
+
+            foreach (var stage in Enum.GetValues<ConnectionDiagnosticStage>())
+            {
+                latestByStage.TryGetValue(stage, out var entry);
+                var status = entry?.Status ?? ConnectionDiagnosticStatus.NotStarted;
+                var colorKey = status switch
+                {
+                    ConnectionDiagnosticStatus.Succeeded => "StatusGreen",
+                    ConnectionDiagnosticStatus.Failed => "StatusRed",
+                    ConnectionDiagnosticStatus.Cancelled => "StatusAmber",
+                    ConnectionDiagnosticStatus.Running => "AccentTeal",
+                    _ => "TextFaint",
+                };
+                var statusText = LocalizeDiagnosticStatus(status);
+                var detail = entry is { ErrorCode: not ConnectionDiagnosticErrorCodes.None }
+                    ? $"{statusText} · {entry.ErrorCode}"
+                    : statusText;
+                var row = new Grid { ColumnSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.Children.Add(new TextBlock
+                {
+                    Text = status switch
+                    {
+                        ConnectionDiagnosticStatus.Succeeded => "✓",
+                        ConnectionDiagnosticStatus.Failed => "×",
+                        ConnectionDiagnosticStatus.Cancelled => "!",
+                        ConnectionDiagnosticStatus.Running => "…",
+                        ConnectionDiagnosticStatus.Skipped => "—",
+                        _ => "○",
+                    },
+                    Width = 14,
+                    Foreground = Helpers.ThemeResources.Brush(Root, colorKey),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    TextAlignment = TextAlignment.Center,
+                });
+                var stageText = new TextBlock
+                {
+                    Text = LocalizeDiagnosticStage(stage),
+                    FontSize = 10.5,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                };
+                Grid.SetColumn(stageText, 1);
+                row.Children.Add(stageText);
+                var detailText = new TextBlock
+                {
+                    Text = detail,
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    FontSize = 9.5,
+                    Foreground = Helpers.ThemeResources.Brush(Root, colorKey),
+                };
+                Grid.SetColumn(detailText, 2);
+                row.Children.Add(detailText);
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+                    row,
+                    $"{LocalizeDiagnosticStage(stage)}, {detail}");
+                stages.Children.Add(row);
+            }
+
+            return new Border
+            {
+                Padding = new Thickness(10),
+                Background = Helpers.ThemeResources.Brush(Root, "CardBg"),
+                BorderBrush = Helpers.ThemeResources.Brush(Root, "CardBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7),
+                Child = stages,
+            };
+        }
+
+        private static string LocalizeDiagnosticStage(ConnectionDiagnosticStage stage) => stage switch
+        {
+            ConnectionDiagnosticStage.InputValidation => Helpers.Loc.T("입력값 검증", "Input validation"),
+            ConnectionDiagnosticStage.DnsAndTcp => Helpers.Loc.T("DNS·TCP", "DNS and TCP"),
+            ConnectionDiagnosticStage.ProxyOrJumpRoute => Helpers.Loc.T("Proxy·Jump 경로", "Proxy or jump route"),
+            ConnectionDiagnosticStage.SshHandshake => Helpers.Loc.T("SSH 핸드셰이크", "SSH handshake"),
+            ConnectionDiagnosticStage.HostKey => Helpers.Loc.T("호스트 키", "Host key"),
+            ConnectionDiagnosticStage.Authentication => Helpers.Loc.T("인증", "Authentication"),
+            ConnectionDiagnosticStage.Pty => "PTY",
+            ConnectionDiagnosticStage.SftpSubsystem => "SFTP subsystem",
+            ConnectionDiagnosticStage.PortForwarding => Helpers.Loc.T("포트 포워딩", "Port forwarding"),
+            _ => stage.ToString(),
+        };
+
+        private static string LocalizeDiagnosticStatus(ConnectionDiagnosticStatus status) => status switch
+        {
+            ConnectionDiagnosticStatus.NotStarted => Helpers.Loc.T("미실행", "Not run"),
+            ConnectionDiagnosticStatus.Running => Helpers.Loc.T("진행 중", "Running"),
+            ConnectionDiagnosticStatus.Succeeded => Helpers.Loc.T("성공", "Succeeded"),
+            ConnectionDiagnosticStatus.Failed => Helpers.Loc.T("실패", "Failed"),
+            ConnectionDiagnosticStatus.Cancelled => Helpers.Loc.T("취소", "Cancelled"),
+            ConnectionDiagnosticStatus.Skipped => Helpers.Loc.T("건너뜀", "Skipped"),
+            _ => status.ToString(),
+        };
+
+        private static string BuildSafeConnectionSummary(ISshSession session) =>
+            BuildSafeDiagnosticSummary(
+                session.LastDiagnostic,
+                session.CorrelationContext.RouteType,
+                session.Info.AuthMethod,
+                session.CorrelationContext.CorrelationId);
+
+        private static string BuildSafeDiagnosticSummary(
+            ConnectionDiagnosticResult? diagnosis,
+            ConnectionRouteType routeType,
+            SshAuthMethod authenticationType,
+            string correlationId)
+        {
+            var action = diagnosis is null
+                ? Helpers.Loc.T("연결 설정을 확인한 뒤 다시 시도하세요.", "Review the connection settings and retry.")
+                : Helpers.Loc.T(diagnosis.UserActionKo, diagnosis.UserActionEn);
+            return string.Join(
+                Environment.NewLine,
+                Helpers.AppReleaseInfo.DisplayVersion,
+                $"Code: {diagnosis?.ErrorCode ?? ConnectionDiagnosticErrorCodes.UnexpectedFailure}",
+                $"Stage: {(diagnosis is null ? "Unknown" : diagnosis.Stage)}",
+                $"Route: {routeType}",
+                $"Authentication: {authenticationType}",
+                $"Correlation ID: {correlationId}",
+                $"Action: {action}",
+                $"Technical: {diagnosis?.TechnicalDetail ?? "Unavailable"}");
         }
 
         private void SelectNavigationItem(string tag)
@@ -2383,21 +2708,26 @@ namespace sutty.UI.Views
         private Task<System.Collections.Generic.IReadOnlyList<string>?>
             PromptKeyboardInteractiveAsync(
                 KeyboardInteractiveChallenge challenge,
-                CancellationToken ct)
+                CancellationToken ct) => DispatchPromptToUiAsync(
+                    () => ShowKeyboardInteractivePromptAsync(challenge, ct),
+                    ct);
+
+        private Task<TResult> DispatchPromptToUiAsync<TResult>(
+            Func<Task<TResult>> prompt,
+            CancellationToken ct)
         {
-            var completion = new TaskCompletionSource<
-                System.Collections.Generic.IReadOnlyList<string>?>(
+            ArgumentNullException.ThrowIfNull(prompt);
+            if (DispatcherQueue.HasThreadAccess)
+                return prompt();
+
+            var completion = new TaskCompletionSource<TResult>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             if (!DispatcherQueue.TryEnqueue(async () =>
                 {
                     try
                     {
-                        completion.TrySetResult(
-                            await ShowKeyboardInteractivePromptAsync(challenge, ct));
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        completion.TrySetResult(null);
+                        ct.ThrowIfCancellationRequested();
+                        completion.TrySetResult(await prompt());
                     }
                     catch (Exception error)
                     {
@@ -2406,7 +2736,7 @@ namespace sutty.UI.Views
                 }))
             {
                 completion.TrySetException(new InvalidOperationException(
-                    "The SSH authentication prompt could not be dispatched to the UI."));
+                    "The SSH prompt could not be dispatched to the UI."));
             }
             return completion.Task.WaitAsync(ct);
         }
@@ -2548,6 +2878,152 @@ namespace sutty.UI.Views
             }
         }
 
+        private async Task<HostKeyRotationDecision> PromptChangedHostKeyRotationAsync(
+            HostKeyVerification verification,
+            CancellationToken ct)
+        {
+            await _hostKeyPromptGate.WaitAsync(ct);
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                if (verification.TrustedKey is null)
+                    return HostKeyRotationDecision.Cancelled;
+
+                var confirm = new CheckBox
+                {
+                    Content = Helpers.Loc.T(
+                        "서버 관리자와 두 지문을 직접 확인했습니다.",
+                        "I independently verified both fingerprints with the server administrator."),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                };
+                var reason = new TextBox
+                {
+                    Header = Helpers.Loc.T("변경 사유", "Reason for rotation"),
+                    PlaceholderText = Helpers.Loc.T(
+                        "예: 계획된 서버 키 교체",
+                        "For example: planned server-key rotation"),
+                    MaxLength = HostKeyRotationReason.MaximumLength,
+                };
+                var details = new StackPanel { Spacing = 10 };
+                details.Children.Add(new TextBlock
+                {
+                    Text = Helpers.Loc.T(
+                        "경고: 저장된 호스트 키와 서버가 제시한 키가 다릅니다. 예상한 교체인지 별도 경로로 확인하기 전에는 계속하지 마세요.",
+                        "Warning: the server key differs from the saved key. Do not continue until you verify the change through an independent channel."),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                details.Children.Add(new TextBlock
+                {
+                    Text = verification.Endpoint.Value,
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                    IsTextSelectionEnabled = true,
+                });
+                details.Children.Add(CreateHostKeyComparisonBlock(
+                    Helpers.Loc.T("기존 키", "Saved key"),
+                    verification.TrustedKey,
+                    "TextMuted"));
+                details.Children.Add(CreateHostKeyComparisonBlock(
+                    Helpers.Loc.T("새 키", "Presented key"),
+                    verification.PresentedKey,
+                    "StatusAmber"));
+                details.Children.Add(confirm);
+                details.Children.Add(reason);
+                details.Children.Add(new TextBlock
+                {
+                    Text = Helpers.Loc.T(
+                        "변경 사유는 이 PC의 로컬 보안 활동 기록에 평문으로 저장됩니다. 비밀번호·OTP 등 비밀정보를 입력하지 마세요.",
+                        "The reason is stored in plaintext in this PC's local security activity. Do not enter passwords, OTPs, or other secrets."),
+                    FontSize = 10,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                    TextWrapping = TextWrapping.Wrap,
+                });
+
+                var dialog = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("SSH 호스트 키 변경", "SSH host key changed"),
+                    Content = new ScrollViewer
+                    {
+                        MaxHeight = 520,
+                        Content = details,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    },
+                    PrimaryButtonText = Helpers.Loc.T("확인한 키로 교체", "Rotate verified key"),
+                    CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                    DefaultButton = ContentDialogButton.Close,
+                    IsPrimaryButtonEnabled = false,
+                    XamlRoot = Content.XamlRoot,
+                };
+
+                void UpdateConfirmationState()
+                {
+                    dialog.IsPrimaryButtonEnabled =
+                        confirm.IsChecked == true &&
+                        HostKeyRotationReason.TryNormalize(reason.Text, out _);
+                }
+
+                confirm.Checked += (_, _) => UpdateConfirmationState();
+                confirm.Unchecked += (_, _) => UpdateConfirmationState();
+                reason.TextChanged += (_, _) => UpdateConfirmationState();
+                using var cancellation = ct.Register(() =>
+                    DispatcherQueue.TryEnqueue(dialog.Hide));
+
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                    return HostKeyRotationDecision.Cancelled;
+
+                ct.ThrowIfCancellationRequested();
+                if (!HostKeyRotationReason.TryNormalize(reason.Text, out var normalizedReason))
+                    return HostKeyRotationDecision.Cancelled;
+                return new HostKeyRotationDecision(true, normalizedReason);
+            }
+            finally
+            {
+                _hostKeyPromptGate.Release();
+            }
+        }
+
+        private Border CreateHostKeyComparisonBlock(
+            string label,
+            HostKeyData key,
+            string fingerprintBrush)
+        {
+            var content = new StackPanel { Spacing = 3 };
+            content.Children.Add(new TextBlock
+            {
+                Text = label,
+                FontSize = 10.5,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = key.Algorithm,
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
+                IsTextSelectionEnabled = true,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = key.Sha256Fingerprint,
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                Foreground = Helpers.ThemeResources.Brush(Root, fingerprintBrush),
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+            });
+
+            return new Border
+            {
+                Padding = new Thickness(10),
+                Background = Helpers.ThemeResources.Brush(Root, "CardBg"),
+                BorderBrush = Helpers.ThemeResources.Brush(Root, "CardBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(7),
+                Child = content,
+            };
+        }
+
         private void TitleTabs_SelectionChanged(
             object sender,
             SelectionChangedEventArgs e)
@@ -2645,6 +3121,7 @@ namespace sutty.UI.Views
             if (_settingWindow is null)
             {
                 var panel = new SettingsPanel();
+                panel.SupportBundleContextProvider = CreateSupportBundleContext;
                 panel.SettingsChanged += (_, args) => ApplySettingsChanges(args.Changes);
                 panel.ThemeChanged += (_, themeName) => ApplyTheme(themeName);
 
@@ -2669,6 +3146,49 @@ namespace sutty.UI.Views
             }
 
             DispatcherQueue.TryEnqueue(() => BringToFront(_settingWindow));
+        }
+
+        private SupportBundleContext? CreateSupportBundleContext()
+        {
+            var session = ActiveSession ?? _sessions.Sessions.LastOrDefault();
+            if (session is null)
+                return _lastStandaloneSupportContext;
+
+            var latestUnresolvedFailure = ConnectionDiagnosticEventStore.Shared
+                .Snapshot(session.CorrelationContext.CorrelationId, 128)
+                .GroupBy(entry => entry.Stage)
+                .Select(group => group.MaxBy(entry => entry.Sequence)!)
+                .Where(entry => entry.Status is ConnectionDiagnosticStatus.Failed or
+                                                ConnectionDiagnosticStatus.Cancelled)
+                .MaxBy(entry => entry.Sequence);
+            return BuildSupportBundleContext(
+                session.CorrelationContext.RouteType,
+                session.Info.AuthMethod,
+                latestUnresolvedFailure?.ErrorCode ?? ConnectionDiagnosticErrorCodes.None,
+                session.CorrelationContext.CorrelationId);
+        }
+
+        private static SupportBundleContext BuildSupportBundleContext(
+            ConnectionRouteType routeType,
+            SshAuthMethod authenticationType,
+            string stableErrorCode,
+            string correlationId)
+        {
+            var build = !string.IsNullOrWhiteSpace(Helpers.AppReleaseInfo.Commit)
+                ? Helpers.AppReleaseInfo.Commit
+                : !string.IsNullOrWhiteSpace(Helpers.AppReleaseInfo.BuildMetadata)
+                    ? Helpers.AppReleaseInfo.BuildMetadata
+                    : "local";
+            return new SupportBundleContext(
+                Helpers.AppReleaseInfo.Version,
+                build,
+                Environment.OSVersion.Version.ToString(),
+                RuntimeInformation.ProcessArchitecture,
+                routeType,
+                authenticationType,
+                stableErrorCode,
+                correlationId,
+                SettingsService.SchemaVersion);
         }
 
         private void ApplySettingsChanges(SettingChangeKind changes)
