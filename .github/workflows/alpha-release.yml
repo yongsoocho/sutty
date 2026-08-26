@@ -24,7 +24,11 @@ on:
         required: true
         type: string
       evidence_manifest_path:
-        description: Canonical reviewed Pass manifest path under docs/evidence
+        description: Canonical reviewed SSH-LIVE-001 Pass manifest path under docs/evidence
+        required: true
+        type: string
+      package_evidence_manifest_path:
+        description: Canonical reviewed PKG-001 Pass manifest path under docs/evidence
         required: true
         type: string
 
@@ -54,17 +58,28 @@ jobs:
           CANDIDATE_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
           ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
           EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
+          PACKAGE_EVIDENCE_MANIFEST_PATH: ${{ inputs.package_evidence_manifest_path }}
         run: |
           if ($env:GITHUB_REF -cne 'refs/heads/main') { throw 'Alpha promotion must be dispatched from refs/heads/main.' }
-          $tagPattern = '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$'
-          if ($env:CANDIDATE_TAG -cnotmatch $tagPattern) { throw 'Promotion tag is not a supported Alpha tag.' }
+          $tagPattern = '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.(?<alpha>[0-9]+)$'
+          $tagMatch = [regex]::Match($env:CANDIDATE_TAG, $tagPattern)
+          if (-not $tagMatch.Success) { throw 'Promotion tag is not a supported Alpha tag.' }
+          $expectedEvidenceRoot = "docs/evidence/alpha$($tagMatch.Groups['alpha'].Value)/"
           if ($env:CANDIDATE_RUN_ID -cnotmatch '^[1-9][0-9]*$') { throw 'candidate_run_id must be a positive decimal workflow run ID.' }
           if ($env:CANDIDATE_RUN_ATTEMPT -cnotmatch '^[1-9][0-9]*$') { throw 'candidate_run_attempt must be a positive decimal number.' }
           $expectedArtifactName = "sutty-$env:CANDIDATE_TAG-candidate-$env:CANDIDATE_RUN_ID-attempt-$env:CANDIDATE_RUN_ATTEMPT"
           if ($env:CANDIDATE_ARTIFACT_NAME -cne $expectedArtifactName) { throw "candidate_artifact_name must be exactly $expectedArtifactName." }
           if ($env:ACCEPTANCE_COMMIT -cnotmatch '^[0-9a-f]{40}$') { throw 'acceptance_commit must be a 40-character lowercase Git object ID.' }
-          if ($env:EVIDENCE_MANIFEST_PATH -cnotmatch '^docs/evidence/alpha[0-9]+/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,63}/manifest\.yml$') {
-            throw 'evidence_manifest_path is not a canonical committed evidence path.'
+          if ($env:EVIDENCE_MANIFEST_PATH -cnotmatch '^docs/evidence/alpha[0-9]+/ssh-auth/[a-z0-9][a-z0-9-]{0,63}/manifest\.yml$' -or
+              -not $env:EVIDENCE_MANIFEST_PATH.StartsWith($expectedEvidenceRoot, [StringComparison]::Ordinal)) {
+            throw 'evidence_manifest_path is not a canonical reviewed SSH authentication evidence path.'
+          }
+          if ($env:PACKAGE_EVIDENCE_MANIFEST_PATH -cnotmatch '^docs/evidence/alpha[0-9]+/package/[a-z0-9][a-z0-9-]{0,63}/manifest\.yml$' -or
+              -not $env:PACKAGE_EVIDENCE_MANIFEST_PATH.StartsWith($expectedEvidenceRoot, [StringComparison]::Ordinal)) {
+            throw 'package_evidence_manifest_path is not a canonical reviewed package evidence path.'
+          }
+          if ($env:EVIDENCE_MANIFEST_PATH -ceq $env:PACKAGE_EVIDENCE_MANIFEST_PATH) {
+            throw 'SSH-LIVE-001 and PKG-001 must use distinct reviewed evidence bundles.'
           }
           & gh release verify --help *> $null
           if ($LASTEXITCODE -ne 0) { throw 'GitHub CLI does not support immutable release attestation verification.' }
@@ -212,6 +227,7 @@ jobs:
           CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
           ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
           EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
+          PACKAGE_EVIDENCE_MANIFEST_PATH: ${{ inputs.package_evidence_manifest_path }}
         run: |
           .\source\.github\scripts\Assert-AlphaCandidate.ps1 `
             -PackageDirectory .\artifacts\candidate\packages `
@@ -250,6 +266,13 @@ jobs:
             -ExpectedPackageSha256 $x64Hash `
             -RequiredGateId SSH-LIVE-001 `
             -RequiredResult Pass
+          $packageEvidenceManifest = Join-Path .\acceptance $env:PACKAGE_EVIDENCE_MANIFEST_PATH
+          .\source\.github\scripts\Assert-LiveEvidence.ps1 `
+            -ManifestPath $packageEvidenceManifest `
+            -ExpectedCommit $env:CANDIDATE_SHA `
+            -ExpectedPackageSha256 $x64Hash `
+            -RequiredGateId PKG-001 `
+            -RequiredResult Pass
 
       - name: Create independently verifiable release attestation
         shell: pwsh
@@ -263,6 +286,7 @@ jobs:
           CANDIDATE_SHA: ${{ steps.provenance.outputs.candidate_sha }}
           ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
           EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
+          PACKAGE_EVIDENCE_MANIFEST_PATH: ${{ inputs.package_evidence_manifest_path }}
         run: |
           .\source\.github\scripts\Assert-ReleaseAttestation.ps1 `
             -AttestationPath .\artifacts\release\RELEASE-ATTESTATION.json `
@@ -278,6 +302,7 @@ jobs:
             -CandidateArtifactDigest $env:CANDIDATE_ARTIFACT_DIGEST `
             -AcceptanceCommit $env:ACCEPTANCE_COMMIT `
             -EvidenceManifestRepositoryPath $env:EVIDENCE_MANIFEST_PATH `
+            -PackageEvidenceManifestRepositoryPath $env:PACKAGE_EVIDENCE_MANIFEST_PATH `
             -PromotionRunId $env:GITHUB_RUN_ID `
             -PromotionRunAttempt ([int]$env:GITHUB_RUN_ATTEMPT) `
             -WriteAttestation
@@ -392,6 +417,7 @@ jobs:
           CANDIDATE_ARTIFACT_DIGEST: ${{ steps.provenance.outputs.candidate_artifact_digest }}
           ACCEPTANCE_COMMIT: ${{ inputs.acceptance_commit }}
           EVIDENCE_MANIFEST_PATH: ${{ inputs.evidence_manifest_path }}
+          PACKAGE_EVIDENCE_MANIFEST_PATH: ${{ inputs.package_evidence_manifest_path }}
         run: |
           $downloadDirectory = New-Item -ItemType Directory -Force -Path .\artifacts\published
           function Invoke-AttestationVerification {
@@ -456,6 +482,7 @@ jobs:
             -CandidateArtifactDigest $env:CANDIDATE_ARTIFACT_DIGEST `
             -AcceptanceCommit $env:ACCEPTANCE_COMMIT `
             -EvidenceManifestRepositoryPath $env:EVIDENCE_MANIFEST_PATH `
+            -PackageEvidenceManifestRepositoryPath $env:PACKAGE_EVIDENCE_MANIFEST_PATH `
             -PromotionRunId $env:GITHUB_RUN_ID `
             -PromotionRunAttempt ([int]$env:GITHUB_RUN_ATTEMPT)
 

@@ -54,6 +54,10 @@ param(
 
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
+    [string]$PackageEvidenceManifestRepositoryPath,
+
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
     [string]$PromotionRunId,
 
     [Parameter(Mandatory)]
@@ -67,15 +71,15 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $schemaVersion = 1
-$requiredGateId = 'SSH-LIVE-001'
-$alphaTagPattern = '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$'
+$requiredSshGateId = 'SSH-LIVE-001'
+$requiredPackageGateId = 'PKG-001'
+$alphaTagPattern = '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.(?<alpha>[0-9]+)$'
 $commitPattern = '^[0-9a-f]{40}$'
 $sha256Pattern = '^[0-9a-f]{64}$'
 $artifactDigestPattern = '^sha256:[0-9a-f]{64}$'
 $positiveIdPattern = '^[1-9][0-9]*$'
 $githubReviewerPattern = '^github-[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$'
 $timestampPattern = '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z$'
-$evidencePathPattern = '^docs/evidence/alpha[0-9]+/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,63}/manifest\.yml$'
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 function Read-StrictUtf8 {
@@ -505,21 +509,29 @@ function Read-AndValidateReview {
         [Parameter(Mandatory)][string]$Path,
         [Parameter(Mandatory)][string[]]$ExpectedSourceNames,
         [Parameter(Mandatory)][string]$BundleDirectory,
-        [Parameter(Mandatory)][DateTimeOffset]$EvidenceCompletedAtUtc
+        [Parameter(Mandatory)][DateTimeOffset]$EvidenceCompletedAtUtc,
+        [Parameter(Mandatory)][string]$ExpectedGateId
     )
 
     $document = Read-StrictJson -Path $Path -Description 'evidence review'
     try {
         $root = $document.RootElement
         Assert-NoDuplicateJsonProperties -Element $root -Description 'evidence review'
-        Assert-ExactJsonProperties -Element $root -Expected @(
+        $expectedReviewProperties = @(
             'schema_version'
             'reviewer_id'
             'reviewed_at_utc'
             'source_bundle_sha256'
             'source_files'
             'review_scope'
-        ) -Description 'evidence review'
+        )
+        if ($ExpectedGateId -ceq 'PKG-001') {
+            $expectedReviewProperties += 'manual_observation_confirmed'
+        }
+        Assert-ExactJsonProperties `
+            -Element $root `
+            -Expected $expectedReviewProperties `
+            -Description 'evidence review'
 
         if ((Get-JsonInt32 -Object $root -Name schema_version -Description 'evidence review') -ne 1) {
             throw 'evidence review.schema_version must be the integer 1.'
@@ -605,6 +617,13 @@ function Read-AndValidateReview {
             $scope[1].GetString() -cne 'bundle-integrity') {
             throw 'evidence review.review_scope must be exactly privacy-redaction then bundle-integrity.'
         }
+        if ($ExpectedGateId -ceq 'PKG-001') {
+            $manualObservationConfirmed = $root.GetProperty('manual_observation_confirmed')
+            if ($manualObservationConfirmed.ValueKind -ne
+                [System.Text.Json.JsonValueKind]::True) {
+                throw 'PKG-001 evidence review.manual_observation_confirmed must be the JSON boolean true.'
+            }
+        }
 
         return [ordered]@{
             reviewer_id = $reviewerId
@@ -685,11 +704,23 @@ function Assert-AttestationJson {
             'reviewed_at_utc'
             'source_bundle_sha256'
             'gate_id'
+            'package_evidence_manifest_path'
+            'package_evidence_manifest_sha256'
+            'package_review_path'
+            'package_review_sha256'
+            'package_reviewer_id'
+            'package_reviewed_at_utc'
+            'package_source_bundle_sha256'
+            'package_gate_id'
         ) -Description 'release attestation.acceptance'
         foreach ($name in @(
             'commit', 'evidence_manifest_path', 'evidence_manifest_sha256',
             'review_path', 'review_sha256', 'reviewer_id', 'reviewed_at_utc',
-            'source_bundle_sha256', 'gate_id')) {
+            'source_bundle_sha256', 'gate_id', 'package_evidence_manifest_path',
+            'package_evidence_manifest_sha256', 'package_review_path',
+            'package_review_sha256', 'package_reviewer_id',
+            'package_reviewed_at_utc', 'package_source_bundle_sha256',
+            'package_gate_id')) {
             $actual = Get-JsonString `
                 -Object $acceptance -Name $name -Description 'release attestation.acceptance'
             if ($actual -cne $Expected.acceptance[$name]) {
@@ -752,9 +783,11 @@ function Assert-AttestationJson {
 if ($Repository -cnotmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
     throw 'Repository must be an exact GitHub owner/name slug.'
 }
-if ($Tag -cnotmatch $alphaTagPattern) {
+$tagMatch = [regex]::Match($Tag, $alphaTagPattern)
+if (-not $tagMatch.Success) {
     throw 'Tag must be a canonical Alpha tag.'
 }
+$expectedEvidenceRoot = "docs/evidence/alpha$($tagMatch.Groups['alpha'].Value)/"
 Assert-Commit -Value $CandidateCommit -Description 'CandidateCommit'
 Assert-Commit -Value $AcceptanceCommit -Description 'AcceptanceCommit'
 foreach ($id in @(
@@ -774,8 +807,22 @@ $expectedArtifactName = "sutty-$Tag-candidate-$CandidateRunId-attempt-$Candidate
 if ($CandidateArtifactName -cne $expectedArtifactName) {
     throw "CandidateArtifactName must be exactly $expectedArtifactName."
 }
-if ($EvidenceManifestRepositoryPath -cnotmatch $evidencePathPattern) {
-    throw 'EvidenceManifestRepositoryPath is not a canonical repository evidence path.'
+if ($EvidenceManifestRepositoryPath -cnotmatch
+    '^docs/evidence/alpha[0-9]+/ssh-auth/[a-z0-9][a-z0-9-]{0,63}/manifest\.yml$' -or
+    -not $EvidenceManifestRepositoryPath.StartsWith(
+        $expectedEvidenceRoot,
+        [StringComparison]::Ordinal)) {
+    throw 'EvidenceManifestRepositoryPath is not a canonical SSH authentication evidence path.'
+}
+if ($PackageEvidenceManifestRepositoryPath -cnotmatch
+    '^docs/evidence/alpha[0-9]+/package/[a-z0-9][a-z0-9-]{0,63}/manifest\.yml$' -or
+    -not $PackageEvidenceManifestRepositoryPath.StartsWith(
+        $expectedEvidenceRoot,
+        [StringComparison]::Ordinal)) {
+    throw 'PackageEvidenceManifestRepositoryPath is not a canonical package evidence path.'
+}
+if ($EvidenceManifestRepositoryPath -ceq $PackageEvidenceManifestRepositoryPath) {
+    throw 'SSH-LIVE-001 and PKG-001 evidence paths must be distinct.'
 }
 if (-not (Test-Path -LiteralPath $RepositoryRoot -PathType Container)) {
     throw "RepositoryRoot is missing: $RepositoryRoot"
@@ -833,7 +880,7 @@ $reviewFullPath = Join-Path (Split-Path -Parent $manifestFullPath) 'review.json'
     -ManifestPath $manifestFullPath `
     -ExpectedCommit $CandidateCommit `
     -ExpectedPackageSha256 $releaseFiles[0].sha256 `
-    -RequiredGateId $requiredGateId `
+    -RequiredGateId $requiredSshGateId `
     -RequiredResult Pass *> $null
 
 $declaredEvidenceFiles = @(Get-EvidenceFileNames -ManifestPath $manifestFullPath)
@@ -851,7 +898,48 @@ $review = Read-AndValidateReview `
     -Path $reviewFullPath `
     -ExpectedSourceNames $sourceNames `
     -BundleDirectory (Split-Path -Parent $manifestFullPath) `
-    -EvidenceCompletedAtUtc $evidenceCompletedAtUtc
+    -EvidenceCompletedAtUtc $evidenceCompletedAtUtc `
+    -ExpectedGateId $requiredSshGateId
+
+$packageManifestFullPath = [System.IO.Path]::GetFullPath((Join-Path `
+    $resolvedRepositoryRoot `
+    $PackageEvidenceManifestRepositoryPath.Replace(
+        '/', [System.IO.Path]::DirectorySeparatorChar)))
+if (-not $packageManifestFullPath.StartsWith(
+        $repositoryPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Package evidence manifest resolves outside RepositoryRoot.'
+}
+$packageReviewRepositoryPath =
+    ([System.IO.Path]::GetDirectoryName($PackageEvidenceManifestRepositoryPath).
+        Replace('\', '/') + '/review.json')
+$packageReviewFullPath = Join-Path (Split-Path -Parent $packageManifestFullPath) 'review.json'
+
+& $liveEvidenceValidator `
+    -ManifestPath $packageManifestFullPath `
+    -ExpectedCommit $CandidateCommit `
+    -ExpectedPackageSha256 $releaseFiles[0].sha256 `
+    -RequiredGateId $requiredPackageGateId `
+    -RequiredResult Pass *> $null
+
+$packageDeclaredEvidenceFiles = @(
+    Get-EvidenceFileNames -ManifestPath $packageManifestFullPath)
+$packageSourceNameList = [System.Collections.Generic.List[string]]::new()
+$packageSourceNameList.Add('manifest.yml')
+foreach ($name in $packageDeclaredEvidenceFiles) {
+    if ($name -cne 'review.json') {
+        $packageSourceNameList.Add($name)
+    }
+}
+$packageSourceNames = [string[]]@($packageSourceNameList)
+[Array]::Sort($packageSourceNames, [StringComparer]::Ordinal)
+$packageEvidenceCompletedAtUtc = Get-EvidenceCompletionUtc `
+    -ManifestPath $packageManifestFullPath
+$packageReview = Read-AndValidateReview `
+    -Path $packageReviewFullPath `
+    -ExpectedSourceNames $packageSourceNames `
+    -BundleDirectory (Split-Path -Parent $packageManifestFullPath) `
+    -EvidenceCompletedAtUtc $packageEvidenceCompletedAtUtc `
+    -ExpectedGateId $requiredPackageGateId
 
 $expectedAttestation = [ordered]@{
     schema_version = $schemaVersion
@@ -875,7 +963,15 @@ $expectedAttestation = [ordered]@{
         reviewer_id = $review.reviewer_id
         reviewed_at_utc = $review.reviewed_at_utc
         source_bundle_sha256 = $review.source_bundle_sha256
-        gate_id = $requiredGateId
+        gate_id = $requiredSshGateId
+        package_evidence_manifest_path = $PackageEvidenceManifestRepositoryPath
+        package_evidence_manifest_sha256 = Get-LowerSha256 -Path $packageManifestFullPath
+        package_review_path = $packageReviewRepositoryPath
+        package_review_sha256 = Get-LowerSha256 -Path $packageReviewFullPath
+        package_reviewer_id = $packageReview.reviewer_id
+        package_reviewed_at_utc = $packageReview.reviewed_at_utc
+        package_source_bundle_sha256 = $packageReview.source_bundle_sha256
+        package_gate_id = $requiredPackageGateId
     }
     promotion = [ordered]@{
         run_id = $PromotionRunId

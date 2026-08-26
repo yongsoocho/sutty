@@ -1286,8 +1286,26 @@ static void AssertConnectionDiagnosticsAndSupportBundle(string scratch)
         ConnectionDiagnosticStatus.Failed,
         ConnectionDiagnosticErrorCodes.PtyRequestFailed);
     var snapshotService = new SupportBundleService(snapshotEvents);
+    var failedPreview = snapshotService.Preview(snapshotCorrelationId);
+    Assert(failedPreview.StableErrorCode == ConnectionDiagnosticErrorCodes.PtyRequestFailed &&
+           failedPreview.EventCount == 1 &&
+           failedPreview.FailureStage == ConnectionDiagnosticStage.Pty &&
+           failedPreview.FailureStatus == ConnectionDiagnosticStatus.Failed &&
+           failedPreview.FailureSequence is > 0 &&
+           failedPreview.FailureTimestampUtc is not null &&
+           failedPreview.SnapshotSha256.Length == 64 &&
+           failedPreview.SnapshotSha256.All(character =>
+               character is >= '0' and <= '9' or >= 'a' and <= 'f'),
+        "support-bundle preview binds the selected stable failure and exact event snapshot");
     var failedSnapshotPath = Path.Combine(scratch, "support-snapshot-failed.zip");
-    snapshotService.Create(failedSnapshotPath, snapshotContext);
+    snapshotService.Create(
+        failedSnapshotPath,
+        snapshotContext with
+        {
+            StableErrorCode = failedPreview.StableErrorCode,
+            FallbackFailureStage = failedPreview.FailureStage,
+            ExpectedDiagnosticSnapshotSha256 = failedPreview.SnapshotSha256,
+        });
     var failedSnapshotReport = ReadSupportBundleReport(failedSnapshotPath);
     Assert(failedSnapshotReport["stableErrorCode"]!.GetValue<string>() ==
                ConnectionDiagnosticErrorCodes.PtyRequestFailed &&
@@ -1301,17 +1319,254 @@ static void AssertConnectionDiagnosticsAndSupportBundle(string scratch)
         ConnectionDiagnosticStage.Pty,
         ConnectionDiagnosticStatus.Succeeded,
         ConnectionDiagnosticErrorCodes.None);
+    var resolvedSnapshotPath = Path.Combine(scratch, "support-snapshot-resolved.zip");
+    snapshotService.Create(resolvedSnapshotPath, snapshotContext);
+    var resolvedSnapshotReport = ReadSupportBundleReport(resolvedSnapshotPath);
+    Assert(resolvedSnapshotReport["stableErrorCode"]!.GetValue<string>() ==
+               ConnectionDiagnosticErrorCodes.None,
+        "support bundle keeps NONE when the selected context and event snapshot are resolved");
+
     var recoveredSnapshotPath = Path.Combine(scratch, "support-snapshot-recovered.zip");
     snapshotService.Create(
         recoveredSnapshotPath,
-        snapshotContext with { StableErrorCode = ConnectionDiagnosticErrorCodes.PtyRequestFailed });
+        snapshotContext with
+        {
+            StableErrorCode = ConnectionDiagnosticErrorCodes.PtyRequestFailed,
+            FallbackFailureStage = ConnectionDiagnosticStage.Pty,
+        });
     var recoveredSnapshotReport = ReadSupportBundleReport(recoveredSnapshotPath);
     Assert(recoveredSnapshotReport["stableErrorCode"]!.GetValue<string>() ==
                ConnectionDiagnosticErrorCodes.None &&
            recoveredSnapshotReport["events"]!.AsArray().Any(value =>
                value!["stage"]!.GetValue<string>() == ConnectionDiagnosticStage.Pty.ToString() &&
                value["status"]!.GetValue<string>() == ConnectionDiagnosticStatus.Succeeded.ToString()),
-        "support bundle ignores stale picker-time error context after a stage recovers");
+        "support bundle does not revive a requested failure that the captured events explicitly resolved");
+
+    var missingEventCorrelationId = Guid.NewGuid().ToString("N");
+    var missingEventPath = Path.Combine(scratch, "support-missing-event-fallback.zip");
+    snapshotService.Create(
+        missingEventPath,
+        snapshotContext with
+        {
+            CorrelationId = missingEventCorrelationId,
+            StableErrorCode = ConnectionDiagnosticErrorCodes.AuthenticationFailed.ToLowerInvariant(),
+            FallbackFailureStage = ConnectionDiagnosticStage.Authentication,
+        });
+    var missingEventReport = ReadSupportBundleReport(missingEventPath);
+    Assert(missingEventReport["stableErrorCode"]!.GetValue<string>() ==
+               ConnectionDiagnosticErrorCodes.AuthenticationFailed &&
+           missingEventReport["events"]!.AsArray().Count == 0,
+        "support bundle normalizes and preserves the requested failure when event recording is unavailable");
+
+    var canonicalFallbacks = new (string Code, ConnectionDiagnosticStage Stage)[]
+    {
+        (ConnectionDiagnosticErrorCodes.InputInvalid, ConnectionDiagnosticStage.InputValidation),
+        (ConnectionDiagnosticErrorCodes.DnsLookupFailed, ConnectionDiagnosticStage.DnsAndTcp),
+        (ConnectionDiagnosticErrorCodes.TcpConnectionRefused, ConnectionDiagnosticStage.DnsAndTcp),
+        (ConnectionDiagnosticErrorCodes.TcpTimedOut, ConnectionDiagnosticStage.DnsAndTcp),
+        (ConnectionDiagnosticErrorCodes.TcpUnreachable, ConnectionDiagnosticStage.DnsAndTcp),
+        (ConnectionDiagnosticErrorCodes.TcpFailed, ConnectionDiagnosticStage.DnsAndTcp),
+        (ConnectionDiagnosticErrorCodes.RoutePolicyBlocked, ConnectionDiagnosticStage.ProxyOrJumpRoute),
+        (ConnectionDiagnosticErrorCodes.RouteSocks5Refused, ConnectionDiagnosticStage.ProxyOrJumpRoute),
+        (ConnectionDiagnosticErrorCodes.RouteProxyRefused, ConnectionDiagnosticStage.ProxyOrJumpRoute),
+        (ConnectionDiagnosticErrorCodes.RouteJumpRefused, ConnectionDiagnosticStage.ProxyOrJumpRoute),
+        (ConnectionDiagnosticErrorCodes.RouteAuthenticationFailed, ConnectionDiagnosticStage.ProxyOrJumpRoute),
+        (ConnectionDiagnosticErrorCodes.RouteTimedOut, ConnectionDiagnosticStage.ProxyOrJumpRoute),
+        (ConnectionDiagnosticErrorCodes.RouteFailed, ConnectionDiagnosticStage.ProxyOrJumpRoute),
+        (ConnectionDiagnosticErrorCodes.SshHandshakeTimedOut, ConnectionDiagnosticStage.SshHandshake),
+        (ConnectionDiagnosticErrorCodes.SshHandshakeFailed, ConnectionDiagnosticStage.SshHandshake),
+        (ConnectionDiagnosticErrorCodes.HostKeyChanged, ConnectionDiagnosticStage.HostKey),
+        (ConnectionDiagnosticErrorCodes.HostKeyRejected, ConnectionDiagnosticStage.HostKey),
+        (ConnectionDiagnosticErrorCodes.AuthenticationFailed, ConnectionDiagnosticStage.Authentication),
+        (ConnectionDiagnosticErrorCodes.AuthenticationTimedOut, ConnectionDiagnosticStage.Authentication),
+        (ConnectionDiagnosticErrorCodes.AuthenticationKeyFileMissing, ConnectionDiagnosticStage.Authentication),
+        (ConnectionDiagnosticErrorCodes.AuthenticationKeyFileDenied, ConnectionDiagnosticStage.Authentication),
+        (ConnectionDiagnosticErrorCodes.PtyRequestFailed, ConnectionDiagnosticStage.Pty),
+        (ConnectionDiagnosticErrorCodes.SftpSubsystemUnavailable, ConnectionDiagnosticStage.SftpSubsystem),
+        (ConnectionDiagnosticErrorCodes.PortForwardingFailed, ConnectionDiagnosticStage.PortForwarding),
+    };
+    foreach (var (code, stage) in canonicalFallbacks)
+    {
+        var fallbackPreview = snapshotService.Preview(Guid.NewGuid().ToString("N"), code, stage);
+        Assert(fallbackPreview.StableErrorCode == code &&
+               fallbackPreview.FailureStage == stage &&
+               fallbackPreview.FailureStatus == ConnectionDiagnosticStatus.Failed,
+            $"support bundle accepts canonical fallback provenance for {code}");
+
+        var mismatchedStage = stage == ConnectionDiagnosticStage.InputValidation
+            ? ConnectionDiagnosticStage.Pty
+            : ConnectionDiagnosticStage.InputValidation;
+        AssertThrows<ArgumentException>(
+            () => snapshotService.Preview(Guid.NewGuid().ToString("N"), code, mismatchedStage),
+            $"support bundle rejects mismatched fallback provenance for {code}");
+    }
+
+    foreach (var stage in Enum.GetValues<ConnectionDiagnosticStage>())
+    {
+        var cancelledPreview = snapshotService.Preview(
+            Guid.NewGuid().ToString("N"),
+            ConnectionDiagnosticErrorCodes.ConnectionCancelled,
+            stage);
+        var unexpectedPreview = snapshotService.Preview(
+            Guid.NewGuid().ToString("N"),
+            ConnectionDiagnosticErrorCodes.UnexpectedFailure,
+            stage);
+        Assert(cancelledPreview.FailureStage == stage &&
+               cancelledPreview.FailureStatus == ConnectionDiagnosticStatus.Cancelled &&
+               unexpectedPreview.FailureStage == stage &&
+               unexpectedPreview.FailureStatus == ConnectionDiagnosticStatus.Failed,
+            $"generic fallback codes remain valid for {stage}");
+    }
+
+    var legacyFallbackPreview = snapshotService.Preview(
+        Guid.NewGuid().ToString("N"),
+        ConnectionDiagnosticErrorCodes.PtyRequestFailed);
+    Assert(legacyFallbackPreview.StableErrorCode == ConnectionDiagnosticErrorCodes.PtyRequestFailed &&
+           legacyFallbackPreview.FailureStage is null &&
+           legacyFallbackPreview.FailureStatus == ConnectionDiagnosticStatus.Failed,
+        "legacy empty-correlation fallback remains compatible without invented stage provenance");
+    AssertThrows<ArgumentException>(
+        () => snapshotService.Preview(
+            Guid.NewGuid().ToString("N"),
+            ConnectionDiagnosticErrorCodes.None,
+            ConnectionDiagnosticStage.Authentication),
+        "support bundle rejects a fallback stage when there is no fallback failure code");
+
+    var mismatchedFallbackPath = Path.Combine(scratch, "support-mismatched-fallback-stage.zip");
+    File.WriteAllText(mismatchedFallbackPath, "sentinel fallback destination");
+    AssertThrows<ArgumentException>(
+        () => snapshotService.Create(
+            mismatchedFallbackPath,
+            snapshotContext with
+            {
+                CorrelationId = Guid.NewGuid().ToString("N"),
+                StableErrorCode = ConnectionDiagnosticErrorCodes.PtyRequestFailed,
+                FallbackFailureStage = ConnectionDiagnosticStage.Authentication,
+            },
+            overwrite: true),
+        "support bundle rejects a mismatched code and fallback stage before creation");
+    Assert(File.ReadAllText(mismatchedFallbackPath) == "sentinel fallback destination",
+        "mismatched fallback provenance preserves an existing destination");
+    AssertThrows<ArgumentException>(
+        () => snapshotService.Create(
+            Path.Combine(scratch, "support-none-with-fallback-stage.zip"),
+            snapshotContext with
+            {
+                CorrelationId = Guid.NewGuid().ToString("N"),
+                StableErrorCode = ConnectionDiagnosticErrorCodes.None,
+                FallbackFailureStage = ConnectionDiagnosticStage.Authentication,
+            }),
+        "support bundle rejects creation with a fallback stage but no fallback failure code");
+
+    var partialEventCorrelationId = Guid.NewGuid().ToString("N");
+    snapshotEvents.Append(
+        partialEventCorrelationId,
+        ConnectionDiagnosticStage.InputValidation,
+        ConnectionDiagnosticStatus.Succeeded);
+    snapshotEvents.Append(
+        partialEventCorrelationId,
+        ConnectionDiagnosticStage.DnsAndTcp,
+        ConnectionDiagnosticStatus.Succeeded);
+    var partialEventPath = Path.Combine(scratch, "support-partial-event-fallback.zip");
+    snapshotService.Create(
+        partialEventPath,
+        snapshotContext with
+        {
+            CorrelationId = partialEventCorrelationId,
+            StableErrorCode = ConnectionDiagnosticErrorCodes.AuthenticationFailed,
+            FallbackFailureStage = ConnectionDiagnosticStage.Authentication,
+        });
+    var partialEventReport = ReadSupportBundleReport(partialEventPath);
+    Assert(partialEventReport["stableErrorCode"]!.GetValue<string>() ==
+               ConnectionDiagnosticErrorCodes.AuthenticationFailed &&
+           partialEventReport["events"]!.AsArray().Count == 2,
+        "stage-aware fallback preserves a failure whose append was missing after earlier events");
+
+    var changedCorrelationId = Guid.NewGuid().ToString("N");
+    snapshotEvents.Append(
+        changedCorrelationId,
+        ConnectionDiagnosticStage.Pty,
+        ConnectionDiagnosticStatus.Failed,
+        ConnectionDiagnosticErrorCodes.PtyRequestFailed);
+    var changedPreview = snapshotService.Preview(changedCorrelationId);
+    var changedContext = snapshotContext with
+    {
+        CorrelationId = changedCorrelationId,
+        StableErrorCode = changedPreview.StableErrorCode,
+        FallbackFailureStage = changedPreview.FailureStage,
+        ExpectedDiagnosticSnapshotSha256 = changedPreview.SnapshotSha256,
+    };
+    snapshotEvents.Append(
+        changedCorrelationId,
+        ConnectionDiagnosticStage.Pty,
+        ConnectionDiagnosticStatus.Succeeded);
+    var changedPath = Path.Combine(scratch, "support-snapshot-changed.zip");
+    AssertThrows<SupportBundleDiagnosticSnapshotChangedException>(
+        () => snapshotService.Create(changedPath, changedContext),
+        "support bundle rejects an event snapshot changed after UI preview");
+    Assert(!File.Exists(changedPath),
+        "changed diagnostic snapshot leaves no partial support bundle destination");
+    var preservedChangedPath = Path.Combine(scratch, "support-snapshot-changed-preserved.zip");
+    File.WriteAllText(preservedChangedPath, "sentinel snapshot destination");
+    AssertThrows<SupportBundleDiagnosticSnapshotChangedException>(
+        () => snapshotService.Create(preservedChangedPath, changedContext, overwrite: true),
+        "snapshot mismatch is checked before replacing an existing destination");
+    Assert(File.ReadAllText(preservedChangedPath) == "sentinel snapshot destination",
+        "snapshot mismatch preserves the existing destination");
+
+    var evictedEvents = new ConnectionDiagnosticEventStore(capacity: 1);
+    var evictedService = new SupportBundleService(evictedEvents);
+    var evictedCorrelationId = Guid.NewGuid().ToString("N");
+    evictedEvents.Append(
+        evictedCorrelationId,
+        ConnectionDiagnosticStage.Pty,
+        ConnectionDiagnosticStatus.Failed,
+        ConnectionDiagnosticErrorCodes.PtyRequestFailed);
+    evictedEvents.Append(
+        evictedCorrelationId,
+        ConnectionDiagnosticStage.Pty,
+        ConnectionDiagnosticStatus.Succeeded);
+    var evictedPath = Path.Combine(scratch, "support-evicted-failure-resolved.zip");
+    evictedService.Create(
+        evictedPath,
+        snapshotContext with
+        {
+            CorrelationId = evictedCorrelationId,
+            StableErrorCode = ConnectionDiagnosticErrorCodes.PtyRequestFailed,
+            FallbackFailureStage = ConnectionDiagnosticStage.Pty,
+        });
+    var evictedReport = ReadSupportBundleReport(evictedPath);
+    Assert(evictedReport["stableErrorCode"]!.GetValue<string>() ==
+               ConnectionDiagnosticErrorCodes.None &&
+           evictedReport["events"]!.AsArray().Count == 1 &&
+           evictedReport["events"]![0]!["status"]!.GetValue<string>() ==
+               ConnectionDiagnosticStatus.Succeeded.ToString(),
+        "an explicit same-stage recovery remains authoritative after failure eviction");
+
+    AssertThrows<ArgumentException>(
+        () => snapshotService.Create(
+            Path.Combine(scratch, "support-invalid-snapshot-hash.zip"),
+            snapshotContext with { ExpectedDiagnosticSnapshotSha256 = new string('A', 64) }),
+        "support bundle rejects a non-canonical expected snapshot digest");
+
+    var mismatchCorrelationId = Guid.NewGuid().ToString("N");
+    snapshotEvents.Append(
+        mismatchCorrelationId,
+        ConnectionDiagnosticStage.Pty,
+        ConnectionDiagnosticStatus.Failed,
+        ConnectionDiagnosticErrorCodes.PtyRequestFailed);
+    var mismatchPath = Path.Combine(scratch, "support-diagnostic-code-mismatch.zip");
+    AssertThrows<SupportBundleDiagnosticCodeMismatchException>(
+        () => snapshotService.Create(
+            mismatchPath,
+            snapshotContext with
+            {
+                CorrelationId = mismatchCorrelationId,
+                StableErrorCode = ConnectionDiagnosticErrorCodes.AuthenticationFailed,
+            }),
+        "support bundle rejects different requested and captured failure codes");
+    Assert(!File.Exists(mismatchPath),
+        "diagnostic-code mismatch leaves no partial support bundle destination");
 
     AssertThrows<ArgumentException>(
         () => service.Create(

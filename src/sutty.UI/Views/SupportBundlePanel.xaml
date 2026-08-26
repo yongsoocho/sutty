@@ -3,7 +3,8 @@
     x:Class="sutty.UI.Views.SupportBundlePanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:h="using:sutty.UI.Helpers">
+    xmlns:h="using:sutty.UI.Helpers"
+    Loaded="SupportBundlePanel_Loaded">
 
     <StackPanel Spacing="12">
         <StackPanel Spacing="3">
@@ -18,6 +19,97 @@
                 Text="{x:Bind h:Loc.T('선택했거나 가장 최근인 SSH 연결 시도의 비식별 진단 정보만 ZIP으로 저장합니다.', 'Save only de-identified diagnostics for the selected or most recent SSH connection attempt as a ZIP.')}"
                 TextWrapping="Wrap" />
         </StackPanel>
+
+        <ComboBox
+            x:Name="TargetComboBox"
+            HorizontalAlignment="Stretch"
+            AutomationProperties.Name="{x:Bind h:Loc.T('지원 번들 대상 SSH 연결', 'SSH connection for the support bundle')}"
+            DisplayMemberPath="TargetLabel"
+            Header="{x:Bind h:Loc.T('대상 연결', 'Target connection')}"
+            ItemsSource="{x:Bind Targets}"
+            SelectionChanged="TargetComboBox_SelectionChanged" />
+
+        <Border
+            x:Name="TargetPreview"
+            Padding="12"
+            Background="{ThemeResource CardBg}"
+            BorderBrush="{ThemeResource CardBorder}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Visibility="Collapsed">
+            <StackPanel Spacing="8">
+                <TextBlock
+                    CharacterSpacing="55"
+                    FontSize="10.5"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource AccentTeal}"
+                    Text="{x:Bind h:Loc.T('내보내기 미리보기', 'EXPORT PREVIEW')}" />
+                <Grid ColumnSpacing="12" RowSpacing="5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Foreground="{ThemeResource TextMuted}" Text="{x:Bind h:Loc.T('세션', 'Session')}" />
+                    <TextBlock
+                        x:Name="TargetSessionText"
+                        Grid.Column="1"
+                        Foreground="{ThemeResource TextPrimary}"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="1" Foreground="{ThemeResource TextMuted}" Text="Endpoint" />
+                    <TextBlock
+                        x:Name="TargetEndpointText"
+                        Grid.Row="1"
+                        Grid.Column="1"
+                        FontFamily="Cascadia Mono, Consolas"
+                        Foreground="{ThemeResource TextPrimary}"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="2" Foreground="{ThemeResource TextMuted}" Text="{x:Bind h:Loc.T('상태', 'Status')}" />
+                    <TextBlock
+                        x:Name="TargetStatusText"
+                        Grid.Row="2"
+                        Grid.Column="1"
+                        Foreground="{ThemeResource TextPrimary}"
+                        TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="3" Foreground="{ThemeResource TextMuted}" Text="{x:Bind h:Loc.T('오류 코드', 'Error code')}" />
+                    <TextBlock
+                        x:Name="TargetErrorCodeText"
+                        Grid.Row="3"
+                        Grid.Column="1"
+                        FontFamily="Cascadia Mono, Consolas"
+                        Foreground="{ThemeResource TextPrimary}"
+                        IsTextSelectionEnabled="True" />
+                    <TextBlock Grid.Row="4" Foreground="{ThemeResource TextMuted}" Text="Correlation ID" />
+                    <TextBlock
+                        x:Name="TargetCorrelationText"
+                        Grid.Row="4"
+                        Grid.Column="1"
+                        FontFamily="Cascadia Mono, Consolas"
+                        Foreground="{ThemeResource TextPrimary}"
+                        IsTextSelectionEnabled="True"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="5" Foreground="{ThemeResource TextMuted}" Text="{x:Bind h:Loc.T('진단 이벤트', 'Diagnostic events')}" />
+                    <TextBlock
+                        x:Name="TargetEventCountText"
+                        Grid.Row="5"
+                        Grid.Column="1"
+                        FontFamily="Cascadia Mono, Consolas"
+                        Foreground="{ThemeResource TextPrimary}" />
+                </Grid>
+                <TextBlock
+                    FontSize="10.5"
+                    Foreground="{ThemeResource StatusAmber}"
+                    Text="{x:Bind h:Loc.T('세션 이름과 Endpoint는 이 화면에서만 확인하며 ZIP에는 포함하지 않습니다.', 'The session name and endpoint are shown only in this preview and are not included in the ZIP.')}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
 
         <Border
             Padding="12"

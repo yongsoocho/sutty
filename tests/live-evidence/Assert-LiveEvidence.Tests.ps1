@@ -11,6 +11,10 @@ $commit = '0123456789abcdef0123456789abcdef01234567'
 $packageSha256 = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789'
 $privacyNotice =
     'Connection identifiers, credentials, filesystem locations, session content, and cryptographic material are excluded.'
+$packageWriter = (Resolve-Path (
+    Join-Path $PSScriptRoot '..\..\.github\scripts\Write-PackageEvidence.ps1')).Path
+$evidenceReviewer = (Resolve-Path (
+    Join-Path $PSScriptRoot '..\..\.github\scripts\Review-LiveEvidence.ps1')).Path
 $caseCount = 0
 
 function Set-Utf8Text {
@@ -22,6 +26,31 @@ function Set-Utf8Text {
     $parent = Split-Path -Parent $Path
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
     [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Copy-FixtureTree {
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination
+    )
+
+    [IO.Directory]::CreateDirectory($Destination) | Out-Null
+    foreach ($directory in [IO.Directory]::EnumerateDirectories(
+            $Source,
+            '*',
+            [IO.SearchOption]::AllDirectories)) {
+        $relativePath = [IO.Path]::GetRelativePath($Source, $directory)
+        [IO.Directory]::CreateDirectory((Join-Path $Destination $relativePath)) | Out-Null
+    }
+    foreach ($file in [IO.Directory]::EnumerateFiles(
+            $Source,
+            '*',
+            [IO.SearchOption]::AllDirectories)) {
+        $relativePath = [IO.Path]::GetRelativePath($Source, $file)
+        $destinationPath = Join-Path $Destination $relativePath
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $destinationPath)) | Out-Null
+        [IO.File]::Copy($file, $destinationPath, $false)
+    }
 }
 
 function ConvertTo-QuotedScalar {
@@ -157,12 +186,53 @@ function New-SshLive001Summary {
         -AdditionalProperties @{ measurements = (New-SshLive001Measurements) }
 }
 
+function New-Pkg001Checks {
+    foreach ($id in @(
+        'package-sha256',
+        'package-commit-identity',
+        'package-tree-identity',
+        'ui-startup',
+        'alt-navigation-silent',
+        'ui-shutdown')) {
+        [ordered]@{ id = $id; result = 'Pass' }
+    }
+}
+
+function New-Pkg001Measurements {
+    return [ordered]@{
+        check_count = 6
+        passed_count = 6
+        failed_count = 0
+        blocked_count = 0
+        package_sha256_verified = $true
+        package_commit_identity_verified = $true
+        package_tree_identity_verified = $true
+        ui_startup_verified = $true
+        alt_navigation_silent_verified = $true
+        ui_shutdown_verified = $true
+        alt_navigation_shortcut_count = 7
+    }
+}
+
+function New-Pkg001Summary {
+    param(
+        [object[]]$Checks = @(New-Pkg001Checks),
+        [object]$Measurements = (New-Pkg001Measurements)
+    )
+
+    return New-CanonicalSummary `
+        -GateId 'PKG-001' `
+        -Checks $Checks `
+        -AdditionalProperties @{ measurements = $Measurements }
+}
+
 function New-CanonicalReview {
     param(
         [string[]]$SourceNames,
         [string]$Bundle,
         [string]$SourceManifestText,
-        [string]$SourceSummaryText
+        [string]$SourceSummaryText,
+        [string]$GateId
     )
 
     $sortedNames = @($SourceNames)
@@ -207,14 +277,18 @@ function New-CanonicalReview {
             [System.Text.UTF8Encoding]::new($false).GetBytes($canonicalRecords.ToString())))
     $bundleDigest = $bundleDigestHex.ToLowerInvariant()
 
-    return [ordered]@{
+    $review = [ordered]@{
         schema_version = 1
         reviewer_id = 'github-sutty-reviewer'
         reviewed_at_utc = '2026-08-20T02:03:04Z'
         source_bundle_sha256 = $bundleDigest
         source_files = $records
         review_scope = @('privacy-redaction', 'bundle-integrity')
-    } | ConvertTo-Json -Depth 10 -Compress
+    }
+    if ($GateId -ceq 'PKG-001') {
+        $review.manual_observation_confirmed = $true
+    }
+    return $review | ConvertTo-Json -Depth 10 -Compress
 }
 
 function Set-CanonicalFixtureReview {
@@ -226,7 +300,8 @@ function Set-CanonicalFixtureReview {
             -SourceNames $Fixture.SourceNames `
             -Bundle $Fixture.Bundle `
             -SourceManifestText $Fixture.SourceManifestText `
-            -SourceSummaryText $Fixture.SourceSummaryText)
+            -SourceSummaryText $Fixture.SourceSummaryText `
+            -GateId $Fixture.GateId)
 }
 
 function New-EvidenceBundle {
@@ -248,7 +323,16 @@ function New-EvidenceBundle {
     }
     Set-Utf8Text -Path (Join-Path $root 'EVIDENCE_SCHEMA.md') -Content '# Fixture evidence schema.'
     Set-Utf8Text -Path (Join-Path $root 'alpha4/README.md') -Content '# Fixture Alpha 4 index.'
-    Set-Utf8Text -Path (Join-Path $root 'alpha4/ssh-auth/README.md') -Content '# Fixture SSH authentication index.'
+    $relativeSegments = @($RelativeBundle.Split('/'))
+    if ($relativeSegments.Count -ne 3 -or $relativeSegments[0] -cne 'alpha4') {
+        $scopeName = 'ssh-auth'
+    }
+    else {
+        $scopeName = $relativeSegments[1]
+    }
+    Set-Utf8Text `
+        -Path (Join-Path $root "alpha4/$scopeName/README.md") `
+        -Content '# Fixture scope index.'
     $bundle = Join-Path $root $RelativeBundle.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
     New-Item -ItemType Directory -Path $bundle -Force | Out-Null
 
@@ -373,7 +457,8 @@ function New-EvidenceBundle {
                 -SourceNames $sourceNames `
                 -Bundle $bundle `
                 -SourceManifestText $sourceManifestText `
-                -SourceSummaryText $sourceSummaryText)
+                -SourceSummaryText $sourceSummaryText `
+                -GateId $fields.gate_id)
     }
 
     return @{
@@ -383,6 +468,7 @@ function New-EvidenceBundle {
         SourceNames = $sourceNames
         SourceManifestText = $sourceManifestText
         SourceSummaryText = $sourceSummaryText
+        GateId = $fields.gate_id
     }
 }
 
@@ -474,6 +560,25 @@ function Assert-Rejected {
     }
     if ($null -eq $failure) {
         throw "Live-evidence fixture should be rejected: $Name"
+    }
+}
+
+function Assert-ActionRejected {
+    param(
+        [Parameter(Mandatory)][scriptblock]$Action,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $script:caseCount++
+    $rejected = $false
+    try {
+        & $Action
+    }
+    catch {
+        $rejected = $true
+    }
+    if (-not $rejected) {
+        throw "Live-evidence action should be rejected: $Name"
     }
 }
 
@@ -857,6 +962,176 @@ try {
         -Direct `
         -RequiredGateId 'SSH-LIVE-001' `
         -RequiredResult Pass
+
+    $pkgOverrides = @{
+        gate_id = 'PKG-001'
+        server_family = 'NotApplicable'
+        server_version = 'NotApplicable'
+        route = 'NotApplicable'
+        authentication = 'NotApplicable'
+        expected_host_fingerprint = 'NotRecorded'
+    }
+    $pkgGate = New-EvidenceBundle `
+        'pkg-gate' `
+        -RelativeBundle 'alpha4/package/pkg-gate' `
+        -Overrides $pkgOverrides `
+        -Summary (New-Pkg001Summary)
+    Assert-Accepted `
+        -Fixture $pkgGate `
+        -Name 'exact PKG-001 reviewed x64 package gate' `
+        -Direct `
+        -RequiredGateId 'PKG-001' `
+        -RequiredResult Pass
+    Assert-Accepted `
+        -Fixture $pkgGate `
+        -Name 'root scan accepts the canonical package evidence scope and PKG-001 profile'
+
+    $unconfirmedPackageReview = New-EvidenceBundle `
+        'pkg-gate-unconfirmed-review' `
+        -RelativeBundle 'alpha4/package/pkg-gate-unconfirmed-review' `
+        -Overrides $pkgOverrides `
+        -Summary (New-Pkg001Summary)
+    $unconfirmedReviewPath = Join-Path $unconfirmedPackageReview.Bundle 'review.json'
+    $unconfirmedReviewText = Get-Content -LiteralPath $unconfirmedReviewPath -Raw
+    Set-Utf8Text `
+        -Path $unconfirmedReviewPath `
+        -Content $unconfirmedReviewText.Replace(
+            '"manual_observation_confirmed":true',
+            '"manual_observation_confirmed":false')
+    Assert-Rejected `
+        -Fixture $unconfirmedPackageReview `
+        -Name 'PKG-001 requires explicit manual-observation review confirmation' `
+        -Direct `
+        -RequiredGateId 'PKG-001' `
+        -RequiredResult Pass
+
+    $wrongGateInPackageScope = New-EvidenceBundle `
+        'wrong-gate-in-package-scope' `
+        -RelativeBundle 'alpha4/package/wrong-gate-in-package-scope'
+    Assert-Rejected `
+        -Fixture $wrongGateInPackageScope `
+        -Name 'package scope rejects every gate other than PKG-001'
+
+    $packageGateInWrongScope = New-EvidenceBundle `
+        'package-gate-in-wrong-scope' `
+        -Overrides $pkgOverrides `
+        -Summary (New-Pkg001Summary)
+    Assert-Rejected `
+        -Fixture $packageGateInWrongScope `
+        -Name 'PKG-001 is reserved for the package evidence scope'
+
+    foreach ($pkgProfileCase in @(
+        @{ Name = 'ARM64 package'; Field = 'architecture'; Value = 'arm64' },
+        @{ Name = 'SSH server tuple'; Field = 'server_family'; Value = 'OpenSSH' },
+        @{ Name = 'SSH route tuple'; Field = 'route'; Value = 'Direct' },
+        @{ Name = 'SSH authentication tuple'; Field = 'authentication'; Value = 'Password' },
+        @{ Name = 'fingerprint tuple'; Field = 'expected_host_fingerprint'; Value = 'SHA256:[redacted]' },
+        @{ Name = 'unsupported Windows build'; Field = 'windows_build'; Value = '10.0.19045.0' })) {
+        $overrides = @{}
+        foreach ($entry in $pkgOverrides.GetEnumerator()) {
+            $overrides[$entry.Key] = $entry.Value
+        }
+        $overrides[$pkgProfileCase.Field] = $pkgProfileCase.Value
+        $fixture = New-EvidenceBundle `
+            "pkg-gate-$($pkgProfileCase.Field)" `
+            -RelativeBundle "alpha4/package/pkg-gate-$($pkgProfileCase.Field)" `
+            -Overrides $overrides `
+            -Summary (New-Pkg001Summary)
+        Assert-Rejected `
+            -Fixture $fixture `
+            -Name "$($pkgProfileCase.Name) does not satisfy PKG-001" `
+            -Direct `
+            -RequiredGateId 'PKG-001' `
+            -RequiredResult Pass
+        Assert-Rejected `
+            -Fixture $fixture `
+            -Name "root scan rejects $($pkgProfileCase.Name) labeled as PKG-001"
+    }
+
+    foreach ($pkgMeasurementCase in @(
+        @{ Name = 'false package tree identity'; Field = 'package_tree_identity_verified'; Value = $false },
+        @{ Name = 'false startup'; Field = 'ui_startup_verified'; Value = $false },
+        @{ Name = 'wrong shortcut count'; Field = 'alt_navigation_shortcut_count'; Value = 6 },
+        @{ Name = 'string check count'; Field = 'check_count'; Value = '6' })) {
+        $measurements = New-Pkg001Measurements
+        $measurements[$pkgMeasurementCase.Field] = $pkgMeasurementCase.Value
+        $fixture = New-EvidenceBundle `
+            "pkg-gate-measurement-$($pkgMeasurementCase.Field)" `
+            -RelativeBundle "alpha4/package/pkg-gate-measurement-$($pkgMeasurementCase.Field)" `
+            -Overrides $pkgOverrides `
+            -Summary (New-Pkg001Summary -Measurements $measurements)
+        Assert-Rejected `
+            -Fixture $fixture `
+            -Name "PKG-001 $($pkgMeasurementCase.Name) measurement" `
+            -Direct `
+            -RequiredGateId 'PKG-001' `
+            -RequiredResult Pass
+    }
+
+    $missingPkgMeasurement = New-Pkg001Measurements
+    $missingPkgMeasurement.Remove('ui_shutdown_verified')
+    $missingPkgMeasurementFixture = New-EvidenceBundle `
+        'pkg-gate-missing-measurement' `
+        -RelativeBundle 'alpha4/package/pkg-gate-missing-measurement' `
+        -Overrides $pkgOverrides `
+        -Summary (New-Pkg001Summary -Measurements $missingPkgMeasurement)
+    Assert-Rejected `
+        -Fixture $missingPkgMeasurementFixture `
+        -Name 'PKG-001 missing canonical measurement' `
+        -Direct `
+        -RequiredGateId 'PKG-001' `
+        -RequiredResult Pass
+
+    $extraPkgMeasurement = New-Pkg001Measurements
+    $extraPkgMeasurement['automation_passed'] = $true
+    $extraPkgMeasurementFixture = New-EvidenceBundle `
+        'pkg-gate-extra-measurement' `
+        -RelativeBundle 'alpha4/package/pkg-gate-extra-measurement' `
+        -Overrides $pkgOverrides `
+        -Summary (New-Pkg001Summary -Measurements $extraPkgMeasurement)
+    Assert-Rejected `
+        -Fixture $extraPkgMeasurementFixture `
+        -Name 'PKG-001 unexpected measurement' `
+        -Direct `
+        -RequiredGateId 'PKG-001' `
+        -RequiredResult Pass
+
+    $reorderedPkgChecks = @(New-Pkg001Checks)
+    $temporaryPkgCheck = $reorderedPkgChecks[3]
+    $reorderedPkgChecks[3] = $reorderedPkgChecks[4]
+    $reorderedPkgChecks[4] = $temporaryPkgCheck
+    $reorderedPkgFixture = New-EvidenceBundle `
+        'pkg-gate-reordered-checks' `
+        -RelativeBundle 'alpha4/package/pkg-gate-reordered-checks' `
+        -Overrides $pkgOverrides `
+        -Summary (New-Pkg001Summary -Checks $reorderedPkgChecks)
+    Assert-Rejected `
+        -Fixture $reorderedPkgFixture `
+        -Name 'PKG-001 checks outside canonical order' `
+        -Direct `
+        -RequiredGateId 'PKG-001' `
+        -RequiredResult Pass
+
+    $missingPkgChecks = @(New-Pkg001Checks | Select-Object -Skip 1)
+    $missingPkgCheckFixture = New-EvidenceBundle `
+        'pkg-gate-missing-check' `
+        -RelativeBundle 'alpha4/package/pkg-gate-missing-check' `
+        -Overrides $pkgOverrides `
+        -Summary (New-Pkg001Summary -Checks $missingPkgChecks)
+    Assert-Rejected `
+        -Fixture $missingPkgCheckFixture `
+        -Name 'PKG-001 missing complete gate check' `
+        -Direct `
+        -RequiredGateId 'PKG-001' `
+        -RequiredResult Pass
+
+    $reservedTupleFixture = New-EvidenceBundle `
+        'not-applicable-reserved' `
+        -Overrides @{ route = 'NotApplicable'; authentication = 'NotApplicable' }
+    Assert-Rejected `
+        -Fixture $reservedTupleFixture `
+        -Name 'NotApplicable tuple is reserved for PKG-001'
+
     $safeScenario = New-EvidenceBundle `
         'safe-scenario-field' `
         -Summary (New-CanonicalSummary -AdditionalProperties @{
@@ -1197,6 +1472,270 @@ try {
         -not $junctionFailure.Contains('reparse', [StringComparison]::OrdinalIgnoreCase) -or
         $junctionFailure.Contains('UTF-8', [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Bundle-root reparse fixture was read instead of being rejected at the path boundary.'
+    }
+
+    $writerPayload = Join-Path $scratch 'package-writer-payload'
+    New-Item -ItemType Directory -Path $writerPayload -Force | Out-Null
+    Set-Utf8Text -Path (Join-Path $writerPayload 'sutty.UI.exe') -Content 'fixture executable bytes'
+    Set-Utf8Text -Path (Join-Path $writerPayload 'sutty.UI.dll') -Content 'fixture UI dependency bytes'
+    Set-Utf8Text -Path (Join-Path $writerPayload 'Assets\fixture.asset') -Content 'fixture asset bytes'
+    Set-Utf8Text `
+        -Path (Join-Path $writerPayload 'BUILDINFO.txt') `
+        -Content ((@(
+            'Sutty v0.1.0-alpha.4'
+            "Commit: $commit"
+            'Channel: Alpha'
+            'Signing: unsigned ZIP evaluation build'
+            'Minimum OS: Windows 11 24H2'
+            'Architecture: x64'
+        ) -join [Environment]::NewLine) + [Environment]::NewLine)
+    $writerPackageRoot = Join-Path $scratch 'package-writer-candidate'
+    New-Item -ItemType Directory -Path $writerPackageRoot -Force | Out-Null
+    $writerPackage = Join-Path $writerPackageRoot 'Sutty-v0.1.0-alpha.4-win-x64.zip'
+    [IO.Compression.ZipFile]::CreateFromDirectory($writerPayload, $writerPackage)
+    $writerPackageSha256 = (Get-FileHash -LiteralPath $writerPackage -Algorithm SHA256).
+        Hash.ToLowerInvariant()
+    $writerStartedAt = [DateTimeOffset]::UtcNow.AddSeconds(-10).ToString(
+        "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+        [Globalization.CultureInfo]::InvariantCulture)
+    $writerOutput = Join-Path $scratch 'package-writer-output'
+    $writerBoundaryRepository = Join-Path $scratch 'package-writer-boundary-repository'
+    $writerBoundaryScripts = Join-Path $writerBoundaryRepository '.github\scripts'
+    $writerBoundaryEvidence = Join-Path $writerBoundaryRepository 'docs\evidence'
+    New-Item -ItemType Directory -Path $writerBoundaryScripts -Force | Out-Null
+    New-Item -ItemType Directory -Path $writerBoundaryEvidence -Force | Out-Null
+    $writerBoundaryScript = Join-Path $writerBoundaryScripts 'Write-PackageEvidence.ps1'
+    Copy-Item -LiteralPath $packageWriter -Destination $writerBoundaryScript
+    Assert-ActionRejected -Name 'package writer rejects a case-variant exact committed evidence root' -Action {
+        & $writerBoundaryScript `
+            -PackagePath $writerPackage `
+            -ObservedUiPath (Join-Path $writerPayload 'sutty.UI.exe') `
+            -Tag 'v0.1.0-alpha.4' `
+            -Commit $commit `
+            -EvidenceOutputRoot $writerBoundaryEvidence.ToUpperInvariant() `
+            -StartedAtUtc $writerStartedAt `
+            -DurationSeconds 1 `
+            -UiStartupResult Pass `
+            -AltNavigationSilentResult Pass `
+            -AltNavigationShortcutCount 7 `
+            -UiShutdownResult Pass *> $null
+    }
+    $writerSourceBundle = @(& $packageWriter `
+        -PackagePath $writerPackage `
+        -ObservedUiPath (Join-Path $writerPayload 'sutty.UI.exe') `
+        -Tag 'v0.1.0-alpha.4' `
+        -Commit $commit `
+        -EvidenceOutputRoot $writerOutput `
+        -StartedAtUtc $writerStartedAt `
+        -DurationSeconds 1 `
+        -UiStartupResult Pass `
+        -AltNavigationSilentResult Pass `
+        -AltNavigationShortcutCount 7 `
+        -UiShutdownResult Pass | Select-Object -Last 1)[0]
+    $script:caseCount++
+    $writerSourceManifest = Join-Path $writerSourceBundle 'manifest.yml'
+    if (-not (Test-Path -LiteralPath $writerSourceManifest -PathType Leaf) -or
+        (Test-Path -LiteralPath (Join-Path $writerSourceBundle 'review.json')) -or
+        (Get-Content -LiteralPath $writerSourceManifest -Raw) -cnotmatch
+            '(?m)^redaction_reviewed: false\r?$') {
+        throw 'Package-evidence writer did not create one canonical unreviewed source bundle.'
+    }
+    $writerReviewedRoot = Join-Path $scratch 'package-writer-reviewed'
+    $reviewedAt = [DateTimeOffset]::UtcNow.ToString(
+        "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+        [Globalization.CultureInfo]::InvariantCulture)
+    Assert-ActionRejected -Name 'PKG-001 review requires manual-observation confirmation' -Action {
+        & $evidenceReviewer `
+            -SourceManifestPath $writerSourceManifest `
+            -DestinationRoot (Join-Path $scratch 'package-writer-unconfirmed-review') `
+            -ReviewerId 'github-package-reviewer' `
+            -ReviewedAtUtc $reviewedAt `
+            -PrivacyReview Confirmed `
+            -ExpectedCommit $commit `
+            -ExpectedPackageSha256 $writerPackageSha256 `
+            -RequiredGateId PKG-001 `
+            -RequiredResult Pass *> $null
+    }
+    $writerReviewedBundle = @(& $evidenceReviewer `
+        -SourceManifestPath $writerSourceManifest `
+        -DestinationRoot $writerReviewedRoot `
+        -ReviewerId 'github-package-reviewer' `
+        -ReviewedAtUtc $reviewedAt `
+        -PrivacyReview Confirmed `
+        -ManualObservationReview Confirmed `
+        -ExpectedCommit $commit `
+        -ExpectedPackageSha256 $writerPackageSha256 `
+        -RequiredGateId PKG-001 `
+        -RequiredResult Pass | Select-Object -Last 1)[0]
+    $script:caseCount++
+    $writerValidationFailure = Get-ValidationFailure `
+        -Manifest (Join-Path $writerReviewedBundle 'manifest.yml') `
+        -ExpectedCommit $commit `
+        -ExpectedPackageSha256 $writerPackageSha256 `
+        -RequiredGateId PKG-001 `
+        -RequiredResult Pass
+    if ($null -ne $writerValidationFailure) {
+        throw "Reviewed package-writer output should pass: $writerValidationFailure"
+    }
+
+    Assert-ActionRejected -Name 'package writer rejects BUILDINFO commit mismatch' -Action {
+        & $packageWriter `
+            -PackagePath $writerPackage `
+            -ObservedUiPath (Join-Path $writerPayload 'sutty.UI.exe') `
+            -Tag 'v0.1.0-alpha.4' `
+            -Commit ('f' * 40) `
+            -EvidenceOutputRoot (Join-Path $scratch 'package-writer-wrong-commit') `
+            -StartedAtUtc $writerStartedAt `
+            -DurationSeconds 1 `
+            -UiStartupResult Pass `
+            -AltNavigationSilentResult Pass `
+            -AltNavigationShortcutCount 7 `
+            -UiShutdownResult Pass *> $null
+    }
+    $differentUiRoot = Join-Path $scratch 'package-writer-different-ui'
+    Copy-FixtureTree -Source $writerPayload -Destination $differentUiRoot
+    Set-Utf8Text `
+        -Path (Join-Path $differentUiRoot 'sutty.UI.exe') `
+        -Content 'different fixture executable bytes'
+    Assert-ActionRejected -Name 'package writer rejects a different executed UI binary' -Action {
+        & $packageWriter `
+            -PackagePath $writerPackage `
+            -ObservedUiPath (Join-Path $differentUiRoot 'sutty.UI.exe') `
+            -Tag 'v0.1.0-alpha.4' `
+            -Commit $commit `
+            -EvidenceOutputRoot (Join-Path $scratch 'package-writer-different-ui-output') `
+            -StartedAtUtc $writerStartedAt `
+            -DurationSeconds 1 `
+            -UiStartupResult Pass `
+            -AltNavigationSilentResult Pass `
+            -AltNavigationShortcutCount 7 `
+            -UiShutdownResult Pass *> $null
+    }
+    $mutatedDllRoot = Join-Path $scratch 'package-writer-mutated-dll'
+    Copy-FixtureTree -Source $writerPayload -Destination $mutatedDllRoot
+    Set-Utf8Text `
+        -Path (Join-Path $mutatedDllRoot 'sutty.UI.dll') `
+        -Content 'mutated UI dependency bytes'
+    Assert-ActionRejected -Name 'package writer rejects a mutated packaged DLL' -Action {
+        & $packageWriter `
+            -PackagePath $writerPackage `
+            -ObservedUiPath (Join-Path $mutatedDllRoot 'sutty.UI.exe') `
+            -Tag 'v0.1.0-alpha.4' `
+            -Commit $commit `
+            -EvidenceOutputRoot (Join-Path $scratch 'package-writer-mutated-dll-output') `
+            -StartedAtUtc $writerStartedAt `
+            -DurationSeconds 1 `
+            -UiStartupResult Pass `
+            -AltNavigationSilentResult Pass `
+            -AltNavigationShortcutCount 7 `
+            -UiShutdownResult Pass *> $null
+    }
+    $extraFileRoot = Join-Path $scratch 'package-writer-extra-file'
+    Copy-FixtureTree -Source $writerPayload -Destination $extraFileRoot
+    Set-Utf8Text -Path (Join-Path $extraFileRoot 'unexpected.txt') -Content 'unexpected file'
+    Assert-ActionRejected -Name 'package writer rejects an extra observed-tree file' -Action {
+        & $packageWriter `
+            -PackagePath $writerPackage `
+            -ObservedUiPath (Join-Path $extraFileRoot 'sutty.UI.exe') `
+            -Tag 'v0.1.0-alpha.4' `
+            -Commit $commit `
+            -EvidenceOutputRoot (Join-Path $scratch 'package-writer-extra-file-output') `
+            -StartedAtUtc $writerStartedAt `
+            -DurationSeconds 1 `
+            -UiStartupResult Pass `
+            -AltNavigationSilentResult Pass `
+            -AltNavigationShortcutCount 7 `
+            -UiShutdownResult Pass *> $null
+    }
+    $missingFileRoot = Join-Path $scratch 'package-writer-missing-file'
+    Copy-FixtureTree -Source $writerPayload -Destination $missingFileRoot
+    Remove-Item -LiteralPath (Join-Path $missingFileRoot 'Assets\fixture.asset')
+    Assert-ActionRejected -Name 'package writer rejects a missing observed-tree file' -Action {
+        & $packageWriter `
+            -PackagePath $writerPackage `
+            -ObservedUiPath (Join-Path $missingFileRoot 'sutty.UI.exe') `
+            -Tag 'v0.1.0-alpha.4' `
+            -Commit $commit `
+            -EvidenceOutputRoot (Join-Path $scratch 'package-writer-missing-file-output') `
+            -StartedAtUtc $writerStartedAt `
+            -DurationSeconds 1 `
+            -UiStartupResult Pass `
+            -AltNavigationSilentResult Pass `
+            -AltNavigationShortcutCount 7 `
+            -UiShutdownResult Pass *> $null
+    }
+    Assert-ActionRejected -Name 'package writer rejects an incomplete silent navigation Pass' -Action {
+        & $packageWriter `
+            -PackagePath $writerPackage `
+            -ObservedUiPath (Join-Path $writerPayload 'sutty.UI.exe') `
+            -Tag 'v0.1.0-alpha.4' `
+            -Commit $commit `
+            -EvidenceOutputRoot (Join-Path $scratch 'package-writer-incomplete-navigation') `
+            -StartedAtUtc $writerStartedAt `
+            -DurationSeconds 1 `
+            -UiStartupResult Pass `
+            -AltNavigationSilentResult Pass `
+            -AltNavigationShortcutCount 6 `
+            -UiShutdownResult Pass *> $null
+    }
+    Assert-ActionRejected -Name 'package writer rejects impossible post-startup results' -Action {
+        & $packageWriter `
+            -PackagePath $writerPackage `
+            -ObservedUiPath (Join-Path $writerPayload 'sutty.UI.exe') `
+            -Tag 'v0.1.0-alpha.4' `
+            -Commit $commit `
+            -EvidenceOutputRoot (Join-Path $scratch 'package-writer-impossible-results') `
+            -StartedAtUtc $writerStartedAt `
+            -DurationSeconds 1 `
+            -UiStartupResult Fail `
+            -AltNavigationSilentResult Pass `
+            -AltNavigationShortcutCount 7 `
+            -UiShutdownResult Pass *> $null
+    }
+
+    $failedWriterSourceBundle = @(& $packageWriter `
+        -PackagePath $writerPackage `
+        -ObservedUiPath (Join-Path $writerPayload 'sutty.UI.exe') `
+        -Tag 'v0.1.0-alpha.4' `
+        -Commit $commit `
+        -EvidenceOutputRoot (Join-Path $scratch 'package-writer-failed-output') `
+        -StartedAtUtc $writerStartedAt `
+        -DurationSeconds 1 `
+        -UiStartupResult Fail `
+        -AltNavigationSilentResult Blocked `
+        -AltNavigationShortcutCount 0 `
+        -UiShutdownResult Blocked | Select-Object -Last 1)[0]
+    $failedReviewedBundle = @(& $evidenceReviewer `
+        -SourceManifestPath (Join-Path $failedWriterSourceBundle 'manifest.yml') `
+        -DestinationRoot (Join-Path $scratch 'package-writer-failed-reviewed') `
+        -ReviewerId 'github-package-reviewer' `
+        -ReviewedAtUtc ([DateTimeOffset]::UtcNow.ToString(
+            "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+            [Globalization.CultureInfo]::InvariantCulture)) `
+        -PrivacyReview Confirmed `
+        -ManualObservationReview Confirmed `
+        -ExpectedCommit $commit `
+        -ExpectedPackageSha256 $writerPackageSha256 `
+        -RequiredGateId PKG-001 `
+        -RequiredResult Fail | Select-Object -Last 1)[0]
+    $script:caseCount++
+    $failedWriterValidation = Get-ValidationFailure `
+        -Manifest (Join-Path $failedReviewedBundle 'manifest.yml') `
+        -ExpectedCommit $commit `
+        -ExpectedPackageSha256 $writerPackageSha256 `
+        -RequiredGateId PKG-001 `
+        -RequiredResult Fail
+    if ($null -ne $failedWriterValidation) {
+        throw "Reviewed failed package output should remain valid evidence: $failedWriterValidation"
+    }
+    $script:caseCount++
+    if ($null -eq (Get-ValidationFailure `
+            -Manifest (Join-Path $failedReviewedBundle 'manifest.yml') `
+            -ExpectedCommit $commit `
+            -ExpectedPackageSha256 $writerPackageSha256 `
+            -RequiredGateId PKG-001 `
+            -RequiredResult Pass)) {
+        throw 'A reviewed PKG-001 Fail bundle satisfied the release Pass binding.'
     }
 
     Write-Host "Live-evidence guard self-tests passed ($caseCount accepted/rejected fixture cases)."

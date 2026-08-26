@@ -21,13 +21,45 @@ public sealed record SupportBundleContext(
     SshAuthMethod AuthenticationType,
     string StableErrorCode,
     string CorrelationId,
-    int SettingsSchemaVersion);
+    int SettingsSchemaVersion,
+    ConnectionDiagnosticStage? FallbackFailureStage = null,
+    string? ExpectedDiagnosticSnapshotSha256 = null);
+
+public sealed record SupportBundleDiagnosticPreview(
+    string StableErrorCode,
+    int EventCount,
+    string SnapshotSha256,
+    ConnectionDiagnosticStage? FailureStage,
+    ConnectionDiagnosticStatus? FailureStatus,
+    long? FailureSequence,
+    DateTimeOffset? FailureTimestampUtc);
 
 public sealed record SupportBundleResult(
     string FilePath,
     long SizeBytes,
     string Sha256,
     IReadOnlyList<string> Entries);
+
+/// <summary>
+/// Raised when the selected UI context and the captured diagnostic event snapshot
+/// identify different failures. The message intentionally contains no endpoint or
+/// other user-provided value.
+/// </summary>
+public sealed class SupportBundleDiagnosticCodeMismatchException : Exception
+{
+    public SupportBundleDiagnosticCodeMismatchException()
+        : base("Support-bundle diagnostic code mismatch.")
+    {
+    }
+}
+
+public sealed class SupportBundleDiagnosticSnapshotChangedException : Exception
+{
+    public SupportBundleDiagnosticSnapshotChangedException()
+        : base("Support-bundle diagnostic snapshot changed.")
+    {
+    }
+}
 
 /// <summary>
 /// Creates a deterministic two-entry ZIP from an explicit allowlist. The archive is
@@ -56,6 +88,30 @@ public sealed class SupportBundleService
         _events = events ?? throw new ArgumentNullException(nameof(events));
     }
 
+    public SupportBundleDiagnosticPreview Preview(
+        string correlationId,
+        string requestedStableErrorCode = ConnectionDiagnosticErrorCodes.None,
+        ConnectionDiagnosticStage? fallbackFailureStage = null)
+    {
+        var normalizedCorrelationId = DiagnosticValueNormalizer.CorrelationId(correlationId);
+        var normalizedRequestedCode = ConnectionDiagnosticErrorCodes.NormalizeKnown(
+            requestedStableErrorCode,
+            nameof(requestedStableErrorCode));
+        if (fallbackFailureStage is { } stage && !Enum.IsDefined(stage))
+            throw new ArgumentOutOfRangeException(nameof(fallbackFailureStage));
+        ValidateRequestedFallbackStage(
+            normalizedRequestedCode,
+            fallbackFailureStage,
+            nameof(fallbackFailureStage));
+        var capturedEvents = _events.Snapshot(
+            normalizedCorrelationId,
+            ConnectionDiagnosticEventStore.MaximumSnapshotEntries);
+        return CaptureDiagnostics(
+            capturedEvents,
+            normalizedRequestedCode,
+            fallbackFailureStage).Preview;
+    }
+
     public SupportBundleResult Create(
         string destinationPath,
         SupportBundleContext context,
@@ -76,7 +132,7 @@ public sealed class SupportBundleService
             throw new IOException("The support-bundle destination already exists.");
 
         var normalizedCorrelationId = DiagnosticValueNormalizer.CorrelationId(context.CorrelationId);
-        _ = ConnectionDiagnosticErrorCodes.NormalizeKnown(
+        var requestedStableErrorCode = ConnectionDiagnosticErrorCodes.NormalizeKnown(
             context.StableErrorCode,
             nameof(context.StableErrorCode));
         if (!Enum.IsDefined(context.ProcessArchitecture))
@@ -87,12 +143,39 @@ public sealed class SupportBundleService
             throw new ArgumentOutOfRangeException(nameof(context.AuthenticationType));
         if (context.SettingsSchemaVersion is < 0 or > 1_000_000)
             throw new ArgumentOutOfRangeException(nameof(context.SettingsSchemaVersion));
+        if (context.FallbackFailureStage is { } fallbackFailureStage &&
+            !Enum.IsDefined(fallbackFailureStage))
+        {
+            throw new ArgumentOutOfRangeException(nameof(context.FallbackFailureStage));
+        }
+        ValidateRequestedFallbackStage(
+            requestedStableErrorCode,
+            context.FallbackFailureStage,
+            nameof(context.FallbackFailureStage));
+        var expectedSnapshotSha256 = context.ExpectedDiagnosticSnapshotSha256;
+        if (expectedSnapshotSha256 is not null &&
+            !IsLowercaseSha256(expectedSnapshotSha256))
+        {
+            throw new ArgumentException(
+                "Expected diagnostic snapshot SHA-256 is invalid.",
+                nameof(context.ExpectedDiagnosticSnapshotSha256));
+        }
 
         var capturedEvents = _events.Snapshot(
             normalizedCorrelationId,
             ConnectionDiagnosticEventStore.MaximumSnapshotEntries);
-        var reportEvents = SelectReportEvents(capturedEvents);
-        var stableErrorCode = ResolveStableErrorCode(capturedEvents);
+        var diagnosticCapture = CaptureDiagnostics(
+            capturedEvents,
+            requestedStableErrorCode,
+            context.FallbackFailureStage);
+        if (expectedSnapshotSha256 is not null &&
+            !string.Equals(
+                expectedSnapshotSha256,
+                diagnosticCapture.Preview.SnapshotSha256,
+                StringComparison.Ordinal))
+        {
+            throw new SupportBundleDiagnosticSnapshotChangedException();
+        }
         var report = new SupportBundleReport
         {
             SchemaVersion = SchemaVersion,
@@ -102,10 +185,10 @@ public sealed class SupportBundleService
             ProcessArchitecture = NormalizeEnum(context.ProcessArchitecture),
             RouteType = context.RouteType.ToString(),
             AuthenticationType = context.AuthenticationType.ToString(),
-            StableErrorCode = stableErrorCode,
+            StableErrorCode = diagnosticCapture.Preview.StableErrorCode,
             CorrelationId = normalizedCorrelationId,
             SettingsSchemaVersion = context.SettingsSchemaVersion,
-            Events = reportEvents
+            Events = diagnosticCapture.ReportEvents
                 .Select(ToReportEvent)
                 .ToArray(),
         };
@@ -160,6 +243,142 @@ public sealed class SupportBundleService
         }
     }
 
+    private static DiagnosticCapture CaptureDiagnostics(
+        IReadOnlyList<ConnectionDiagnosticEvent> capturedEvents,
+        string requestedStableErrorCode,
+        ConnectionDiagnosticStage? fallbackFailureStage)
+    {
+        var reportEvents = SelectReportEvents(capturedEvents);
+        var latestFailure = ResolveLatestUnresolvedFailure(capturedEvents);
+        var eventStableErrorCode = latestFailure?.ErrorCode ??
+            ConnectionDiagnosticErrorCodes.None;
+        if (requestedStableErrorCode != ConnectionDiagnosticErrorCodes.None &&
+            eventStableErrorCode != ConnectionDiagnosticErrorCodes.None &&
+            !string.Equals(
+                requestedStableErrorCode,
+                eventStableErrorCode,
+                StringComparison.Ordinal))
+        {
+            throw new SupportBundleDiagnosticCodeMismatchException();
+        }
+
+        var useRequestedFallback =
+            requestedStableErrorCode != ConnectionDiagnosticErrorCodes.None &&
+            CanUseRequestedFallback(capturedEvents, fallbackFailureStage);
+        var stableErrorCode = eventStableErrorCode != ConnectionDiagnosticErrorCodes.None
+            ? eventStableErrorCode
+            : useRequestedFallback
+                ? requestedStableErrorCode
+                : ConnectionDiagnosticErrorCodes.None;
+        var reportEventModels = reportEvents
+            .Select(ToReportEvent)
+            .ToArray();
+        var snapshotBytes = JsonSerializer.SerializeToUtf8Bytes(
+            reportEventModels,
+            typeof(SupportBundleEventReport[]),
+            SupportBundleJsonContext.Default);
+        return new DiagnosticCapture(
+            reportEvents,
+            new SupportBundleDiagnosticPreview(
+                stableErrorCode,
+                reportEvents.Count,
+                Hash(snapshotBytes),
+                latestFailure?.Stage ?? (useRequestedFallback ? fallbackFailureStage : null),
+                latestFailure?.Status ?? (useRequestedFallback
+                    ? requestedStableErrorCode == ConnectionDiagnosticErrorCodes.ConnectionCancelled
+                        ? ConnectionDiagnosticStatus.Cancelled
+                        : ConnectionDiagnosticStatus.Failed
+                    : null),
+                latestFailure?.Sequence,
+                latestFailure?.TimestampUtc));
+    }
+
+    /// <summary>
+    /// A caller-supplied failure is used only when the event stream cannot contradict
+    /// it. Legacy callers without stage provenance may fall back only for a completely
+    /// empty correlation. A stage-aware caller may also recover a missing failure append
+    /// after earlier stages were recorded, while a later success or skip for that same
+    /// stage explicitly resolves the stale failure.
+    /// </summary>
+    private static bool CanUseRequestedFallback(
+        IReadOnlyList<ConnectionDiagnosticEvent> capturedEvents,
+        ConnectionDiagnosticStage? fallbackFailureStage)
+    {
+        if (fallbackFailureStage is not { } stage)
+            return capturedEvents.Count == 0;
+
+        var latestForStage = capturedEvents
+            .Where(entry => entry.Stage == stage)
+            .MaxBy(entry => entry.Sequence);
+        return latestForStage is null || latestForStage.Status is
+            ConnectionDiagnosticStatus.NotStarted or ConnectionDiagnosticStatus.Running;
+    }
+
+    /// <summary>
+    /// Validates only caller-supplied fallback provenance. Diagnostic events may use
+    /// a different stage while closing a causal operation, so their existing event
+    /// contract remains authoritative and is intentionally not constrained here.
+    /// </summary>
+    private static void ValidateRequestedFallbackStage(
+        string stableErrorCode,
+        ConnectionDiagnosticStage? fallbackFailureStage,
+        string parameterName)
+    {
+        if (fallbackFailureStage is not { } stage)
+            return;
+
+        if (stableErrorCode == ConnectionDiagnosticErrorCodes.ConnectionCancelled ||
+            stableErrorCode == ConnectionDiagnosticErrorCodes.UnexpectedFailure)
+        {
+            return;
+        }
+
+        var expectedStage = stableErrorCode switch
+        {
+            ConnectionDiagnosticErrorCodes.InputInvalid =>
+                ConnectionDiagnosticStage.InputValidation,
+            ConnectionDiagnosticErrorCodes.DnsLookupFailed or
+            ConnectionDiagnosticErrorCodes.TcpConnectionRefused or
+            ConnectionDiagnosticErrorCodes.TcpTimedOut or
+            ConnectionDiagnosticErrorCodes.TcpUnreachable or
+            ConnectionDiagnosticErrorCodes.TcpFailed =>
+                ConnectionDiagnosticStage.DnsAndTcp,
+            ConnectionDiagnosticErrorCodes.RoutePolicyBlocked or
+            ConnectionDiagnosticErrorCodes.RouteSocks5Refused or
+            ConnectionDiagnosticErrorCodes.RouteProxyRefused or
+            ConnectionDiagnosticErrorCodes.RouteJumpRefused or
+            ConnectionDiagnosticErrorCodes.RouteAuthenticationFailed or
+            ConnectionDiagnosticErrorCodes.RouteTimedOut or
+            ConnectionDiagnosticErrorCodes.RouteFailed =>
+                ConnectionDiagnosticStage.ProxyOrJumpRoute,
+            ConnectionDiagnosticErrorCodes.SshHandshakeTimedOut or
+            ConnectionDiagnosticErrorCodes.SshHandshakeFailed =>
+                ConnectionDiagnosticStage.SshHandshake,
+            ConnectionDiagnosticErrorCodes.HostKeyChanged or
+            ConnectionDiagnosticErrorCodes.HostKeyRejected =>
+                ConnectionDiagnosticStage.HostKey,
+            ConnectionDiagnosticErrorCodes.AuthenticationFailed or
+            ConnectionDiagnosticErrorCodes.AuthenticationTimedOut or
+            ConnectionDiagnosticErrorCodes.AuthenticationKeyFileMissing or
+            ConnectionDiagnosticErrorCodes.AuthenticationKeyFileDenied =>
+                ConnectionDiagnosticStage.Authentication,
+            ConnectionDiagnosticErrorCodes.PtyRequestFailed =>
+                ConnectionDiagnosticStage.Pty,
+            ConnectionDiagnosticErrorCodes.SftpSubsystemUnavailable =>
+                ConnectionDiagnosticStage.SftpSubsystem,
+            ConnectionDiagnosticErrorCodes.PortForwardingFailed =>
+                ConnectionDiagnosticStage.PortForwarding,
+            _ => (ConnectionDiagnosticStage?)null,
+        };
+
+        if (expectedStage != stage)
+        {
+            throw new ArgumentException(
+                "The fallback failure stage does not match the diagnostic error code.",
+                parameterName);
+        }
+    }
+
     private static SupportBundleEventReport ToReportEvent(ConnectionDiagnosticEvent entry) => new()
     {
         Sequence = entry.Sequence,
@@ -195,14 +414,13 @@ public sealed class SupportBundleService
             .ToArray();
     }
 
-    private static string ResolveStableErrorCode(
+    private static ConnectionDiagnosticEvent? ResolveLatestUnresolvedFailure(
         IReadOnlyList<ConnectionDiagnosticEvent> capturedEvents) => capturedEvents
         .GroupBy(entry => entry.Stage)
         .Select(group => group.MaxBy(entry => entry.Sequence)!)
         .Where(entry => entry.Status is ConnectionDiagnosticStatus.Failed or
                                         ConnectionDiagnosticStatus.Cancelled)
-        .MaxBy(entry => entry.Sequence)?
-        .ErrorCode ?? ConnectionDiagnosticErrorCodes.None;
+        .MaxBy(entry => entry.Sequence);
 
     private static string NormalizeEnum<TEnum>(TEnum value)
         where TEnum : struct, Enum => value.ToString().ToLowerInvariant();
@@ -273,6 +491,10 @@ public sealed class SupportBundleService
     private static string Hash(ReadOnlySpan<byte> content) =>
         Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
 
+    private static bool IsLowercaseSha256(string value) =>
+        value.Length == 64 && value.All(character =>
+            character is >= '0' and <= '9' or >= 'a' and <= 'f');
+
     private static string HashFile(string path)
     {
         using var stream = new FileStream(
@@ -284,6 +506,10 @@ public sealed class SupportBundleService
             FileOptions.SequentialScan);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
+
+    private sealed record DiagnosticCapture(
+        IReadOnlyList<ConnectionDiagnosticEvent> ReportEvents,
+        SupportBundleDiagnosticPreview Preview);
 }
 
 internal sealed class SupportBundleManifest
@@ -327,4 +553,5 @@ internal sealed class SupportBundleEventReport
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
 [JsonSerializable(typeof(SupportBundleManifest))]
 [JsonSerializable(typeof(SupportBundleReport))]
+[JsonSerializable(typeof(SupportBundleEventReport[]))]
 internal sealed partial class SupportBundleJsonContext : JsonSerializerContext;

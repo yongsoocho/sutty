@@ -24,6 +24,7 @@ $approvedScopes = [System.Collections.Generic.Dictionary[string, string[]]]::new
     [StringComparer]::Ordinal)
 $approvedScopes.Add('alpha4', @(
     'connection-info'
+    'package'
     'ssh-auth'
     'ssh-routes'
     'ssh-transport'

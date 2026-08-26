@@ -2,7 +2,6 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using sutty.Command;
-using sutty.Core.Diagnostics;
 using sutty.Setting;
 using sutty.UI.Helpers;
 using System;
@@ -64,10 +63,10 @@ namespace sutty.UI.Views
             }
         }
 
-        public Func<SupportBundleContext?>? SupportBundleContextProvider
+        public Func<IReadOnlyList<SupportBundleTarget>>? SupportBundleTargetsProvider
         {
-            get => SupportBundlePanel.ContextProvider;
-            set => SupportBundlePanel.ContextProvider = value;
+            get => SupportBundlePanel.TargetsProvider;
+            set => SupportBundlePanel.TargetsProvider = value;
         }
         /// <summary>Raised after settings have been written. Kept for existing consumers.</summary>
         public event EventHandler? Saved;
@@ -215,6 +214,9 @@ namespace sutty.UI.Views
             SupportPane.Visibility = tag == "Support" ? Visibility.Visible : Visibility.Collapsed;
             WindowPane.Visibility = tag == "Window" ? Visibility.Visible : Visibility.Collapsed;
             AboutPane.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
+
+            if (tag == "Support")
+                SupportBundlePanel.RefreshTargets();
         }
 
         private void ThemeRadios_SelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -86,10 +86,34 @@ $sshLive001BoundedIntegerMeasurements = [ordered]@{
     cancellation_elapsed_milliseconds = @([long]100, [long]10000)
     timeout_elapsed_milliseconds = @([long]12000, [long]30000)
 }
+$pkg001RequiredCheckIds = @(
+    'package-sha256'
+    'package-commit-identity'
+    'package-tree-identity'
+    'ui-startup'
+    'alt-navigation-silent'
+    'ui-shutdown'
+)
+$pkg001TrueMeasurementNames = @(
+    'package_sha256_verified'
+    'package_commit_identity_verified'
+    'package_tree_identity_verified'
+    'ui_startup_verified'
+    'alt_navigation_silent_verified'
+    'ui_shutdown_verified'
+)
+$pkg001ExactIntegerMeasurements = [ordered]@{
+    check_count = [long]6
+    passed_count = [long]6
+    failed_count = [long]0
+    blocked_count = [long]0
+    alt_navigation_shortcut_count = [long]7
+}
 $approvedEvidenceScopes = [System.Collections.Generic.Dictionary[string, string[]]]::new(
     [StringComparer]::Ordinal)
 $approvedEvidenceScopes.Add('alpha4', @(
     'connection-info'
+    'package'
     'ssh-auth'
     'ssh-routes'
     'ssh-transport'
@@ -500,6 +524,78 @@ function Test-SshLive001Measurements {
     }
 }
 
+function Test-Pkg001Measurements {
+    param(
+        [System.Text.Json.JsonElement]$RootElement,
+        [string]$Description
+    )
+
+    $measurementMatches = @(
+        $RootElement.EnumerateObject() | Where-Object { $_.Name -ceq 'measurements' })
+    if ($measurementMatches.Count -ne 1) {
+        Add-Violation "$Description PKG-001 must contain exactly one measurements property."
+        return
+    }
+    if ($measurementMatches[0].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+        Add-Violation "$Description PKG-001 measurements must be a JSON object."
+        return
+    }
+
+    [string[]]$requiredNames = @(
+        $pkg001TrueMeasurementNames + @($pkg001ExactIntegerMeasurements.Keys))
+    $requiredNameSet = [System.Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::Ordinal)
+    foreach ($name in $requiredNames) {
+        $requiredNameSet.Add($name) | Out-Null
+    }
+    $measurementsByName = [System.Collections.Generic.Dictionary[
+        string,
+        System.Text.Json.JsonProperty]]::new([StringComparer]::Ordinal)
+    $measurementProperties = @($measurementMatches[0].Value.EnumerateObject())
+    if ($measurementProperties.Count -ne $requiredNames.Count) {
+        Add-Violation (
+            "$Description PKG-001 measurements must contain exactly the " +
+            "$($requiredNames.Count) canonical properties.")
+    }
+    foreach ($property in $measurementProperties) {
+        if (-not $requiredNameSet.Contains($property.Name)) {
+            Add-Violation "$Description PKG-001 measurements contains an unexpected property."
+        }
+        if ($measurementsByName.ContainsKey($property.Name)) {
+            Add-Violation "$Description PKG-001 measurements contains a duplicate property."
+        }
+        else {
+            $measurementsByName.Add($property.Name, $property)
+        }
+    }
+    foreach ($name in $requiredNames) {
+        if (-not $measurementsByName.ContainsKey($name)) {
+            Add-Violation "$Description PKG-001 measurements is missing $name."
+        }
+    }
+    foreach ($name in $pkg001TrueMeasurementNames) {
+        if ($measurementsByName.ContainsKey($name) -and
+            $measurementsByName[$name].Value.ValueKind -ne [System.Text.Json.JsonValueKind]::True) {
+            Add-Violation "$Description PKG-001 measurement $name must be the JSON boolean true."
+        }
+    }
+    foreach ($entry in $pkg001ExactIntegerMeasurements.GetEnumerator()) {
+        if (-not $measurementsByName.ContainsKey($entry.Key)) {
+            continue
+        }
+        $parsedValue = [long]0
+        $propertyValue = $measurementsByName[$entry.Key].Value
+        if ($propertyValue.ValueKind -ne [System.Text.Json.JsonValueKind]::Number -or
+            $propertyValue.GetRawText() -cnotmatch '^(?:0|[1-9][0-9]*)$' -or
+            -not $propertyValue.TryGetInt64([ref]$parsedValue) -or
+            $parsedValue -ne [long]$entry.Value) {
+            Add-Violation (
+                "$Description PKG-001 measurement $($entry.Key) must be the JSON integer " +
+                "$($entry.Value).")
+        }
+    }
+}
+
 function Test-SummaryContract {
     param(
         [System.Text.Json.JsonElement]$RootElement,
@@ -670,6 +766,29 @@ function Test-SummaryContract {
             }
         }
     }
+
+    $enforcePkg001PassProfile =
+        (Get-ManifestValue 'gate_id') -ceq 'PKG-001' -and
+        $manifestResult -ceq 'Pass'
+    if ($enforcePkg001PassProfile) {
+        Test-Pkg001Measurements -RootElement $RootElement -Description $Description
+        if ($checkResultsById.Count -ne $pkg001RequiredCheckIds.Count) {
+            Add-Violation "$Description PKG-001 must contain exactly the 6 complete gate checks."
+        }
+        for ($index = 0; $index -lt $pkg001RequiredCheckIds.Count; $index++) {
+            $requiredCheckId = $pkg001RequiredCheckIds[$index]
+            if (-not $checkResultsById.ContainsKey($requiredCheckId) -or
+                $checkResultsById[$requiredCheckId] -cne 'Pass') {
+                Add-Violation "$Description PKG-001 check $requiredCheckId must appear exactly once as Pass."
+            }
+            if ($checkIdsInOrder.Count -le $index -or
+                $checkIdsInOrder[$index] -cne $requiredCheckId) {
+                Add-Violation (
+                    "$Description PKG-001 check position $($index + 1) must be " +
+                    "$requiredCheckId.")
+            }
+        }
+    }
 }
 
 function New-ReviewSourceCandidate {
@@ -801,6 +920,8 @@ function Test-ReviewContract {
         [string]$Description
     )
 
+    $isPackageReview = $ManifestValues.ContainsKey('gate_id') -and
+        [string]$ManifestValues['gate_id'] -ceq 'PKG-001'
     $requiredProperties = @(
         'schema_version'
         'reviewer_id'
@@ -809,6 +930,9 @@ function Test-ReviewContract {
         'source_files'
         'review_scope'
     )
+    if ($isPackageReview) {
+        $requiredProperties += 'manual_observation_confirmed'
+    }
     $actualProperties = @($RootElement.EnumerateObject())
     if ($actualProperties.Count -ne $requiredProperties.Count -or
         @($actualProperties | Where-Object { $_.Name -cnotin $requiredProperties }).Count -gt 0) {
@@ -1036,6 +1160,14 @@ function Test-ReviewContract {
             $scopeValues[1].ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
             $scopeValues[1].GetString() -cne 'bundle-integrity') {
             Add-Violation "$Description review_scope must be exactly privacy-redaction followed by bundle-integrity."
+        }
+    }
+    if ($isPackageReview) {
+        $manualObservationConfirmed = Get-ReviewProperty 'manual_observation_confirmed'
+        if ($null -ne $manualObservationConfirmed -and
+            $manualObservationConfirmed.Value.ValueKind -ne
+                [System.Text.Json.JsonValueKind]::True) {
+            Add-Violation "$Description manual_observation_confirmed must be the JSON boolean true for PKG-001."
         }
     }
 }
@@ -1371,7 +1503,9 @@ function Test-SafeEvidencePath {
 function Test-LiveEvidenceManifest {
     param(
         [string]$Path,
-        [string]$Description
+        [string]$Description,
+        [string]$ScopeRequiredGateId,
+        [string]$ScopeForbiddenGateId
     )
 
     if ([System.IO.Path]::GetFileName($Path) -cne 'manifest.yml') {
@@ -1404,11 +1538,22 @@ function Test-LiveEvidenceManifest {
         Add-Violation "$Description schema_version must be exactly 1."
     }
     $gateId = Get-Value 'gate_id'
+    $effectiveRequiredGateId = if (-not [string]::IsNullOrWhiteSpace($ScopeRequiredGateId)) {
+        $ScopeRequiredGateId
+    }
+    else {
+        $RequiredGateId
+    }
     if ($gateId -cnotmatch '^(?=.{1,64}$)[A-Z0-9]+(?:-[A-Z0-9]+)+$') {
         Add-Violation "$Description gate_id must be an uppercase hyphenated identifier of at most 64 characters."
     }
-    elseif (-not [string]::IsNullOrWhiteSpace($RequiredGateId) -and $gateId -cne $RequiredGateId) {
+    elseif (-not [string]::IsNullOrWhiteSpace($effectiveRequiredGateId) -and
+        $gateId -cne $effectiveRequiredGateId) {
         Add-Violation "$Description gate_id does not satisfy the required release gate."
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ScopeForbiddenGateId) -and
+        $gateId -ceq $ScopeForbiddenGateId) {
+        Add-Violation "$Description gate_id is not allowed in this evidence scope."
     }
 
     $commit = Get-Value 'commit'
@@ -1448,11 +1593,12 @@ function Test-LiveEvidenceManifest {
         Test-ForbiddenText -Text (Get-Value 'server_version') -Description "$Description server_version"
     }
     if ((Get-Value 'route') -cnotin @(
-        'Direct', 'HttpConnect', 'Socks4', 'Socks5', 'SshJump', 'ExternalProxyCommand')) {
+        'Direct', 'HttpConnect', 'Socks4', 'Socks5', 'SshJump', 'ExternalProxyCommand',
+        'NotApplicable')) {
         Add-Violation "$Description route is outside the allowed enum."
     }
     if ((Get-Value 'authentication') -cnotin @(
-        'Password', 'PublicKey', 'Agent', 'KeyboardInteractive')) {
+        'Password', 'PublicKey', 'Agent', 'KeyboardInteractive', 'NotApplicable')) {
         Add-Violation "$Description authentication is outside the allowed enum."
     }
     if ((Get-Value 'expected_host_fingerprint') -cnotin @('SHA256:[redacted]', 'NotRecorded')) {
@@ -1472,6 +1618,25 @@ function Test-LiveEvidenceManifest {
             (Get-Value 'expected_host_fingerprint') -cne 'SHA256:[redacted]') {
             Add-Violation "$Description SSH-LIVE-001 requires x64, Direct, Password, and a reviewed redacted host fingerprint."
         }
+    }
+    elseif ($gateId -ceq 'PKG-001') {
+        if (-not $windowsBuildMatch.Success -or [int]$windowsBuildMatch.Groups[1].Value -lt 26100) {
+            Add-Violation "$Description PKG-001 requires Windows 11 24H2 build 26100 or newer."
+        }
+        if ((Get-Value 'architecture') -cne 'x64' -or
+            (Get-Value 'server_family') -cne 'NotApplicable' -or
+            (Get-Value 'server_version') -cne 'NotApplicable' -or
+            (Get-Value 'route') -cne 'NotApplicable' -or
+            (Get-Value 'authentication') -cne 'NotApplicable' -or
+            (Get-Value 'expected_host_fingerprint') -cne 'NotRecorded') {
+            Add-Violation "$Description PKG-001 requires the exact x64 package and the canonical non-SSH tuple."
+        }
+    }
+    elseif ((Get-Value 'server_family') -ceq 'NotApplicable' -or
+        (Get-Value 'server_version') -ceq 'NotApplicable' -or
+        (Get-Value 'route') -ceq 'NotApplicable' -or
+        (Get-Value 'authentication') -ceq 'NotApplicable') {
+        Add-Violation "$Description NotApplicable manifest values are reserved for PKG-001."
     }
 
     $result = Get-Value 'result'
@@ -1770,9 +1935,23 @@ else {
                             }
 
                             $relativeManifest = "$releaseDirectoryName/$scopeName/$bundleName/manifest.yml"
+                            $scopeRequiredGateId = if ($scopeName -ceq 'package') {
+                                'PKG-001'
+                            }
+                            else {
+                                $null
+                            }
+                            $scopeForbiddenGateId = if ($scopeName -cne 'package') {
+                                'PKG-001'
+                            }
+                            else {
+                                $null
+                            }
                             Test-LiveEvidenceManifest `
                                 -Path $manifests[0].FullName `
-                                -Description "live-evidence manifest $relativeManifest"
+                                -Description "live-evidence manifest $relativeManifest" `
+                                -ScopeRequiredGateId $scopeRequiredGateId `
+                                -ScopeForbiddenGateId $scopeForbiddenGateId
                             $validatedCount++
                         }
                     }

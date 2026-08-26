@@ -2,9 +2,9 @@
 
 [English](#english) · [한국어](#한국어)
 
-> Sutty is Alpha software, not a GA security product. It has meaningful host-key, encrypted local-vault, and transfer-safety controls, but it has not completed an independent security review, signed release pipeline, or the specification's full security test matrix.
+> Sutty is Alpha software, not a GA security product. It has meaningful host-key, encrypted local-vault, transfer-safety, and bounded support-diagnostic controls, but it has not completed an independent security review, production-signed release acceptance, or the specification's full security test matrix.
 
-> Sutty는 Alpha 소프트웨어이며 GA 보안 제품이 아닙니다. 호스트키, 암호화 로컬 보관소, 전송 안전 제어가 있지만 독립 보안 검토, 서명 릴리스 파이프라인, 명세의 전체 보안 테스트 매트릭스를 완료하지 않았습니다.
+> Sutty는 Alpha 소프트웨어이며 GA 보안 제품이 아닙니다. 호스트키, 암호화 로컬 보관소, 전송 안전, 제한된 지원 진단 제어가 있지만 독립 보안 검토, 운영 서명 릴리스 인수, 명세의 전체 보안 테스트 매트릭스를 완료하지 않았습니다.
 
 ## English
 
@@ -68,7 +68,7 @@ Sutty makes no FIPS, security-certification, hardened-deployment, or complete te
 - **Trust and save** atomically writes the public key to `%LOCALAPPDATA%\sutty\known-hosts.json`.
 - A changed saved key is blocked. It cannot be silently replaced or bypassed with **Connect once**.
 - Corrupt or unreadable known-host storage fails closed.
-- Known-host management, rotation approval, OpenSSH import/export, per-host strict-trust policy, and local security activity records are not implemented yet.
+- Settings provides known-host list, inspect, compare-and-swap removal, and bounded local trust/rotation/removal activity. The changed-key connection flow separately requires deliberate rotation approval with old/new fingerprints, an independent-verification checkbox, a reason, and compare-and-swap replacement. OpenSSH `known_hosts` import/export and per-host strict-trust policy are not implemented.
 
 Verify an unknown fingerprint through an independent channel controlled by the server owner. Do not trust a fingerprint copied from the same possibly compromised connection path.
 
@@ -81,7 +81,8 @@ Remote names, paths, metadata, symlinks, and file contents are server-controlled
 ### Logs and diagnostics
 
 - `crash.log` stores only timestamp, exception type, and HRESULT. It does not persist the exception message or stack trace. This deliberately limits crash diagnostics to avoid recording hosts, usernames, paths, commands, or secrets.
-- There is no immutable compliance log, transcript system, support bundle, crash upload, or telemetry upload today.
+- There is no immutable compliance log, transcript system, crash upload, or telemetry upload today. A user-created support bundle contains only the reviewed `manifest.json` and `report.json` contract with bounded correlation-specific structured diagnostics; it excludes session labels, endpoints, usernames, paths, host-key fingerprints, terminal transcripts, commands, command output, secrets, and raw logs.
+- The detailed Connection Log is intentionally different from the support bundle: it can contain hostnames, usernames, file paths, host-key fingerprints, and other infrastructure identifiers. Review the visible raw log before copying or sharing it.
 - Before sharing a log, search for hosts, IP addresses, usernames, local/remote paths, commands, tokens, key headers, and customer data. Prefer a minimal reproduction over a full data-directory archive.
 
 ### Safe use during Alpha
@@ -157,7 +158,7 @@ Sutty는 FIPS, 보안 인증, hardened deployment, 완전한 터미널 격리를
 - **신뢰하고 저장**은 공개키를 `%LOCALAPPDATA%\sutty\known-hosts.json`에 원자적으로 저장합니다.
 - 변경된 저장 키는 차단합니다. 조용히 교체하거나 **이번만 연결**로 우회할 수 없습니다.
 - 손상되거나 읽을 수 없는 known-host 저장소는 기본 차단합니다.
-- Known-host 관리, rotation 승인, OpenSSH 가져오기·내보내기, Host별 엄격 신뢰 정책, 로컬 보안 활동 기록은 아직 구현하지 않았습니다.
+- 설정에서 Known Host 목록·확인·compare-and-swap 삭제와 제한된 로컬 신뢰·Rotation·삭제 활동 기록을 제공합니다. 변경 Key 연결 흐름은 별도로 이전·새 지문, 독립 경로 확인 checkbox, 사유, compare-and-swap 교체를 포함한 명시적 Rotation 승인을 요구합니다. OpenSSH `known_hosts` 가져오기·내보내기와 Host별 엄격 신뢰 정책은 아직 구현하지 않았습니다.
 
 알 수 없는 지문은 서버 소유자가 통제하는 독립 경로로 확인하세요. 동일하게 침해되었을 수 있는 연결 경로에서 복사한 지문을 신뢰하면 안 됩니다.
 
@@ -170,7 +171,8 @@ Sutty는 FIPS, 보안 인증, hardened deployment, 완전한 터미널 격리를
 ### 로그와 진단
 
 - `crash.log`는 시각, 예외 type, HRESULT만 저장합니다. 예외 원문과 stack trace를 영구 기록하지 않아 host·username·경로·명령·secret이 들어갈 가능성을 의도적으로 제한합니다.
-- 현재 불변 규정 준수 로그, transcript 시스템, support bundle, crash upload, telemetry upload가 없습니다.
+- 현재 불변 규정 준수 로그, transcript 시스템, crash upload, telemetry upload가 없습니다. 사용자가 만드는 Support Bundle은 검토된 `manifest.json`·`report.json` 계약과 해당 Correlation의 제한된 구조화 진단만 포함하며 세션 이름·Endpoint·Username·경로·Host Key 지문·Terminal Transcript·명령·명령 출력·Secret·원시 로그를 제외합니다.
+- 상세 Connection Log는 Support Bundle과 의도적으로 다릅니다. Hostname·Username·파일 경로·Host Key 지문 등 인프라 식별 정보가 포함될 수 있으므로 표시된 원시 로그를 복사하거나 공유하기 전에 내용을 확인하세요.
 - 로그 공유 전에 host, IP 주소, username, local/remote 경로, 명령, token, key header, 고객 데이터를 검색하세요. 전체 데이터 디렉터리보다 최소 재현 정보를 우선하세요.
 
 ### Alpha 안전 사용
