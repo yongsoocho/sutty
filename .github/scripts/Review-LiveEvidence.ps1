@@ -20,6 +20,9 @@ param(
     [ValidateSet('Confirmed')]
     [string]$PrivacyReview,
 
+    [ValidateSet('Confirmed')]
+    [string]$ManualObservationReview,
+
     [ValidatePattern('^[0-9a-f]{40}$')]
     [string]$ExpectedCommit,
 
@@ -216,6 +219,14 @@ if (@($evidenceFiles | Where-Object { $_ -ceq 'summary.json' }).Count -ne 1 -or
     throw 'The source bundle must declare summary.json once and must not already declare review.json.'
 }
 $gateId = Get-ManifestStringValue -ManifestText $manifestText -Name 'gate_id'
+if ($gateId -ceq 'PKG-001') {
+    if ($ManualObservationReview -cne 'Confirmed') {
+        throw 'PKG-001 review requires -ManualObservationReview Confirmed after reviewing the manual UI observations.'
+    }
+}
+elseif ($PSBoundParameters.ContainsKey('ManualObservationReview')) {
+    throw 'ManualObservationReview is reserved for PKG-001 evidence.'
+}
 
 $summaryPath = Join-Path $sourceRoot 'summary.json'
 if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) {
@@ -313,6 +324,9 @@ $reviewDocument = [ordered]@{
     source_bundle_sha256 = $sourceBundleSha256
     source_files = $sourceRecords.ToArray()
     review_scope = @('privacy-redaction', 'bundle-integrity')
+}
+if ($gateId -ceq 'PKG-001') {
+    $reviewDocument.manual_observation_confirmed = $true
 }
 $reviewJson = ($reviewDocument | ConvertTo-Json -Depth 5) + "`n"
 

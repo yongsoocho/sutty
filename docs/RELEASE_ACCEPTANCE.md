@@ -58,6 +58,29 @@ dotnet run --project .\tests\sutty.LiveServer.SelfTest\sutty.LiveServer.SelfTest
 
 The same harness is available through the manually dispatched Windows CI workflow. Repository secrets carry credentials; repository variables control session count, soak minutes, transfer GB, file count, and fault payload size. Do not enable `scale` or `soak` on an unapproved server.
 
+## Exact x64 Candidate package gate / Exact x64 Candidate 패키지 게이트
+
+`PKG-001` is a separate manual UI gate; the SSH harness and `sutty.UI.exe --version` do not satisfy it. Download the sealed Candidate artifact, independently verify the x64 ZIP SHA-256, unpack that exact ZIP, start the real UI, navigate once through `Alt+1` to `Alt+7` while listening for any Windows system sound, and close the UI cleanly. Record the actual results only after the observations:
+
+```powershell
+.\.github\scripts\Write-PackageEvidence.ps1 `
+  -PackagePath C:\approved-candidate\packages\Sutty-v0.1.0-alpha.4-win-x64.zip `
+  -ObservedUiPath C:\approved-candidate\unpacked\sutty.UI.exe `
+  -Tag v0.1.0-alpha.4 `
+  -Commit <candidate-commit> `
+  -EvidenceOutputRoot C:\approved-package-evidence-candidates `
+  -StartedAtUtc <run-start-rfc3339-utc> `
+  -DurationSeconds <elapsed-whole-seconds> `
+  -UiStartupResult Pass `
+  -AltNavigationSilentResult Pass `
+  -AltNavigationShortcutCount 7 `
+  -UiShutdownResult Pass
+```
+
+The recorder validates package identity and uses the operator-declared unpacked `sutty.UI.exe` to select the observation root. After the UI is closed, every physical file in that root must match the locked ZIP's complete safe inventory by exact relative path, size, and SHA-256, with no extra, missing, mutated, symbolic-link, or reparse-point content. The recorder deliberately does not start or control the UI and does not prove process-launch provenance; it does not serialize local paths or per-file hashes. Inspect its complete unreviewed output, then use `Review-LiveEvidence.ps1` with `-RequiredGateId PKG-001 -RequiredResult Pass -ManualObservationReview Confirmed` and place the fresh reviewed bundle below `docs/evidence/alpha4/package/`. The package and SSH reviewed bundles must name the same exact Candidate commit and x64 ZIP SHA-256; promotion requires both.
+
+`PKG-001`은 별도 수동 UI gate이며 SSH harness와 `sutty.UI.exe --version`은 이를 대신하지 않습니다. 봉인된 Candidate artifact를 내려받아 x64 ZIP SHA-256을 독립 확인하고 exact ZIP을 압축 해제한 뒤 실제 UI를 시작합니다. `Alt+1`부터 `Alt+7`까지 한 번 전환하면서 Windows 시스템음 발생 여부를 듣고 UI를 정상 종료한 뒤 실제 관찰 결과만 기록합니다. 기록기는 운영자가 관찰했다고 선언한 압축 해제 `sutty.UI.exe`의 parent를 관찰 root로 삼고, UI 종료 후 그 physical tree의 모든 파일이 잠근 ZIP의 전체 안전 inventory와 정확한 상대 경로·크기·SHA-256까지 같고 추가·누락·변조·symbolic link·reparse point가 없음을 검증합니다. 다만 UI를 시작하거나 제어하지 않으며 process 실행 provenance를 증명하거나 로컬 경로·파일별 hash를 기록하지도 않습니다. 검토 전 출력 전체를 확인한 다음 `Review-LiveEvidence.ps1 -RequiredGateId PKG-001 -RequiredResult Pass -ManualObservationReview Confirmed`로 새 reviewed bundle을 `docs/evidence/alpha4/package/` 아래에 만들며, package와 SSH bundle은 같은 exact Candidate commit과 x64 ZIP SHA-256을 가져야 합니다. Promotion은 둘 다 요구합니다.
+
 ### Pending SSH negotiation-information acceptance / SSH 협상 정보 인수 대기 항목
 
 This slice is not complete live evidence until it is run against an approved SSH server and the result is recorded below. Use an account/server whose SSH exec requests can be inspected when possible:
@@ -111,6 +134,6 @@ No accepted live or package evidence bundle is recorded in the current tree. Thi
 
 현재 작업 트리에는 인수 완료된 실환경 또는 패키지 증거 bundle이 없습니다. 이 문장은 placeholder `Pass`가 아닙니다.
 
-For every executed gate, retain one canonical unreviewed source directory containing `manifest.yml`, required `summary.json`, and only explicitly listed redacted attachments. `Pass`, `Fail`, and `Blocked` are preserved as run results. The writer always records `redaction_reviewed: false`; after inspecting every file, a human uses `Review-LiveEvidence.ps1` to create a separate write-once reviewed bundle containing `review.json`. Existing committed bundles cannot be edited, deleted, or renamed under the Git-history guard. A support row becomes **Live Validated** only after that reviewed real `Pass` bundle is committed; it becomes **Released** only when `RELEASE-ATTESTATION.json` binds the identical candidate commit/package SHA-256, acceptance commit, review hashes, and promotion run to a five-asset immutable release.
+For every executed gate, retain one canonical unreviewed source directory containing `manifest.yml`, required `summary.json`, and only explicitly listed redacted attachments. `Pass`, `Fail`, and `Blocked` are preserved as run results. The writer always records `redaction_reviewed: false`; after inspecting every file, a human uses `Review-LiveEvidence.ps1` to create a separate write-once reviewed bundle containing `review.json`. Existing committed bundles cannot be edited, deleted, or renamed under the Git-history guard. A support row becomes **Live Validated** only after its reviewed real `Pass` bundle is committed; it becomes **Released** only when `RELEASE-ATTESTATION.json` binds both `PKG-001` and `SSH-LIVE-001` bundles with the identical candidate commit/package SHA-256, acceptance commit, review hashes, and promotion run to a five-asset immutable release.
 
-실행한 각 gate에는 `manifest.yml`, 필수 `summary.json`, 명시적으로 나열한 redacted attachment만 있는 검토 전 source 디렉터리를 보존합니다. `Pass`·`Fail`·`Blocked`는 실행 결과로 보존합니다. Writer는 항상 `redaction_reviewed: false`를 기록하며, 사람이 모든 파일을 확인한 뒤 `Review-LiveEvidence.ps1`로 `review.json`을 포함하는 별도 write-once reviewed bundle을 만듭니다. Commit된 기존 bundle의 수정·삭제·rename은 Git history guard가 거부합니다. 검토 완료한 실제 `Pass` bundle을 commit해야 지원 행을 **Live Validated**로 바꿀 수 있으며, `RELEASE-ATTESTATION.json`이 동일 candidate commit/package SHA-256, acceptance commit, review hash, promotion run을 다섯 asset의 immutable release에 연결해야 **Released**로 바꿀 수 있습니다.
+실행한 각 gate에는 `manifest.yml`, 필수 `summary.json`, 명시적으로 나열한 redacted attachment만 있는 검토 전 source 디렉터리를 보존합니다. `Pass`·`Fail`·`Blocked`는 실행 결과로 보존합니다. Writer는 항상 `redaction_reviewed: false`를 기록하며, 사람이 모든 파일을 확인한 뒤 `Review-LiveEvidence.ps1`로 `review.json`을 포함하는 별도 write-once reviewed bundle을 만듭니다. Commit된 기존 bundle의 수정·삭제·rename은 Git history guard가 거부합니다. 검토 완료한 실제 `Pass` bundle을 commit해야 지원 행을 **Live Validated**로 바꿀 수 있으며, `RELEASE-ATTESTATION.json`이 `PKG-001`과 `SSH-LIVE-001` 두 bundle의 동일 candidate commit/package SHA-256, acceptance commit, review hash, promotion run을 다섯 asset의 immutable release에 연결해야 **Released**로 바꿀 수 있습니다.

@@ -23,9 +23,13 @@ Deletion and non-fast-forward updates are rejected. Review conversations must be
 
 `release-tags` targets `refs/tags/v*`, permits the first creation of a version tag, and rejects every later update or deletion. It also has no bypass actor.
 
+The dedicated `Pull request body contract` workflow is introduced through a two-step rollout because a new required context cannot protect the pull request that first adds its workflow. The first pull request installs a read-only `pull_request_target` job that checks out and executes only the trusted base commit. After GitHub has emitted that context from the default branch, a separate protected pull request must add it to both the tracked and live `main` rulesets before any release Candidate is created. Until that follow-up is merged, the five checks above remain the exact enforced set and the body contract is not claimed as a required protected check.
+
 `main`에는 bypass actor가 없습니다. 계약이 활성화되면 모든 변경은 pull request를 거쳐야 하고 base의 최신 상태여야 하며 GitHub Actions integration(`15368`)에 고정된 위 다섯 검사를 정확히 통과해야 합니다. 삭제와 non-fast-forward update, 미해결 review 대화, stale review를 허용하지 않으며 squash 또는 rebase merge만 사용합니다. 현재 단일 maintainer 저장소이므로 승인 수는 의도적으로 0입니다. PR 경계와 자동 검사는 강제하지만 독립적인 사람 승인으로 과장하지 않습니다.
 
 `release-tags`는 `refs/tags/v*`의 최초 생성을 허용하지만 이후 모든 update와 삭제를 거부하며 bypass actor가 없습니다.
+
+전용 `Pull request body contract` workflow는 새 required context를 처음 추가하는 PR 자체에는 적용할 수 없으므로 2단계로 배포합니다. 첫 PR은 PR head를 실행하지 않고 신뢰된 base commit만 checkout·실행하는 read-only `pull_request_target` job을 설치합니다. GitHub가 default branch에서 새 context를 생성한 뒤 별도 보호 PR이 tracked·live `main` ruleset 모두에 이를 추가해야 하며, 이 후속 PR이 merge되기 전에는 위 다섯 검사가 실제 강제 집합이고 본문 계약을 required protected check로 주장하지 않습니다. Release Candidate는 후속 배포가 끝난 뒤에만 만듭니다.
 
 ## Contract verification / 계약 검증
 
@@ -54,22 +58,23 @@ Append-only history guard는 candidate commit과 acceptance commit을 비교합�
 
 1. Merge the release-preparation source commit `C` through the protected `main` workflow.
 2. Run `alpha-candidate.yml` once for `C`. It builds and seals both ZIP files, `SHA256SUMS.txt`, and `CANDIDATE-MANIFEST.json` in one immutable Actions artifact.
-3. Execute the exact x64 candidate bytes in the formal gate. A successful automated run still creates an unreviewed source bundle.
-4. Human-review that source bundle into a new reviewed directory, then merge the reviewed bundle as acceptance commit `A`, where `A` descends from `C`.
-5. Create the version tag once at `C`. The tag ruleset then prevents movement or deletion.
-6. Dispatch `alpha-release.yml` from protected `main` with the exact candidate run identity, `A`, and reviewed manifest path.
-7. Promotion rechecks the candidate artifact ID and digest, commit ancestry, append-only evidence history, reviewed `SSH-LIVE-001` Pass semantics, active rulesets, immutable-release setting, and tag target.
-8. Publish exactly five assets without rebuilding:
+3. Execute the exact x64 Candidate UI and record `PKG-001` startup, shutdown, and silent `Alt+1`–`Alt+7` navigation in an unreviewed source bundle. The recorder validates the locked ZIP against the complete unpacked physical tree by path, size, and SHA-256, but never performs or invents the observations.
+4. Execute the exact x64 candidate bytes in the formal SSH gate. A successful automated run still creates a separate unreviewed `SSH-LIVE-001` source bundle.
+5. Human-review both source bundles into new reviewed directories, then merge them as acceptance commit `A`, where `A` descends from `C`.
+6. Create the version tag once at `C`. The tag ruleset then prevents movement or deletion.
+7. Dispatch `alpha-release.yml` from protected `main` with the exact candidate run identity, `A`, and both reviewed manifest paths under the `alphaN` directory matching the tag's `-alpha.N` suffix.
+8. Promotion rechecks the candidate artifact ID and digest, commit ancestry, append-only evidence history, reviewed `PKG-001` and `SSH-LIVE-001` Pass semantics bound to the same Candidate x64 ZIP, active rulesets, immutable-release setting, and tag target.
+9. Publish exactly five assets without rebuilding:
    - x64 ZIP
    - ARM64 ZIP
    - `SHA256SUMS.txt`
    - `CANDIDATE-MANIFEST.json`
    - `RELEASE-ATTESTATION.json`
-9. Download every public asset, compare its bytes, validate the release attestation again, verify GitHub release attestations, and require an immutable non-draft prerelease with the exact five-file inventory.
+10. Download every public asset, compare its bytes, validate the release attestation again, verify GitHub release attestations, and require an immutable non-draft prerelease with the exact five-file inventory.
 
-`RELEASE-ATTESTATION.json` binds repository/tag, candidate run and artifact identity, candidate commit and package inventory, acceptance commit, reviewed manifest and `review.json` hashes, declared reviewer/time, promotion run, and the hash/size of the four sealed candidate files. The workflow separately downloads and byte-verifies the fifth attestation asset and requires the exact five-asset public inventory. A failed or incomplete promotion does not authorize editing an existing public release; source changes require a new candidate and an already-published immutable release requires a new version.
+`RELEASE-ATTESTATION.json` binds repository/tag, candidate run and artifact identity, candidate commit and package inventory, acceptance commit, both reviewed manifests and `review.json` hashes, both declared reviewer/times and gates, promotion run, and the hash/size of the four sealed candidate files. The workflow separately downloads and byte-verifies the fifth attestation asset and requires the exact five-asset public inventory. A failed or incomplete promotion does not authorize editing an existing public release; source changes require a new candidate and an already-published immutable release requires a new version.
 
-`RELEASE-ATTESTATION.json`은 repository/tag, candidate run·artifact identity, candidate commit·package inventory, acceptance commit, reviewed manifest·`review.json` hash, 선언한 reviewer/time, promotion run, 봉인된 candidate 파일 4개의 hash·size를 연결합니다. Workflow는 다섯 번째 attestation asset 자체를 별도로 내려받아 byte 검증하고 공개 inventory가 정확히 5개인지 확인합니다. 실패하거나 불완전한 승격은 기존 공개 Release 수정을 허용하지 않습니다. 소스 변경에는 새 candidate가 필요하고 이미 공개된 immutable release를 고쳐야 한다면 새 버전을 사용합니다.
+`RELEASE-ATTESTATION.json`은 repository/tag, candidate run·artifact identity, candidate commit·package inventory, acceptance commit, 두 reviewed manifest·`review.json` hash, 두 reviewer/time·gate, promotion run, 봉인된 candidate 파일 4개의 hash·size를 연결합니다. Workflow는 다섯 번째 attestation asset 자체를 별도로 내려받아 byte 검증하고 공개 inventory가 정확히 5개인지 확인합니다. 실패하거나 불완전한 승격은 기존 공개 Release 수정을 허용하지 않습니다. 소스 변경에는 새 candidate가 필요하고 이미 공개된 immutable release를 고쳐야 한다면 새 버전을 사용합니다.
 
 ## Claim boundary / 주장 경계
 

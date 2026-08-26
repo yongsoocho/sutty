@@ -4,6 +4,7 @@ on:
   push:
     branches: [master, main]
   pull_request:
+    types: [opened, reopened, synchronize, edited]
   workflow_dispatch:
     inputs:
       run_live_integration:
@@ -37,6 +38,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Test pull request contract guard
+        shell: pwsh
+        run: .\tests\pull-request-contract\Assert-PullRequestContract.Tests.ps1
+
+      - name: Enforce pull request contract
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: .\.github\scripts\Assert-PullRequestContract.ps1 -EventPath $env:GITHUB_EVENT_PATH
 
       - name: Test product-scope guard
         shell: pwsh

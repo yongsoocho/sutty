@@ -1,0 +1,30 @@
+name: Pull request contract
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pull-request-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Pull request body contract
+    runs-on: windows-latest
+    steps:
+      # pull_request_target is safe here only because every executable file is
+      # checked out from the trusted base commit. Never run untrusted contribution code.
+      - name: Checkout trusted base contract
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce pull request body contract from the trusted base
+        shell: pwsh
+        run: .\.github\scripts\Assert-PullRequestContract.ps1 -EventPath $env:GITHUB_EVENT_PATH

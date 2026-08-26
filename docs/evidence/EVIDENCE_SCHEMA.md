@@ -22,18 +22,19 @@ Additional files are allowed only as validated `.json`, strict UTF-8 `.txt`, or 
 
 추가 파일은 redaction했고 `evidence_files`에서 명시적으로 참조하며 gate 검토에 필요한 검증된 `.json`, strict UTF-8 `.txt`, 구조를 제한한 `.png`만 허용합니다. 원본 또는 제한 없는 log, 녹화, 그 밖의 binary 형식은 허용하지 않습니다. `manifest.yml`은 `summary.json`을 반드시 나열하고 자기 자신은 나열하지 않습니다. 디렉터리 tree의 manifest 외 모든 파일은 선언해야 합니다.
 
-Reviewed bundles committed for Alpha 4 use exactly one of these roots and add one immutable bundle directory below it. The root validator permits only `EVIDENCE_SCHEMA.md`, the Alpha tracker, the four approved scope trackers, and complete declared bundle trees; orphan files, unknown scopes, empty directories, and undeclared files are rejected.
+Reviewed bundles committed for Alpha 4 use exactly one of these roots and add one immutable bundle directory below it. The root validator permits only `EVIDENCE_SCHEMA.md`, the Alpha tracker, the five approved scope trackers, and complete declared bundle trees; orphan files, unknown scopes, empty directories, and undeclared files are rejected.
 
 ```text
 docs/evidence/alpha4/ssh-auth/<bundle>/
 docs/evidence/alpha4/ssh-routes/<bundle>/
 docs/evidence/alpha4/ssh-transport/<bundle>/
 docs/evidence/alpha4/connection-info/<bundle>/
+docs/evidence/alpha4/package/<bundle>/
 ```
 
 The scope trackers in [alpha4](alpha4/README.md) are not evidence bundles. A committed manifest outside `docs/evidence/alpha<integer>/<scope>/<bundle>/manifest.yml` is rejected. Generated unreviewed output must remain outside these committed roots until review.
 
-[alpha4](alpha4/README.md)의 범위 추적 문서는 증거 bundle이 아닙니다. Root validator는 `EVIDENCE_SCHEMA.md`, Alpha tracker, 승인된 네 scope tracker, 완전하게 선언한 bundle tree만 허용하며 orphan file, 알 수 없는 scope, 빈 directory, 선언하지 않은 file을 거부합니다. `docs/evidence/alpha<integer>/<scope>/<bundle>/manifest.yml` 밖의 committed manifest는 거부합니다. 검토 전 생성물은 검토가 끝날 때까지 이 committed root 밖에 둡니다.
+[alpha4](alpha4/README.md)의 범위 추적 문서는 증거 bundle이 아닙니다. Root validator는 `EVIDENCE_SCHEMA.md`, Alpha tracker, 승인된 다섯 scope tracker, 완전하게 선언한 bundle tree만 허용하며 orphan file, 알 수 없는 scope, 빈 directory, 선언하지 않은 file을 거부합니다. `docs/evidence/alpha<integer>/<scope>/<bundle>/manifest.yml` 밖의 committed manifest는 거부합니다. 검토 전 생성물은 검토가 끝날 때까지 이 committed root 밖에 둡니다.
 
 Generated bundles remain CI or local artifacts until a human performs the redaction review. A generator must not set `redaction_reviewed: true` merely because an automated pattern scan passed. Do not add invented `Pass` records, copied sample runs, or placeholder evidence to the repository.
 
@@ -67,13 +68,36 @@ Writer는 `SUTTY_EVIDENCE_REDACTION_REVIEWED`를 받지 않으며 이 값을 제
 
 `direct-password-gate`에는 정확한 x64 ZIP의 절대 경로인 `SUTTY_TEST_PACKAGE_PATH`, test-owned 무응답 transport용 `SUTTY_TEST_BLACKHOLE_HOST`·`SUTTY_TEST_BLACKHOLE_PORT`, `SUTTY_TEST_SERVER_AUDIT_COMMAND=sutty-lab-audit-summary`가 추가로 필요합니다. Password 인증, runtime 전용 password, 독립적으로 준비한 `SUTTY_TEST_HOST_KEY_SHA256`가 필수이고 trust-new는 금지합니다. 승인된 일회용 audit lab은 `tests/live-server/openssh`에 정의하며 runtime password와 host key는 commit하지 않습니다.
 
-Evidence generation requires exactly one harness mode. The writer is Direct-only: `direct-password-gate` maps exclusively to the complete `SSH-LIVE-001` gate; `connection-info` maps to `SSH-INFO-001`, `fault` to `SSH-FAULT-001`, and the partial `smoke` mode maps by authentication to `SSH-LIVE-001` through `SSH-LIVE-004` but remains `Blocked`. It cannot generate `ROUTE-LIVE-*`, `TUN-LIVE-001`, or `PKG-001` evidence. `scale` and `soak` execution remains available, but the first 12 Alpha 4 slices approve no evidence activation mapping for those modes.
+SSH evidence generation requires exactly one harness mode. The SSH writer is Direct-only: `direct-password-gate` maps exclusively to the complete `SSH-LIVE-001` gate; `connection-info` maps to `SSH-INFO-001`, `fault` to `SSH-FAULT-001`, and the partial `smoke` mode maps by authentication to `SSH-LIVE-001` through `SSH-LIVE-004` but remains `Blocked`. It cannot generate `ROUTE-LIVE-*`, `TUN-LIVE-001`, or package evidence. `scale` and `soak` execution remains available, but the first 12 Alpha 4 slices approve no evidence activation mapping for those modes.
 
-증거 생성 시 harness mode는 정확히 하나여야 합니다. Writer는 Direct 전용입니다. `direct-password-gate`는 완전한 `SSH-LIVE-001`에만 연결하고, `connection-info`는 `SSH-INFO-001`, `fault`는 `SSH-FAULT-001`, 부분 `smoke`는 인증 방식에 따라 `SSH-LIVE-001`–`SSH-LIVE-004`에 연결하지만 계속 `Blocked`입니다. `ROUTE-LIVE-*`, `TUN-LIVE-001`, `PKG-001` 증거는 만들 수 없습니다. `scale`과 `soak` 실행은 가능하지만 첫 Alpha 4 12개 Slice에 승인된 evidence mapping은 없습니다.
+SSH 증거 생성 시 harness mode는 정확히 하나여야 합니다. SSH writer는 Direct 전용입니다. `direct-password-gate`는 완전한 `SSH-LIVE-001`에만 연결하고, `connection-info`는 `SSH-INFO-001`, `fault`는 `SSH-FAULT-001`, 부분 `smoke`는 인증 방식에 따라 `SSH-LIVE-001`–`SSH-LIVE-004`에 연결하지만 계속 `Blocked`입니다. `ROUTE-LIVE-*`, `TUN-LIVE-001`, package 증거는 만들 수 없습니다. `scale`과 `soak` 실행은 가능하지만 첫 Alpha 4 12개 Slice에 승인된 evidence mapping은 없습니다.
 
-Current CI exercises the writer self-test but does not pass live activation values or upload a candidate bundle. In `direct-password-gate`, the writer independently hashes the named ZIP, rejects duplicate/unsafe entries, and compares its root `sutty.Core.dll` bytes with the assembly executing the SSH gate. This binds `SSH-LIVE-001` to the tested Core bytes, but it does not prove UI startup; separate `PKG-001` evidence must execute that exact package before it can map to an immutable release artifact.
+Current CI exercises the writers and validators only with synthetic fixtures; it does not perform UI observations, pass live activation values, or upload a candidate bundle. In `direct-password-gate`, the SSH writer independently hashes the named ZIP, rejects duplicate/unsafe entries, and compares its root `sutty.Core.dll` bytes with the assembly executing the SSH gate. This binds `SSH-LIVE-001` to the tested Core bytes, but it does not prove UI startup.
 
-현재 CI는 writer self-test만 실행하며 live 활성화 값을 전달하거나 candidate bundle을 업로드하지 않습니다. `direct-password-gate`는 지정 ZIP을 독립 hash하고 중복·unsafe entry를 거부하며 ZIP root `sutty.Core.dll`과 SSH gate를 실행하는 assembly의 byte 동일성을 비교합니다. 이는 `SSH-LIVE-001`을 검사한 Core byte에 묶지만 UI 시작을 증명하지는 않습니다. 동일 package를 실제 실행한 별도 `PKG-001` 증거가 있어야 변경 불가능한 release artifact와 연결할 수 있습니다.
+현재 CI는 synthetic fixture로 writer와 validator만 검사하며 UI를 관찰하거나 live 활성화 값을 전달하거나 candidate bundle을 업로드하지 않습니다. `direct-password-gate`는 지정 ZIP을 독립 hash하고 중복·unsafe entry를 거부하며 ZIP root `sutty.Core.dll`과 SSH gate를 실행하는 assembly의 byte 동일성을 비교합니다. 이는 `SSH-LIVE-001`을 검사한 Core byte에 묶지만 UI 시작을 증명하지는 않습니다.
+
+### `PKG-001` manual recorder / 수동 기록기
+
+After downloading and unpacking the exact sealed x64 Candidate, start the real `sutty.UI.exe`, observe one complete `Alt+1` through `Alt+7` navigation pass with no Windows system sound, and close the UI cleanly. Then record only the observed outcomes:
+
+```powershell
+.\.github\scripts\Write-PackageEvidence.ps1 `
+  -PackagePath <absolute\Sutty-v0.1.0-alpha.4-win-x64.zip> `
+  -ObservedUiPath <absolute\unpacked\sutty.UI.exe> `
+  -Tag v0.1.0-alpha.4 `
+  -Commit <candidate-commit> `
+  -EvidenceOutputRoot <absolute-unreviewed-root> `
+  -StartedAtUtc <RFC3339-UTC> `
+  -DurationSeconds <positive-integer> `
+  -UiStartupResult Pass `
+  -AltNavigationSilentResult Pass `
+  -AltNavigationShortcutCount 7 `
+  -UiShutdownResult Pass
+```
+
+The recorder never starts or controls the UI and cannot infer a manual result. It validates Windows x64/build, the exact Alpha filename, safe bounded ZIP entries, root `sutty.UI.exe`, the exact six-line `BUILDINFO.txt` tag/commit/x64 identity, and calculates the locked ZIP SHA-256 itself. `ObservedUiPath` is the operator's declaration of the unpacked executable they observed and selects its parent as the observation root. After the UI is closed, the recorder requires that root's complete physical tree to match the locked ZIP inventory exactly by case-sensitive relative path, file size, and SHA-256; extra, missing, mutated, non-portable, file/directory-colliding, symbolic-link, and reparse-point content is rejected. This full-tree identity is not process-launch provenance, and local paths and per-file hashes are not serialized. The shortcut count is the number actually attempted: a silent `Pass` requires exactly seven, a `Fail` requires at least one, and a startup failure requires zero with later checks `Blocked`. It writes a fresh `redaction_reviewed: false` bundle outside `docs/evidence`. `Fail` and `Blocked` remain honest reviewable records and never satisfy release promotion.
+
+봉인된 exact x64 Candidate를 내려받아 압축 해제한 뒤 실제 `sutty.UI.exe`를 시작하고 `Alt+1`부터 `Alt+7`까지 한 차례 전환할 때 Windows 시스템음이 없는지 관찰한 다음 UI를 정상 종료합니다. 기록기는 UI를 실행·제어하거나 수동 결과를 추론하지 않습니다. Windows x64/build, 정확한 Alpha 파일명, 안전하고 크기를 제한한 ZIP entry, root `sutty.UI.exe`, 정확한 6줄 `BUILDINFO.txt` tag/commit/x64 identity를 검증하고 잠근 ZIP의 SHA-256을 직접 계산합니다. `ObservedUiPath`는 운영자가 관찰했다고 선언한 압축 해제 실행 파일이며 그 parent가 관찰 root입니다. UI 종료 후 기록기는 이 root의 전체 physical tree가 ZIP inventory와 대소문자를 포함한 상대 경로, 파일 크기, SHA-256까지 정확히 같아야 한다고 요구합니다. 추가·누락·변조·비이식 경로·file/directory 충돌·symbolic link·reparse point는 거부합니다. 이 full-tree identity도 process 실행 provenance를 증명하지 않으며 로컬 경로와 파일별 hash는 기록하지 않습니다. Shortcut count는 실제 시도 횟수이며 무음 `Pass`는 정확히 7, `Fail`은 1 이상, startup 실패는 0과 이후 check `Blocked`를 요구합니다. 그 뒤 `docs/evidence` 밖에 새 `redaction_reviewed: false` bundle을 만듭니다. `Fail`과 `Blocked`는 정직한 검토 가능 기록으로 남지만 release promotion을 만족하지 않습니다.
 
 ## Post-run human review / 실행 후 사람 검토
 
@@ -86,15 +110,16 @@ Review is a separate, write-once transformation. Inspect the complete unreviewed
   -ReviewerId github-<public-actor> `
   -ReviewedAtUtc <RFC3339-UTC> `
   -PrivacyReview Confirmed `
+  -ManualObservationReview Confirmed `
   -ExpectedCommit <40-lower-hex> `
   -ExpectedPackageSha256 <64-lower-hex> `
-  -RequiredGateId SSH-LIVE-001 `
+  -RequiredGateId PKG-001 `
   -RequiredResult Pass
 ```
 
-The command refuses an already reviewed source, validates the source bundle, copies it to a new non-existing directory, changes only the manifest/summary review boolean, declares a new `review.json`, validates the result, and atomically publishes the new reviewed directory. It never edits the source bundle or an existing destination. `ReviewerId` is the public GitHub actor (`github-` plus a valid 1–39-character username), not a display name, email address, machine account, or secret.
+Use `PKG-001` for the manual package recorder above and `SSH-LIVE-001` for the complete direct-password SSH gate. `-ManualObservationReview Confirmed` is mandatory only for `PKG-001` and records that the reviewer checked the declared manual startup, shortcut-silence, shutdown, attempted-count, and full package-tree identity assertions; omit it for every other gate. The command refuses an already reviewed source, validates the source bundle, copies it to a new non-existing directory, changes only the manifest/summary review boolean, declares a new `review.json`, validates the result, and atomically publishes the new reviewed directory. It never edits the source bundle or an existing destination. `ReviewerId` is the public GitHub actor (`github-` plus a valid 1–39-character username), not a display name, email address, machine account, or secret.
 
-검토는 별도 write-once 변환입니다. 먼저 검토 전 source bundle 전체를 사람이 확인하고 위 명령을 실행합니다. 명령은 이미 reviewed인 source를 거부하고 source bundle을 검증한 뒤 존재하지 않는 새 directory로 복사하며, manifest/summary의 review boolean 변경과 새 `review.json` 선언만 수행합니다. 결과를 다시 검증한 뒤 새 directory를 원자적으로 게시하고 source bundle이나 기존 destination은 수정하지 않습니다. `ReviewerId`는 공개 GitHub actor(`github-` + 유효한 1–39자 username)이며 display name, email, machine account, secret이 아닙니다.
+검토는 별도 write-once 변환입니다. 먼저 검토 전 source bundle 전체를 사람이 확인하고 위 명령을 실행합니다. 위 package 기록기에는 `PKG-001`, 완전한 direct-password SSH gate에는 `SSH-LIVE-001`을 사용합니다. `-ManualObservationReview Confirmed`는 `PKG-001`에서만 필수이며 reviewer가 수동 startup, shortcut 무음, shutdown, 실제 시도 횟수, 전체 package-tree identity assertion을 확인했음을 기록합니다. 다른 gate에서는 이 parameter를 생략합니다. 명령은 이미 reviewed인 source를 거부하고 source bundle을 검증한 뒤 존재하지 않는 새 directory로 복사하며, manifest/summary의 review boolean 변경과 새 `review.json` 선언만 수행합니다. 결과를 다시 검증한 뒤 새 directory를 원자적으로 게시하고 source bundle이나 기존 destination은 수정하지 않습니다. `ReviewerId`는 공개 GitHub actor(`github-` + 유효한 1–39자 username)이며 display name, email, machine account, secret이 아닙니다.
 
 `review.json` is strict UTF-8 JSON and contains exactly:
 
@@ -106,6 +131,7 @@ The command refuses an already reviewed source, validates the source bundle, cop
 | `source_bundle_sha256` | Lowercase SHA-256 of the canonical source-file record lines. |
 | `source_files` | Ordinally sorted exact records `{name, sha256, size_bytes}` for the original `manifest.yml` and every originally declared evidence file; `review.json` is excluded. |
 | `review_scope` | Exactly `["privacy-redaction", "bundle-integrity"]`. |
+| `manual_observation_confirmed` | Required only for `PKG-001` and exactly JSON boolean `true`; forbidden for every other gate. It is the reviewer's explicit confirmation of the manual observation assertions, not automated process provenance. |
 
 Each source line is UTF-8 `<sha256> <size_bytes> <name>\n` with one ASCII space between fields. The aggregate hash and every record are immutable review attestations; they are not permission to recover, attach, or publish secret source material.
 
@@ -124,12 +150,12 @@ The top level is a flat mapping. Schema version 1 permits exactly the following 
 | `commit` | Exactly 40 lowercase hexadecimal characters, not all zeroes | Git commit whose product and harness code ran. |
 | `package_sha256` | Exactly 64 lowercase hexadecimal characters, not all zeroes | SHA-256 of the exact package under test, not `SHA256SUMS.txt` and not a locally edited replacement. |
 | `windows_build` | Numeric build `#####`, optional `10.0.` prefix, and optional 1–6 digit revision | Sanitized Windows build such as `10.0.26100.0`; exclude machine name, installation ID, tenant, and user. |
-| `architecture` | `x64` or `arm64` | `RuntimeInformation.ProcessArchitecture` of the process executing the tested package path; OS architecture alone is not package evidence. |
-| `server_family` | 1–32 characters matching an ASCII letter followed by letters, digits, `_`, `+`, or `-` | Sanitized implementation family only; never a DNS name, IP address, inventory name, or provider/customer identifier. |
-| `server_version` | 1–32 characters using ASCII letters, digits, `.`, `_`, `+`, `~`, or `-`; first character alphanumeric | Sanitized server software version/build only. |
-| `route` | `Direct`, `HttpConnect`, `Socks4`, `Socks5`, `SshJump`, or `ExternalProxyCommand` | Route used by the tested primary SSH connection. Do not include proxy/jump endpoints or expanded commands. |
-| `authentication` | `Password`, `PublicKey`, `Agent`, or `KeyboardInteractive` | Top-level authentication category. Key format or prompt details belong only in the redacted summary. |
-| `expected_host_fingerprint` | Exactly `SHA256:[redacted]` or `NotRecorded` | Use the redacted marker when an independently provisioned fingerprint was compared. `NotRecorded` is allowed only for explicitly isolated trust-new fixtures; it is not acceptable for an approved persistent server gate. |
+| `architecture` | `x64` or `arm64` | `RuntimeInformation.ProcessArchitecture` of the harness or recorder. `PKG-001` additionally requires the matching exact x64 filename and `BUILDINFO.txt`; this field alone is not process-launch provenance. OS architecture alone is not package evidence. |
+| `server_family` | 1–32 characters matching an ASCII letter followed by letters, digits, `_`, `+`, or `-` | Sanitized implementation family only; never a DNS name, IP address, inventory name, or provider/customer identifier. Exactly `NotApplicable` is reserved for `PKG-001`. |
+| `server_version` | 1–32 characters using ASCII letters, digits, `.`, `_`, `+`, `~`, or `-`; first character alphanumeric | Sanitized server software version/build only. Exactly `NotApplicable` is reserved for `PKG-001`. |
+| `route` | `Direct`, `HttpConnect`, `Socks4`, `Socks5`, `SshJump`, `ExternalProxyCommand`, or package-only `NotApplicable` | Route used by the tested primary SSH connection. Do not include proxy/jump endpoints or expanded commands. |
+| `authentication` | `Password`, `PublicKey`, `Agent`, `KeyboardInteractive`, or package-only `NotApplicable` | Top-level authentication category. Key format or prompt details belong only in the redacted summary. |
+| `expected_host_fingerprint` | Exactly `SHA256:[redacted]` or `NotRecorded` | Use the redacted marker when an independently provisioned fingerprint was compared. `NotRecorded` is allowed only for explicitly isolated trust-new fixtures or the server-free `PKG-001` tuple; it is not acceptable for an approved persistent server gate. |
 | `result` | `Pass`, `Fail`, or `Blocked` | Outcome of this run only. `Pass` requires every assertion in the declared gate; partial success is `Fail` or `Blocked`, never `Pass`. |
 | `started_at_utc` | RFC 3339 UTC timestamp ending in `Z` | Use `YYYY-MM-DDTHH:mm:ssZ` or 1–7 fractional second digits. It identifies the run, not a local time zone. |
 | `duration_seconds` | Nonnegative integer | Monotonic elapsed duration rounded up to whole seconds. There is intentionally no `completed_at` field in version 1. |
@@ -187,6 +213,16 @@ The canonical nonnegative integer values are `check_count=12`, `passed_count=12`
 
 `SSH-LIVE-001` `Pass`는 전체 root scan에서도 일반 summary보다 엄격합니다. `checks`에는 위 12개 ID가 writer 실행 순서대로 정확히 한 번씩 있고 모두 `Pass`여야 합니다. `measurements`에는 정확히 25개 field만 허용합니다. 위 14개 검증 boolean은 JSON `true`, count·byte·audit 값은 명시한 canonical nonnegative integer여야 하며 cancellation은 100ms 이상 10,000ms 미만, timeout은 12,000ms 이상 30,000ms 미만이어야 합니다. Decimal·지수·음수·string·누락·추가 값은 거부합니다. `Fail`과 `Blocked` bundle은 부분 측정치를 보존할 수 있지만 release Pass profile을 만족하지 않습니다.
 
+### `PKG-001` Pass profile / Pass 프로필
+
+A `PKG-001` `Pass` is x64-only and requires Windows build 26100 or newer. Its server family/version, route, and authentication are exactly `NotApplicable`; those values are rejected for every other gate. Its server-free fingerprint value is exactly `NotRecorded`. Its `checks` are exactly, in order:
+
+`package-sha256`, `package-commit-identity`, `package-tree-identity`, `ui-startup`, `alt-navigation-silent`, `ui-shutdown`.
+
+All six results are `Pass`. Its `measurements` object contains exactly eleven properties: JSON boolean `true` values for `package_sha256_verified`, `package_commit_identity_verified`, `package_tree_identity_verified`, `ui_startup_verified`, `alt_navigation_silent_verified`, and `ui_shutdown_verified`; canonical JSON integers `check_count=6`, `passed_count=6`, `failed_count=0`, `blocked_count=0`, and `alt_navigation_shortcut_count=7`. Missing, extra, reordered, false, string, decimal, or exponent values are rejected. This profile records a person's observations; fixtures and automation cannot create a real `Pass`.
+
+`PKG-001` `Pass`는 x64 전용이며 Windows build 26100 이상이 필요합니다. Server family/version, route, authentication은 정확히 `NotApplicable`이고 이 값은 다른 gate에서 거부됩니다. Server가 없으므로 `expected_host_fingerprint`는 정확히 `NotRecorded`입니다. Check는 위 여섯 개가 정해진 순서로 한 번씩 모두 `Pass`여야 합니다. `measurements`는 명시한 여섯 JSON boolean `true`와 `check_count=6`, `passed_count=6`, `failed_count=0`, `blocked_count=0`, `alt_navigation_shortcut_count=7`의 canonical JSON integer, 총 11개 property만 포함합니다. 누락·추가·순서 변경·false·string·decimal·지수 값은 거부합니다. 이 profile은 사람의 관찰을 기록하며 fixture와 자동화는 실제 `Pass`를 만들 수 없습니다.
+
 ## Attachment validation / Attachment 검증
 
 Every attachment remains subject to the forbidden-content rules and human review below. File-format validation reduces parsing and metadata risk; it does not prove that visible text or pixels are safely redacted.
@@ -238,7 +274,7 @@ Allowed evidence is deliberately narrow: the exact commit and package hash, Wind
 3. `Fail` and `Blocked` bundles may be retained after redaction to explain gaps, but they never promote a support row.
 4. An accepted bundle is immutable. Correct a mistake or rerun a gate by creating a new bundle; do not rewrite a prior `Pass`, `Fail`, or `Blocked` result.
 5. `Assert-EvidenceHistory.ps1` compares a Git base and head and permits only new bundle directories. Any file change, deletion, rename, or addition below a bundle that existed at the base is rejected; a correction is another bundle plus a tracker reference.
-6. **Released** additionally requires an immutable published artifact whose commit and SHA-256 equal the accepted bundle. `RELEASE-ATTESTATION.json` binds the candidate workflow artifact, four sealed candidate files, acceptance commit, reviewed manifest/review hashes, declared reviewer/time, gate, and promotion run. The promotion workflow separately byte-verifies the attestation itself and the exact five-asset public inventory.
+6. **Released** additionally requires an immutable published artifact whose commit and SHA-256 equal both the accepted `SSH-LIVE-001` and `PKG-001` bundles. `RELEASE-ATTESTATION.json` binds the candidate workflow artifact, four sealed candidate files, acceptance commit, both reviewed manifest/review hashes, each declared reviewer/time and gate, and the promotion run. The promotion workflow separately byte-verifies the attestation itself and the exact five-asset public inventory.
 7. Evidence is scoped to one declared gate and exact matrix tuple. Multiple partial bundles cannot be combined into a synthetic `Pass`.
 
 Validation and execution order are defined by [Alpha 4 execution plan](../ALPHA4_EXECUTION_PLAN.md). Current claims are listed in [Supported environments](../SUPPORTED_ENVIRONMENTS.md), and release gates are listed in [Release acceptance](../RELEASE_ACCEPTANCE.md).

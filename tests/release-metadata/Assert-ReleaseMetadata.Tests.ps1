@@ -357,6 +357,8 @@ try {
     Assert-Result ($workflow -match 'Assert-AlphaCandidate\.ps1') 'promotion workflow revalidates the strict candidate manifest and checksums'
     Assert-Result ($workflow -match 'Assert-ReleaseMetadata\.ps1') 'promotion workflow revalidates source and packaged metadata'
     Assert-Result ($workflow -match 'Assert-LiveEvidence\.ps1') 'promotion workflow validates reviewed live evidence'
+    Assert-Result ($workflow -match '(?m)^\s*package_evidence_manifest_path:\s*$') 'promotion requires a reviewed package-evidence input'
+    Assert-Result ($workflow -match 'expectedEvidenceRoot') 'promotion binds both evidence paths to the Alpha tag suffix'
     Assert-Result ($workflow -match 'Assert-EvidenceHistory\.ps1') 'promotion enforces append-only evidence history from candidate to acceptance'
     Assert-Result (@([regex]::Matches(
             $workflow,
@@ -365,8 +367,12 @@ try {
     Assert-Result (@([regex]::Matches($workflow, 'secrets\.SUTTY_RULESET_AUDIT_TOKEN')).Count -eq 2) 'promotion uses the dedicated ruleset audit secret for both bypass-actor checks'
     Assert-Result ($workflow -notmatch 'Assert-RepositoryGovernance\.ps1[\s\S]{0,160}-AllowOmittedBypassActors') 'promotion never permits an omitted bypass-actor inventory'
     Assert-Result (@([regex]::Matches($workflow, 'Assert-ReleaseAttestation\.ps1')).Count -eq 2) 'promotion creates and then revalidates the published release attestation'
-    Assert-Result ($workflow -match '-RequiredResult Pass') 'promotion requires accepted Pass evidence'
+    Assert-Result (@([regex]::Matches($workflow, '-RequiredResult Pass')).Count -eq 2) 'promotion requires both reviewed gates to be Pass'
     Assert-Result (@([regex]::Matches($workflow, '-RequiredGateId SSH-LIVE-001')).Count -eq 1) 'promotion requires the exact SSH-LIVE-001 release gate'
+    Assert-Result (@([regex]::Matches($workflow, '-RequiredGateId PKG-001')).Count -eq 1) 'promotion requires the exact PKG-001 release gate'
+    Assert-Result (@([regex]::Matches(
+            $workflow,
+            '-PackageEvidenceManifestRepositoryPath')).Count -eq 2) 'release attestation creates and verifies the package evidence binding'
     Assert-Result (@([regex]::Matches($workflow, 'merge-base --is-ancestor')).Count -eq 4) 'promotion proves candidate and acceptance ancestry initially and immediately before publication'
     Assert-Result ($workflow -match 'actions/runs/\$env:CANDIDATE_RUN_ID') 'promotion verifies the candidate workflow run through the API'
     Assert-Result ($workflow -match 'candidate_artifact_id=') 'promotion binds the immutable candidate artifact ID'

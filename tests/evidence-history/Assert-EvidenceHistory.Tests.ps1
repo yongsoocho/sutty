@@ -40,6 +40,7 @@ function New-HistoryFixture {
 
     Set-Utf8Text -Path (Join-Path $repository 'docs/evidence/EVIDENCE_SCHEMA.md') -Content '# Schema'
     Set-Utf8Text -Path (Join-Path $repository 'docs/evidence/alpha4/README.md') -Content '# Alpha 4'
+    Set-Utf8Text -Path (Join-Path $repository 'docs/evidence/alpha4/package/README.md') -Content '# Package'
     Set-Utf8Text -Path (Join-Path $repository 'docs/evidence/alpha4/ssh-auth/README.md') -Content '# SSH auth'
     $bundle = Join-Path $repository 'docs/evidence/alpha4/ssh-auth/existing-bundle'
     Set-Utf8Text -Path (Join-Path $bundle 'manifest.yml') -Content 'schema_version: 1'
@@ -154,6 +155,16 @@ try {
             $newBundle = Join-Path $fixture.Repository 'docs/evidence/alpha4/ssh-auth/new-bundle'
             Set-Utf8Text -Path (Join-Path $newBundle 'manifest.yml') -Content 'schema_version: 1'
             Set-Utf8Text -Path (Join-Path $newBundle 'summary.json') -Content '{}'
+        }
+
+    Assert-Accepted `
+        -Name 'new canonical package bundle' `
+        -Fixture (New-HistoryFixture 'new-package-bundle') `
+        -Arrange { param($fixture)
+            $newBundle = Join-Path $fixture.Repository 'docs/evidence/alpha4/package/new-bundle'
+            Set-Utf8Text -Path (Join-Path $newBundle 'manifest.yml') -Content 'schema_version: 1'
+            Set-Utf8Text -Path (Join-Path $newBundle 'summary.json') -Content '{}'
+            Set-Utf8Text -Path (Join-Path $newBundle 'review.json') -Content '{}'
         }
 
     Assert-Rejected `

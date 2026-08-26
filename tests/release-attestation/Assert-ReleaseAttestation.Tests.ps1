@@ -18,6 +18,7 @@ $artifactDigest = 'sha256:' + ('a' * 64)
 $promotionRunId = '2233445566'
 $promotionRunAttempt = 3
 $evidenceRepositoryPath = 'docs/evidence/alpha4/ssh-auth/reviewed-fixture/manifest.yml'
+$packageEvidenceRepositoryPath = 'docs/evidence/alpha4/package/reviewed-package-fixture/manifest.yml'
 $reviewedAtUtc = '2026-08-21T01:02:03.456Z'
 $startedAtUtc = '2026-08-21T00:58:00Z'
 $packageSha256Placeholder = 'b' * 64
@@ -113,6 +114,35 @@ function New-Measurements {
     }
 }
 
+function New-PackageChecks {
+    foreach ($id in @(
+        'package-sha256'
+        'package-commit-identity'
+        'package-tree-identity'
+        'ui-startup'
+        'alt-navigation-silent'
+        'ui-shutdown'
+    )) {
+        [ordered]@{ id = $id; result = 'Pass' }
+    }
+}
+
+function New-PackageMeasurements {
+    return [ordered]@{
+        check_count = 6
+        passed_count = 6
+        failed_count = 0
+        blocked_count = 0
+        package_sha256_verified = $true
+        package_commit_identity_verified = $true
+        package_tree_identity_verified = $true
+        ui_startup_verified = $true
+        alt_navigation_silent_verified = $true
+        ui_shutdown_verified = $true
+        alt_navigation_shortcut_count = 7
+    }
+}
+
 function New-Candidate {
     param([string]$Root)
 
@@ -156,19 +186,36 @@ function New-Candidate {
 function New-ReviewedEvidence {
     param(
         [string]$RepositoryRoot,
-        [string]$PackageSha256
+        [string]$PackageSha256,
+        [string]$RepositoryPath,
+        [ValidateSet('SSH-LIVE-001', 'PKG-001')]
+        [string]$GateId
     )
 
-    $bundle = Join-Path $RepositoryRoot 'docs\evidence\alpha4\ssh-auth\reviewed-fixture'
+    $manifestRelativePath = $RepositoryPath.Replace(
+        '/', [System.IO.Path]::DirectorySeparatorChar)
+    $bundle = Join-Path $RepositoryRoot (Split-Path -Parent $manifestRelativePath)
     [System.IO.Directory]::CreateDirectory($bundle) | Out-Null
+    $checks = if ($GateId -ceq 'PKG-001') {
+        @(New-PackageChecks)
+    }
+    else {
+        @(New-Checks)
+    }
+    $measurements = if ($GateId -ceq 'PKG-001') {
+        New-PackageMeasurements
+    }
+    else {
+        New-Measurements
+    }
     $sourceSummaryObject = [ordered]@{
         schema_version = 1
-        gate_id = 'SSH-LIVE-001'
+        gate_id = $GateId
         result = 'Pass'
         started_at_utc = $startedAtUtc
         duration_seconds = 12
-        checks = @(New-Checks)
-        measurements = (New-Measurements)
+        checks = $checks
+        measurements = $measurements
         redaction_reviewed = $false
         privacy_notice = $privacyNotice
     }
@@ -178,18 +225,32 @@ function New-ReviewedEvidence {
     $summary = $sourceSummaryPattern.Replace($sourceSummary, '${1}true', 1)
     Set-Utf8Text -Path (Join-Path $bundle 'summary.json') -Content $summary
 
+    $manifestTuple = if ($GateId -ceq 'PKG-001') {
+        @(
+            'server_family: "NotApplicable"'
+            'server_version: "NotApplicable"'
+            'route: "NotApplicable"'
+            'authentication: "NotApplicable"'
+            'expected_host_fingerprint: "NotRecorded"'
+        )
+    }
+    else {
+        @(
+            'server_family: "OpenSSH"'
+            'server_version: "9.6p1"'
+            'route: "Direct"'
+            'authentication: "Password"'
+            'expected_host_fingerprint: "SHA256:[redacted]"'
+        )
+    }
     $sourceManifest = @(
         'schema_version: 1'
-        'gate_id: "SSH-LIVE-001"'
+        "gate_id: `"$GateId`""
         "commit: `"$candidateCommit`""
         "package_sha256: `"$PackageSha256`""
         'windows_build: "10.0.26100.0"'
         'architecture: "x64"'
-        'server_family: "OpenSSH"'
-        'server_version: "9.6p1"'
-        'route: "Direct"'
-        'authentication: "Password"'
-        'expected_host_fingerprint: "SHA256:[redacted]"'
+    ) + $manifestTuple + @(
         'result: "Pass"'
         "started_at_utc: `"$startedAtUtc`""
         'duration_seconds: 12'
@@ -219,14 +280,18 @@ function New-ReviewedEvidence {
             size_bytes = [System.Text.UTF8Encoding]::new($false).GetByteCount($sourceSummary)
         }
     )
-    $review = [ordered]@{
+    $reviewObject = [ordered]@{
         schema_version = 1
         reviewer_id = 'github-reviewer1'
         reviewed_at_utc = $reviewedAtUtc
         source_bundle_sha256 = Get-CanonicalBundleDigest -Records $sourceRecords
         source_files = $sourceRecords
         review_scope = @('privacy-redaction', 'bundle-integrity')
-    } | ConvertTo-Json -Depth 6
+    }
+    if ($GateId -ceq 'PKG-001') {
+        $reviewObject.manual_observation_confirmed = $true
+    }
+    $review = $reviewObject | ConvertTo-Json -Depth 6
     $reviewPath = Join-Path $bundle 'review.json'
     Set-Utf8Text -Path $reviewPath -Content ($review + [Environment]::NewLine)
 
@@ -248,7 +313,16 @@ function New-Fixture {
         -Algorithm SHA256).Hash.ToLowerInvariant()
     $repo = Join-Path $root 'repo'
     [System.IO.Directory]::CreateDirectory($repo) | Out-Null
-    $evidence = New-ReviewedEvidence -RepositoryRoot $repo -PackageSha256 $x64Hash
+    $evidence = New-ReviewedEvidence `
+        -RepositoryRoot $repo `
+        -PackageSha256 $x64Hash `
+        -RepositoryPath $evidenceRepositoryPath `
+        -GateId SSH-LIVE-001
+    $packageEvidence = New-ReviewedEvidence `
+        -RepositoryRoot $repo `
+        -PackageSha256 $x64Hash `
+        -RepositoryPath $packageEvidenceRepositoryPath `
+        -GateId PKG-001
     $attestation = Join-Path $root 'release\RELEASE-ATTESTATION.json'
 
     $fixture = [pscustomobject]@{
@@ -256,6 +330,7 @@ function New-Fixture {
         Candidate = $candidate
         RepositoryRoot = $repo
         Evidence = $evidence
+        PackageEvidence = $packageEvidence
         Attestation = $attestation
     }
     Invoke-Attestation -Fixture $fixture -Write
@@ -275,6 +350,7 @@ function Invoke-Attestation {
         [string]$ExpectedArtifactDigest = $artifactDigest,
         [string]$ExpectedAcceptanceCommit = $acceptanceCommit,
         [string]$ExpectedEvidencePath = $evidenceRepositoryPath,
+        [string]$ExpectedPackageEvidencePath = $packageEvidenceRepositoryPath,
         [string]$ExpectedPromotionRunId = $promotionRunId,
         [int]$ExpectedPromotionRunAttempt = $promotionRunAttempt,
         [switch]$Write
@@ -294,6 +370,7 @@ function Invoke-Attestation {
         CandidateArtifactDigest = $ExpectedArtifactDigest
         AcceptanceCommit = $ExpectedAcceptanceCommit
         EvidenceManifestRepositoryPath = $ExpectedEvidencePath
+        PackageEvidenceManifestRepositoryPath = $ExpectedPackageEvidencePath
         PromotionRunId = $ExpectedPromotionRunId
         PromotionRunAttempt = $ExpectedPromotionRunAttempt
     }
@@ -354,6 +431,60 @@ try {
         throw 'Release-attestation self-test failed: writer emitted a UTF-8 BOM.'
     }
     Assert-Rejected { Invoke-Attestation -Fixture $valid -Write } 'write-once overwrite attempt'
+    Assert-Rejected {
+        Invoke-Attestation `
+            -Fixture $valid `
+            -ExpectedPackageEvidencePath $evidenceRepositoryPath
+    } 'package evidence cannot reuse the SSH evidence path'
+
+    $wrongAlphaDirectory = New-Fixture 'wrong-alpha-directory'
+    Remove-Item -LiteralPath $wrongAlphaDirectory.Attestation -Force
+    $wrongAlphaRoot = Join-Path $wrongAlphaDirectory.RepositoryRoot 'docs\evidence\alpha5'
+    Move-Item `
+        -LiteralPath (Join-Path $wrongAlphaDirectory.RepositoryRoot 'docs\evidence\alpha4') `
+        -Destination $wrongAlphaRoot
+    Assert-Rejected {
+        Invoke-Attestation `
+            -Fixture $wrongAlphaDirectory `
+            -ExpectedEvidencePath 'docs/evidence/alpha5/ssh-auth/ssh-live-001-reviewed/manifest.yml' `
+            -ExpectedPackageEvidencePath 'docs/evidence/alpha5/package/pkg-001-reviewed/manifest.yml' `
+            -Write
+    } 'evidence directory does not match the Alpha tag suffix'
+
+    $packageManifestMutation = New-Fixture 'post-review-package-evidence-mutation'
+    $packageManifestText = Get-Content `
+        -LiteralPath $packageManifestMutation.PackageEvidence.Manifest `
+        -Raw
+    Set-Utf8Text `
+        -Path $packageManifestMutation.PackageEvidence.Manifest `
+        -Content ($packageManifestText + [Environment]::NewLine)
+    Assert-Rejected {
+        Invoke-Attestation -Fixture $packageManifestMutation
+    } 'post-review package evidence mutation'
+
+    $packageAttestationHash = New-Fixture 'package-attestation-hash'
+    $packageAttestationObject = Get-Content -LiteralPath $packageAttestationHash.Attestation -Raw |
+        ConvertFrom-Json
+    $packageAttestationObject.acceptance.package_evidence_manifest_sha256 = 'f' * 64
+    Set-JsonObject `
+        -Path $packageAttestationHash.Attestation `
+        -Value $packageAttestationObject
+    Assert-Rejected {
+        Invoke-Attestation -Fixture $packageAttestationHash
+    } 'package evidence attestation hash tamper'
+
+    $packageManualConfirmation = New-Fixture 'package-manual-confirmation'
+    Remove-Item -LiteralPath $packageManualConfirmation.Attestation -Force
+    $packageReviewObject = Get-Content `
+        -LiteralPath $packageManualConfirmation.PackageEvidence.Review `
+        -Raw | ConvertFrom-Json
+    $packageReviewObject.manual_observation_confirmed = $false
+    Set-JsonObject `
+        -Path $packageManualConfirmation.PackageEvidence.Review `
+        -Value $packageReviewObject
+    Assert-Rejected {
+        Invoke-Attestation -Fixture $packageManualConfirmation -Write
+    } 'package review without manual-observation confirmation'
 
     $postReviewMutation = New-Fixture 'post-review-evidence-mutation'
     Remove-Item -LiteralPath $postReviewMutation.Attestation -Force

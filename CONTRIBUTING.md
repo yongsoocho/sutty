@@ -33,6 +33,7 @@ Build one reviewable vertical slice in this order:
 .\tests\evidence-history\Assert-EvidenceHistory.Tests.ps1
 .\tests\release-attestation\Assert-ReleaseAttestation.Tests.ps1
 .\tests\repository-governance\Assert-RepositoryGovernance.Tests.ps1
+.\tests\pull-request-contract\Assert-PullRequestContract.Tests.ps1
 .\.github\scripts\Assert-ProductScope.ps1
 .\.github\scripts\Assert-LiveEvidence.ps1 -EvidenceRoot .\docs\evidence
 .\.github\scripts\Assert-EvidenceHistory.ps1 -RepositoryRoot . -BaseCommit HEAD -WorkingTree
@@ -44,6 +45,10 @@ dotnet run --project .\tests\sutty.Terminal.SelfTest\sutty.Terminal.SelfTest.csp
 dotnet run --project .\tests\sutty.Setting.SelfTest\sutty.Setting.SelfTest.csproj -c Debug --no-build
 dotnet run --project .\tests\sutty.Sftp.SelfTest\sutty.Sftp.SelfTest.csproj -c Debug --no-build
 ```
+
+The pull request body is a required quality record. Keep every bilingual template heading, replace comment-only or unexplained N/A placeholders with substantive text, name only IDs that exist in `docs/REQUIREMENTS.md` and include at least one, state a reason when live validation was not run, and check every applicable Definition of Done item. Editing the body reruns the governance gate.
+
+PR 본문은 필수 품질 기록입니다. 이중 언어 Template 제목을 모두 유지하고 주석 또는 이유 없는 N/A Placeholder를 실제 내용으로 바꾸며, `docs/REQUIREMENTS.md`에 존재하는 ID만 하나 이상 적고, 실환경 검증을 하지 않았다면 이유를 명시하며, 적용되는 완료 항목을 체크하세요. 본문을 수정하면 Governance Gate가 다시 실행됩니다.
 
 Never commit passwords, tokens, private keys, passphrases, production hostnames, terminal transcripts, or unredacted diagnostics. Tests use generated synthetic values only.
 

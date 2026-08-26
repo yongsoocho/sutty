@@ -34,7 +34,9 @@ namespace sutty.UI.Views
 
         private readonly SessionManager _sessions = new();
         private readonly SemaphoreSlim _hostKeyPromptGate = new(1, 1);
-        private SupportBundleContext? _lastStandaloneSupportContext;
+        private SupportBundleContext? _lastFailedSupportContext;
+        private DateTimeOffset _lastFailedSupportOccurredUtc = DateTimeOffset.MinValue;
+        private long _lastFailedSupportSequence;
         private Window? _settingWindow;
         private FileTreePanel? _fileTreePanel;
         private string _appIconPath = "";
@@ -1855,7 +1857,6 @@ namespace sutty.UI.Views
             try
             {
                 SshConnectionPreflightValidator.Validate(info);
-                _lastStandaloneSupportContext = null;
             }
             catch (Exception error) when (error is not OutOfMemoryException and not AccessViolationException)
             {
@@ -1931,7 +1932,20 @@ namespace sutty.UI.Views
             // 상태와 테마가 바뀔 때 코드로 만든 탭 표시도 함께 갱신한다.
             dot.ActualThemeChanged += (_, _) => UpdateStatusDot(session.State);
             session.StateChanged += (_, state) =>
-                DispatcherQueue.TryEnqueue(() => UpdateStatusDot(state));
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    UpdateStatusDot(state);
+                    if (state == SessionState.Failed)
+                        RememberFailedSupportContext(session);
+                });
+            session.SftpStateChanged += (_, state) =>
+            {
+                if (state == SftpConnectionState.Unavailable)
+                {
+                    DispatcherQueue.TryEnqueue(() =>
+                        RememberFailedSupportContext(session));
+                }
+            };
 
             var tab = new TabViewItem
             {
@@ -2022,6 +2036,9 @@ namespace sutty.UI.Views
                     historyPanel.RefreshFromStore();
             }
 
+            if (outcome is "Failed" or "Cancelled")
+                RememberFailedSupportContext(session, errorCode);
+
             if (outcome == "Failed")
                 await ShowConnectionFailureAsync(session);
         }
@@ -2045,11 +2062,13 @@ namespace sutty.UI.Views
                 routeType);
             var correlationId = Guid.NewGuid().ToString("N");
             ConnectionDiagnosticEventStore.Shared.Append(correlationId, diagnosis);
-            _lastStandaloneSupportContext = BuildSupportBundleContext(
+            RememberFailedSupportContext(
                 routeType,
                 authenticationType,
                 diagnosis.ErrorCode,
-                correlationId);
+                diagnosis.Stage,
+                correlationId,
+                allowUnsequencedOverwrite: true);
 
             ConnectionLogStore.Append(
                 Guid.ParseExact(correlationId, "N"),
@@ -3096,7 +3115,12 @@ namespace sutty.UI.Views
             TabViewTabCloseRequestedEventArgs args)
         {
             if (args.Tab.DataContext is SessionView closingSession)
+            {
+                RememberFailedSupportContext(
+                    closingSession.Session,
+                    allowUnsequencedOverwrite: false);
                 _fileTreePanel?.CancelTransfersForSession(closingSession.Session, userInitiated: true);
+            }
 
             sender.TabItems.Remove(args.Tab);
             UpdateSessionArea();
@@ -3121,7 +3145,7 @@ namespace sutty.UI.Views
             if (_settingWindow is null)
             {
                 var panel = new SettingsPanel();
-                panel.SupportBundleContextProvider = CreateSupportBundleContext;
+                panel.SupportBundleTargetsProvider = CreateSupportBundleTargets;
                 panel.SettingsChanged += (_, args) => ApplySettingsChanges(args.Changes);
                 panel.ThemeChanged += (_, themeName) => ApplyTheme(themeName);
 
@@ -3148,31 +3172,249 @@ namespace sutty.UI.Views
             DispatcherQueue.TryEnqueue(() => BringToFront(_settingWindow));
         }
 
-        private SupportBundleContext? CreateSupportBundleContext()
+        private IReadOnlyList<SupportBundleTarget> CreateSupportBundleTargets()
         {
-            var session = ActiveSession ?? _sessions.Sessions.LastOrDefault();
-            if (session is null)
-                return _lastStandaloneSupportContext;
+            var targets = new List<SupportBundleTarget>();
+            var openSessions = GetOpenSessionViews()
+                .Select(view => view.Session)
+                .ToList();
+            if (ActiveSession is { } activeSession)
+            {
+                openSessions.Remove(activeSession);
+                openSessions.Insert(0, activeSession);
+            }
+            else if (openSessions.Count > 1)
+            {
+                var mostRecentSession = openSessions[^1];
+                openSessions.RemoveAt(openSessions.Count - 1);
+                openSessions.Insert(0, mostRecentSession);
+            }
 
-            var latestUnresolvedFailure = ConnectionDiagnosticEventStore.Shared
-                .Snapshot(session.CorrelationContext.CorrelationId, 128)
-                .GroupBy(entry => entry.Stage)
-                .Select(group => group.MaxBy(entry => entry.Sequence)!)
-                .Where(entry => entry.Status is ConnectionDiagnosticStatus.Failed or
-                                                ConnectionDiagnosticStatus.Cancelled)
-                .MaxBy(entry => entry.Sequence);
-            return BuildSupportBundleContext(
+            foreach (var session in openSessions)
+                targets.Add(BuildSupportBundleTarget(session));
+
+            if (_lastFailedSupportContext is { } retained &&
+                !targets.Any(target => string.Equals(
+                    target.CorrelationId,
+                    retained.CorrelationId,
+                    StringComparison.Ordinal)))
+            {
+                var preview = PreviewSupportBundleDiagnostics(
+                    retained.CorrelationId,
+                    retained.StableErrorCode,
+                    retained.FallbackFailureStage);
+                if (preview.StableErrorCode == ConnectionDiagnosticErrorCodes.None)
+                {
+                    _lastFailedSupportContext = null;
+                    _lastFailedSupportOccurredUtc = DateTimeOffset.MinValue;
+                    _lastFailedSupportSequence = 0;
+                    return targets;
+                }
+
+                var refreshedContext = retained with
+                {
+                    StableErrorCode = preview.StableErrorCode,
+                    FallbackFailureStage = preview.FailureStage ?? retained.FallbackFailureStage,
+                    ExpectedDiagnosticSnapshotSha256 = preview.SnapshotSha256,
+                };
+                _lastFailedSupportContext = refreshedContext;
+                var retainedTitle = Helpers.Loc.T(
+                    "마지막 실패 연결 시도",
+                    "Last failed connection attempt");
+                var endpoint = Helpers.Loc.T(
+                    "보존하지 않음 (탭 닫힘 또는 연결 전 실패)",
+                    "Not retained (closed tab or preflight failure)");
+                targets.Add(new SupportBundleTarget(
+                    retainedTitle,
+                    retainedTitle,
+                    endpoint,
+                    FormatSupportBundleStatus(preview),
+                    preview.StableErrorCode,
+                    refreshedContext.CorrelationId,
+                    preview.EventCount,
+                    refreshedContext));
+            }
+
+            return targets;
+        }
+
+        private SupportBundleTarget BuildSupportBundleTarget(ISshSession session)
+        {
+            var fallbackDiagnostic = SelectFallbackDiagnostic(session);
+            var preview = PreviewSupportBundleDiagnostics(
+                session.CorrelationContext.CorrelationId,
+                fallbackDiagnostic?.ErrorCode ?? ConnectionDiagnosticErrorCodes.None,
+                fallbackDiagnostic?.Stage);
+            var statusText = preview.FailureStage is null
+                ? LocalizeSessionState(session.State)
+                : FormatSupportBundleStatus(preview);
+            var endpoint = HostEndpointIdentity.Create(
+                session.Info.Host,
+                session.Info.Port).Value;
+            var sessionTitle = string.IsNullOrWhiteSpace(session.Info.Title)
+                ? Helpers.Loc.T("SSH 연결", "SSH connection")
+                : session.Info.Title;
+            var context = BuildSupportBundleContext(
                 session.CorrelationContext.RouteType,
                 session.Info.AuthMethod,
-                latestUnresolvedFailure?.ErrorCode ?? ConnectionDiagnosticErrorCodes.None,
-                session.CorrelationContext.CorrelationId);
+                preview.StableErrorCode,
+                session.CorrelationContext.CorrelationId,
+                preview.FailureStage,
+                preview.SnapshotSha256);
+
+            return new SupportBundleTarget(
+                $"{sessionTitle} — {endpoint}",
+                sessionTitle,
+                endpoint,
+                statusText,
+                preview.StableErrorCode,
+                session.CorrelationContext.CorrelationId,
+                preview.EventCount,
+                context);
         }
+
+        private void RememberFailedSupportContext(
+            ISshSession session,
+            string? fallbackErrorCode = null,
+            bool allowUnsequencedOverwrite = true)
+        {
+            var fallbackDiagnostic = SelectFallbackDiagnostic(session);
+            RememberFailedSupportContext(
+                session.CorrelationContext.RouteType,
+                session.Info.AuthMethod,
+                fallbackErrorCode ?? fallbackDiagnostic?.ErrorCode ??
+                    ConnectionDiagnosticErrorCodes.None,
+                fallbackDiagnostic?.Stage,
+                session.CorrelationContext.CorrelationId,
+                allowUnsequencedOverwrite);
+        }
+
+        private void RememberFailedSupportContext(
+            ConnectionRouteType routeType,
+            SshAuthMethod authenticationType,
+            string fallbackErrorCode,
+            ConnectionDiagnosticStage? fallbackFailureStage,
+            string correlationId,
+            bool allowUnsequencedOverwrite)
+        {
+            var preview = PreviewSupportBundleDiagnostics(
+                correlationId,
+                fallbackErrorCode,
+                fallbackFailureStage);
+            if (preview.StableErrorCode == ConnectionDiagnosticErrorCodes.None)
+                return;
+
+            var occurredUtc = preview.FailureTimestampUtc ?? DateTimeOffset.UtcNow;
+            var sequence = preview.FailureSequence ?? 0;
+            if (sequence > 0 && _lastFailedSupportSequence > 0)
+            {
+                if (sequence <= _lastFailedSupportSequence)
+                    return;
+            }
+            else
+            {
+                if (!allowUnsequencedOverwrite &&
+                    _lastFailedSupportContext is not null &&
+                    !string.Equals(
+                        _lastFailedSupportContext.CorrelationId,
+                        correlationId,
+                        StringComparison.Ordinal))
+                {
+                    return;
+                }
+                if (occurredUtc < _lastFailedSupportOccurredUtc ||
+                    (occurredUtc == _lastFailedSupportOccurredUtc &&
+                     sequence <= _lastFailedSupportSequence))
+                {
+                    return;
+                }
+            }
+
+            _lastFailedSupportContext = BuildSupportBundleContext(
+                routeType,
+                authenticationType,
+                preview.StableErrorCode,
+                correlationId,
+                preview.FailureStage ?? fallbackFailureStage,
+                preview.SnapshotSha256);
+            _lastFailedSupportOccurredUtc = occurredUtc;
+            _lastFailedSupportSequence = sequence;
+        }
+
+        private static ConnectionDiagnosticResult? SelectFallbackDiagnostic(
+            ISshSession session)
+        {
+            static bool IsFailure(ConnectionDiagnosticResult? result) => result?.Status is
+                ConnectionDiagnosticStatus.Failed or ConnectionDiagnosticStatus.Cancelled;
+
+            if (session.State == SessionState.Failed && IsFailure(session.LastDiagnostic))
+                return session.LastDiagnostic;
+            if (session.SftpState == SftpConnectionState.Unavailable &&
+                IsFailure(session.LastSftpDiagnostic))
+            {
+                return session.LastSftpDiagnostic;
+            }
+            if (IsFailure(session.LastDiagnostic))
+                return session.LastDiagnostic;
+            return IsFailure(session.LastSftpDiagnostic)
+                ? session.LastSftpDiagnostic
+                : null;
+        }
+
+        private static SupportBundleDiagnosticPreview PreviewSupportBundleDiagnostics(
+            string correlationId,
+            string fallbackErrorCode,
+            ConnectionDiagnosticStage? fallbackFailureStage)
+        {
+            var service = new SupportBundleService(ConnectionDiagnosticEventStore.Shared);
+            var eventPreview = service.Preview(correlationId);
+            if (eventPreview.StableErrorCode != ConnectionDiagnosticErrorCodes.None ||
+                string.IsNullOrWhiteSpace(fallbackErrorCode) ||
+                fallbackErrorCode == ConnectionDiagnosticErrorCodes.None)
+            {
+                return eventPreview;
+            }
+
+            try
+            {
+                return service.Preview(
+                    correlationId,
+                    fallbackErrorCode,
+                    fallbackFailureStage);
+            }
+            catch (SupportBundleDiagnosticCodeMismatchException)
+            {
+                // A new failure can be appended between the event-only preview and
+                // the stage-aware fallback preview. Re-snapshot without the stale
+                // fallback so target enumeration remains safe and event-authoritative.
+                return service.Preview(correlationId);
+            }
+        }
+
+        private static string FormatSupportBundleStatus(
+            SupportBundleDiagnosticPreview preview) => preview.FailureStage is { } stage &&
+                                                        preview.FailureStatus is { } status
+            ? $"{LocalizeDiagnosticStage(stage)} · {LocalizeDiagnosticStatus(status)}"
+            : Helpers.Loc.T("실패 진단 보존됨", "Failure diagnostics retained");
+
+        private static string LocalizeSessionState(SessionState state) => state switch
+        {
+            SessionState.Idle => Helpers.Loc.T("대기 중", "Idle"),
+            SessionState.Connecting => Helpers.Loc.T("연결 중", "Connecting"),
+            SessionState.Connected => Helpers.Loc.T("연결됨", "Connected"),
+            SessionState.Disconnecting => Helpers.Loc.T("연결 종료 중", "Disconnecting"),
+            SessionState.Disconnected => Helpers.Loc.T("연결 종료됨", "Disconnected"),
+            SessionState.Failed => Helpers.Loc.T("실패", "Failed"),
+            _ => state.ToString(),
+        };
 
         private static SupportBundleContext BuildSupportBundleContext(
             ConnectionRouteType routeType,
             SshAuthMethod authenticationType,
             string stableErrorCode,
-            string correlationId)
+            string correlationId,
+            ConnectionDiagnosticStage? fallbackFailureStage,
+            string expectedDiagnosticSnapshotSha256)
         {
             var build = !string.IsNullOrWhiteSpace(Helpers.AppReleaseInfo.Commit)
                 ? Helpers.AppReleaseInfo.Commit
@@ -3188,7 +3430,9 @@ namespace sutty.UI.Views
                 authenticationType,
                 stableErrorCode,
                 correlationId,
-                SettingsService.SchemaVersion);
+                SettingsService.SchemaVersion,
+                fallbackFailureStage,
+                expectedDiagnosticSnapshotSha256);
         }
 
         private void ApplySettingsChanges(SettingChangeKind changes)
