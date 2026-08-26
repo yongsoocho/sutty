@@ -23,6 +23,7 @@ Set-StrictMode -Version Latest
 $contractNames = @('main', 'release-tags')
 $requiredStatusContexts = @(
     'Governance guards'
+    'Pull request body contract'
     'x64 Debug'
     'x64 Release'
     'ARM64 compile'
@@ -404,7 +405,7 @@ function Assert-StatusChecksRule {
     [Array]::Sort($actualContexts, [StringComparer]::Ordinal)
     [Array]::Sort($expectedContexts, [StringComparer]::Ordinal)
     if ([string]::Join('|', $actualContexts) -cne [string]::Join('|', $expectedContexts)) {
-        throw 'main required status contexts do not match the exact five-check contract.'
+        throw 'main required status contexts do not match the exact six-check contract.'
     }
 }
 

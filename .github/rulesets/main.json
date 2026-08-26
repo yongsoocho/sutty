@@ -41,6 +41,10 @@
             "integration_id": 15368
           },
           {
+            "context": "Pull request body contract",
+            "integration_id": 15368
+          },
+          {
             "context": "x64 Debug",
             "integration_id": 15368
           },
