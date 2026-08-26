@@ -76,6 +76,26 @@ function Test-PlaceholderOnlyText {
     return @('na', 'none', 'notapplicable', '해당없음', '없음') -contains $normalized
 }
 
+function Test-MarkdownClosingFence {
+    param(
+        [AllowEmptyString()][string]$Line,
+        [string]$FenceCharacter,
+        [int]$FenceLength
+    )
+
+    if ($FenceLength -lt 3 -or
+        ($FenceCharacter -cne '`' -and $FenceCharacter -cne '~')) {
+        return $false
+    }
+
+    # Do not use the format operator here. The literal Markdown indentation
+    # quantifier, {0,3}, is also valid String.Format alignment syntax, so it
+    # would be consumed before the intended regular expression is evaluated.
+    $closingPattern = '^[ ]{0,3}' + [regex]::Escape($FenceCharacter) +
+        '{' + $FenceLength + ',}[\t ]*$'
+    return $Line -match $closingPattern
+}
+
 function Remove-MarkdownFencedBlocks {
     param([AllowEmptyString()][string]$Text)
 
@@ -91,9 +111,10 @@ function Remove-MarkdownFencedBlocks {
         }
 
         if ($null -ne $fenceCharacter) {
-            $closingPattern = '^[ ]{0,3}{0}{{{1},}}[\t ]*$' -f `
-                [regex]::Escape($fenceCharacter), $fenceLength
-            if ($line -match $closingPattern) {
+            if (Test-MarkdownClosingFence `
+                    -Line $line `
+                    -FenceCharacter $fenceCharacter `
+                    -FenceLength $fenceLength) {
                 $fenceCharacter = $null
                 $fenceLength = 0
             }
@@ -177,9 +198,10 @@ function Get-MarkdownSections {
         }
 
         if ($null -ne $fenceCharacter) {
-            $closingPattern = '^[ ]{0,3}{0}{{{1},}}[\t ]*$' -f `
-                [regex]::Escape($fenceCharacter), $fenceLength
-            if ($line -match $closingPattern) {
+            if (Test-MarkdownClosingFence `
+                    -Line $line `
+                    -FenceCharacter $fenceCharacter `
+                    -FenceLength $fenceLength) {
                 $fenceCharacter = $null
                 $fenceLength = 0
             }

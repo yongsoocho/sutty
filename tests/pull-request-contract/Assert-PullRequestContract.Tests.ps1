@@ -13,7 +13,7 @@ $temporaryBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 $scratch = Join-Path $temporaryBase "sutty-pull-request-contract-tests-$([Guid]::NewGuid().ToString('N'))"
 
 function New-ValidBody {
-    return @'
+    $body = @'
 ## 사용자 문제 / User problem
 
 Users need reviewable change intent and validation boundaries.
@@ -51,6 +51,26 @@ NFR-009
 - [x] 정상·실패·취소·종료·migration 중 해당하는 경로를 테스트했습니다.
 - [ ] 실환경 의존 항목은 증거를 기록했거나 미검증 상태로 남겼습니다.
 '@
+
+    # Source files are materialized as CRLF on Windows runners and LF on Linux.
+    # Keep fixture mutation inputs deterministic on every checkout platform.
+    return $body.Replace("`r`n", "`n").Replace("`r", "`n")
+}
+
+function Replace-Required {
+    param(
+        [AllowEmptyString()][string]$Text,
+        [string]$OldValue,
+        [AllowEmptyString()][string]$NewValue,
+        [string]$FixtureName
+    )
+
+    if ([string]::IsNullOrEmpty($OldValue) -or
+        $Text.IndexOf($OldValue, [StringComparison]::Ordinal) -lt 0) {
+        throw "Pull-request-contract self-test fixture is stale: $FixtureName did not contain its required source text."
+    }
+
+    return $Text.Replace($OldValue, $NewValue)
 }
 
 function Get-ValidationFailure {
@@ -102,6 +122,9 @@ try {
     $valid = New-ValidBody
     Assert-Accepted -Body $valid -Name 'complete body'
 
+    $crlfValid = $valid.Replace("`n", "`r`n")
+    Assert-Accepted -Body $crlfValid -Name 'complete CRLF body'
+
     $script:caseCount++
     $eventPath = Join-Path $scratch 'pull-request-event.json'
     $eventJson = @{ pull_request = @{ body = $valid } } | ConvertTo-Json -Depth 4
@@ -123,66 +146,92 @@ try {
         -Name 'unchanged template' `
         -ExpectedMessage 'section needs a substantive explanation'
 
-    $commentOnlyScope = $valid.Replace(
-        'Add the pull request body contract guard and its focused fixtures.',
-        '<!-- Add scope here. -->')
+    $commentOnlyScope = Replace-Required `
+        -Text $valid `
+        -OldValue 'Add the pull request body contract guard and its focused fixtures.' `
+        -NewValue '<!-- Add scope here. -->' `
+        -FixtureName 'comment-only scope'
     Assert-Rejected `
         -Body $commentOnlyScope `
         -Name 'comment-only scope' `
         -ExpectedMessage '이번 PR의 범위 / Scope'
 
-    $emptyScope = $valid.Replace(
-        'Add the pull request body contract guard and its focused fixtures.',
-        '')
+    $emptyScope = Replace-Required `
+        -Text $valid `
+        -OldValue 'Add the pull request body contract guard and its focused fixtures.' `
+        -NewValue '' `
+        -FixtureName 'empty scope'
     Assert-Rejected `
         -Body $emptyScope `
         -Name 'empty scope' `
         -ExpectedMessage '이번 PR의 범위 / Scope'
 
-    $emptyLiveValidation = $valid.Replace(
-        'Live validation: Not run. Reason: no runtime product behavior changed. Remaining status: Partial.',
-        '')
+    $emptyLiveValidation = Replace-Required `
+        -Text $valid `
+        -OldValue 'Live validation: Not run. Reason: no runtime product behavior changed. Remaining status: Partial.' `
+        -NewValue '' `
+        -FixtureName 'empty live validation'
     Assert-Rejected `
         -Body $emptyLiveValidation `
         -Name 'empty live validation' `
         -ExpectedMessage '실제 환경 검증 / Live validation'
 
     foreach ($placeholder in @('Not applicable', 'N/A', 'None', '해당 없음')) {
-        $placeholderScope = $valid.Replace(
-            'Add the pull request body contract guard and its focused fixtures.',
-            $placeholder)
+        $placeholderScope = Replace-Required `
+            -Text $valid `
+            -OldValue 'Add the pull request body contract guard and its focused fixtures.' `
+            -NewValue $placeholder `
+            -FixtureName "placeholder-only scope: $placeholder"
         Assert-Rejected `
             -Body $placeholderScope `
             -Name "placeholder-only scope: $placeholder" `
             -ExpectedMessage 'placeholder without an explanation'
     }
 
-    $explainedPlaceholder = $valid.Replace(
-        'Add the pull request body contract guard and its focused fixtures.',
-        'N/A — Reason: this fixture changes only the pull request contract documentation.')
+    $explainedPlaceholder = Replace-Required `
+        -Text $valid `
+        -OldValue 'Add the pull request body contract guard and its focused fixtures.' `
+        -NewValue 'N/A — Reason: this fixture changes only the pull request contract documentation.' `
+        -FixtureName 'placeholder with a substantive reason'
     Assert-Accepted `
         -Body $explainedPlaceholder `
         -Name 'placeholder with a substantive reason'
 
-    $missingRequirement = $valid.Replace('NFR-009', 'Documentation was updated.')
+    $missingRequirement = Replace-Required `
+        -Text $valid `
+        -OldValue 'NFR-009' `
+        -NewValue 'Documentation was updated.' `
+        -FixtureName 'missing requirement ID'
     Assert-Rejected `
         -Body $missingRequirement `
         -Name 'missing requirement ID' `
         -ExpectedMessage 'must name at least one requirement ID'
 
-    $unknownRequirement = $valid.Replace('NFR-009', 'FAKE-999')
+    $unknownRequirement = Replace-Required `
+        -Text $valid `
+        -OldValue 'NFR-009' `
+        -NewValue 'FAKE-999' `
+        -FixtureName 'unknown requirement ID'
     Assert-Rejected `
         -Body $unknownRequirement `
         -Name 'unknown requirement ID' `
         -ExpectedMessage 'must name at least one requirement ID'
 
-    $mixedUnknownRequirement = $valid.Replace('NFR-009', 'NFR-009 FAKE-999')
+    $mixedUnknownRequirement = Replace-Required `
+        -Text $valid `
+        -OldValue 'NFR-009' `
+        -NewValue 'NFR-009 FAKE-999' `
+        -FixtureName 'known and unknown requirement IDs mixed together'
     Assert-Rejected `
         -Body $mixedUnknownRequirement `
         -Name 'known and unknown requirement IDs mixed together' `
         -ExpectedMessage 'contains an unknown requirement ID'
 
-    $commentedRequirement = $valid.Replace('NFR-009', '<!-- NFR-009 --> Documentation was updated.')
+    $commentedRequirement = Replace-Required `
+        -Text $valid `
+        -OldValue 'NFR-009' `
+        -NewValue '<!-- NFR-009 --> Documentation was updated.' `
+        -FixtureName 'comment-only requirement ID'
     Assert-Rejected `
         -Body $commentedRequirement `
         -Name 'comment-only requirement ID' `
@@ -193,13 +242,36 @@ try {
 NFR-009
 ```
 '@
-    $fencedRequirement = $valid.Replace('NFR-009', $fencedRequirementText)
+    $fencedRequirement = Replace-Required `
+        -Text $valid `
+        -OldValue 'NFR-009' `
+        -NewValue $fencedRequirementText `
+        -FixtureName 'requirement ID only in fenced code'
     Assert-Rejected `
         -Body $fencedRequirement `
         -Name 'requirement ID only in fenced code' `
         -ExpectedMessage 'must name at least one requirement ID'
 
-    $uncheckedDefinition = $valid.Replace('- [x]', '- [ ]')
+    $visibleRequirementAfterFenceText = @'
+````text
+FAKE-999
+   ````
+NFR-009
+'@
+    $visibleRequirementAfterFence = Replace-Required `
+        -Text $valid `
+        -OldValue 'NFR-009' `
+        -NewValue $visibleRequirementAfterFenceText `
+        -FixtureName 'requirement ID after matching indented closing fence'
+    Assert-Accepted `
+        -Body $visibleRequirementAfterFence `
+        -Name 'requirement ID after matching indented closing fence'
+
+    $uncheckedDefinition = Replace-Required `
+        -Text $valid `
+        -OldValue '- [x]' `
+        -NewValue '- [ ]' `
+        -FixtureName 'all Definition of Done boxes unchecked'
     Assert-Rejected `
         -Body $uncheckedDefinition `
         -Name 'all Definition of Done boxes unchecked' `
@@ -212,17 +284,21 @@ NFR-009
 - [x] hidden code sample
 ```
 '@
-    $fencedCheckedDefinition = $uncheckedDefinition.Replace(
-        '- [ ] 정상·실패·취소·종료·migration 중 해당하는 경로를 테스트했습니다.',
-        $fencedCheckedText)
+    $fencedCheckedDefinition = Replace-Required `
+        -Text $uncheckedDefinition `
+        -OldValue '- [ ] 정상·실패·취소·종료·migration 중 해당하는 경로를 테스트했습니다.' `
+        -NewValue $fencedCheckedText `
+        -FixtureName 'checked Definition of Done box only in fenced code'
     Assert-Rejected `
         -Body $fencedCheckedDefinition `
         -Name 'checked Definition of Done box only in fenced code' `
         -ExpectedMessage 'at least one selected checkbox'
 
-    $unclosedComment = $valid.Replace(
-        'Add the pull request body contract guard and its focused fixtures.',
-        '<!-- hidden scope without a closing delimiter')
+    $unclosedComment = Replace-Required `
+        -Text $valid `
+        -OldValue 'Add the pull request body contract guard and its focused fixtures.' `
+        -NewValue '<!-- hidden scope without a closing delimiter' `
+        -FixtureName 'unclosed comment hides remaining sections'
     Assert-Rejected `
         -Body $unclosedComment `
         -Name 'unclosed comment hides remaining sections' `
@@ -237,7 +313,11 @@ NFR-009
         'The guard reads public pull request text and writes no product data.',
         'Focused fixtures cover accepted and rejected bodies without network access.',
         'Live validation: Not run. Reason: no runtime product behavior changed. Remaining status: Partial.')) {
-        $oneLetterSections = $oneLetterSections.Replace($value, 'x')
+        $oneLetterSections = Replace-Required `
+            -Text $oneLetterSections `
+            -OldValue $value `
+            -NewValue 'x' `
+            -FixtureName 'one-letter prose sections'
     }
     Assert-Rejected `
         -Body $oneLetterSections `
@@ -250,9 +330,11 @@ NFR-009
         -Name 'arbitrary checked Definition of Done item' `
         -ExpectedMessage 'at least one selected checkbox'
 
-    $duplicateScope = $valid.Replace(
-        '## 의도적으로 제외한 범위 / Deliberately excluded',
-        "## 이번 PR의 범위 / Scope`n`nDuplicate scope.`n`n## 의도적으로 제외한 범위 / Deliberately excluded")
+    $duplicateScope = Replace-Required `
+        -Text $valid `
+        -OldValue '## 의도적으로 제외한 범위 / Deliberately excluded' `
+        -NewValue "## 이번 PR의 범위 / Scope`n`nDuplicate scope.`n`n## 의도적으로 제외한 범위 / Deliberately excluded" `
+        -FixtureName 'duplicate required section'
     Assert-Rejected `
         -Body $duplicateScope `
         -Name 'duplicate required section' `
@@ -266,15 +348,37 @@ Users need reviewable change intent and validation boundaries.
 Fake scope
 ```
 '@
-    $fencedHeading = $valid.Replace(
-        "## 이번 PR의 범위 / Scope`n`nAdd the pull request body contract guard and its focused fixtures.`n`n",
-        '').Replace(
-        'Users need reviewable change intent and validation boundaries.',
-        $fencedReplacement)
+    $fencedHeading = Replace-Required `
+        -Text $valid `
+        -OldValue "## 이번 PR의 범위 / Scope`n`nAdd the pull request body contract guard and its focused fixtures.`n`n" `
+        -NewValue '' `
+        -FixtureName 'heading inside fenced code section removal'
+    $fencedHeading = Replace-Required `
+        -Text $fencedHeading `
+        -OldValue 'Users need reviewable change intent and validation boundaries.' `
+        -NewValue $fencedReplacement `
+        -FixtureName 'heading inside fenced code injection'
     Assert-Rejected `
         -Body $fencedHeading `
         -Name 'heading inside fenced code' `
         -ExpectedMessage 'missing required section: 이번 PR의 범위 / Scope'
+
+    $closedLongFenceReplacement = @'
+Users need reviewable change intent and validation boundaries.
+
+````text
+## 이번 PR의 범위 / Scope
+This heading remains hidden inside the four-backtick fence.
+   ````
+'@
+    $closedLongFenceBody = Replace-Required `
+        -Text $valid `
+        -OldValue 'Users need reviewable change intent and validation boundaries.' `
+        -NewValue $closedLongFenceReplacement `
+        -FixtureName 'matching indented closing fence exposes following headings'
+    Assert-Accepted `
+        -Body $closedLongFenceBody `
+        -Name 'matching indented closing fence exposes following headings'
 
     $longFenceReplacement = @'
 Users need reviewable change intent and validation boundaries.
@@ -287,12 +391,41 @@ Fake scope
 Fake exclusion that remains inside the four-backtick fence.
 ````
 '@
-    $longFenceBody = $valid.Replace(
-        "## 사용자 문제 / User problem`n`nUsers need reviewable change intent and validation boundaries.`n`n## 이번 PR의 범위 / Scope`n`nAdd the pull request body contract guard and its focused fixtures.`n`n## 의도적으로 제외한 범위 / Deliberately excluded`n`nNo product runtime behavior or release evidence is changed.",
-        "## 사용자 문제 / User problem`n`n$longFenceReplacement")
+    $longFenceBody = Replace-Required `
+        -Text $valid `
+        -OldValue "## 사용자 문제 / User problem`n`nUsers need reviewable change intent and validation boundaries.`n`n## 이번 PR의 범위 / Scope`n`nAdd the pull request body contract guard and its focused fixtures.`n`n## 의도적으로 제외한 범위 / Deliberately excluded`n`nNo product runtime behavior or release evidence is changed." `
+        -NewValue "## 사용자 문제 / User problem`n`n$longFenceReplacement" `
+        -FixtureName 'shorter closing fence cannot expose hidden headings'
     Assert-Rejected `
         -Body $longFenceBody `
         -Name 'shorter closing fence cannot expose hidden headings' `
+        -ExpectedMessage 'missing required section: 이번 PR의 범위 / Scope'
+
+    $longFenceBodyCrlf = $longFenceBody.Replace("`n", "`r`n")
+    Assert-Rejected `
+        -Body $longFenceBodyCrlf `
+        -Name 'shorter closing fence cannot expose hidden headings in CRLF body' `
+        -ExpectedMessage 'missing required section: 이번 PR의 범위 / Scope'
+
+    $longTildeFenceReplacement = @'
+Users need reviewable change intent and validation boundaries.
+
+~~~~text
+## 이번 PR의 범위 / Scope
+Fake scope
+~~~
+## 의도적으로 제외한 범위 / Deliberately excluded
+Fake exclusion that remains inside the four-tilde fence.
+~~~~
+'@
+    $longTildeFenceBody = Replace-Required `
+        -Text $valid `
+        -OldValue "## 사용자 문제 / User problem`n`nUsers need reviewable change intent and validation boundaries.`n`n## 이번 PR의 범위 / Scope`n`nAdd the pull request body contract guard and its focused fixtures.`n`n## 의도적으로 제외한 범위 / Deliberately excluded`n`nNo product runtime behavior or release evidence is changed." `
+        -NewValue "## 사용자 문제 / User problem`n`n$longTildeFenceReplacement" `
+        -FixtureName 'shorter tilde closing fence cannot expose hidden headings'
+    Assert-Rejected `
+        -Body $longTildeFenceBody `
+        -Name 'shorter tilde closing fence cannot expose hidden headings' `
         -ExpectedMessage 'missing required section: 이번 PR의 범위 / Scope'
 
     $script:caseCount++
