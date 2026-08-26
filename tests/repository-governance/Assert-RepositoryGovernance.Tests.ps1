@@ -314,7 +314,7 @@ try {
         $status = Get-Rule (Get-Main $rulesets) required_status_checks
         $status.parameters.required_status_checks = @(
             $status.parameters.required_status_checks |
-                Where-Object { $_.context -cne 'ARM64 compile' })
+                Where-Object { $_.context -cne 'Pull request body contract' })
     }
     Assert-Rejected { Invoke-Validation -Path $missingCheck } 'missing exact status context'
 
@@ -322,7 +322,10 @@ try {
         param($rulesets)
         $status = Get-Rule (Get-Main $rulesets) required_status_checks
         $status.parameters.required_status_checks = @($status.parameters.required_status_checks) +
-            [pscustomobject]@{ context = 'Untracked optional check' }
+            [pscustomobject]@{
+                context = 'Untracked optional check'
+                integration_id = 15368
+            }
     }
     Assert-Rejected { Invoke-Validation -Path $extraCheck } 'extra status context'
 
