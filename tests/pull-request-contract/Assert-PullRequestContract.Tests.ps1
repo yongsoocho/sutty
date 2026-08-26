@@ -431,21 +431,22 @@ Fake exclusion that remains inside the four-tilde fence.
     $script:caseCount++
     $workflow = [System.IO.File]::ReadAllText(
         (Resolve-Path (Join-Path $RepositoryRoot '.github\workflows\ci.yml')).Path)
-    if ($workflow -notmatch '(?ms)^  pull_request:\s*\r?\n\s+types:\s*\[[^\]]*edited[^\]]*\]') {
-        throw 'Pull-request-contract self-test failed: CI does not rerun for edited pull request bodies.'
+    if ($workflow -match '(?ms)^  pull_request:\s*\r?\n\s+types:\s*\[[^\]]*edited[^\]]*\]') {
+        throw 'Pull-request-contract self-test failed: body edits still rerun the full PR-head CI.'
     }
     if ($workflow -notmatch 'tests\\pull-request-contract\\Assert-PullRequestContract\.Tests\.ps1') {
         throw 'Pull-request-contract self-test failed: CI does not run the contract fixtures.'
     }
-    if ($workflow -notmatch '(?s)if:\s*github\.event_name == ''pull_request''.*Assert-PullRequestContract\.ps1') {
-        throw 'Pull-request-contract self-test failed: CI does not enforce the body only for pull_request events.'
+    if ($workflow -match '(?m)^\s+run:\s+\.\\\.github\\scripts\\Assert-PullRequestContract\.ps1\s+-EventPath') {
+        throw 'Pull-request-contract self-test failed: PR-head CI still enforces the body contract.'
     }
 
     $script:caseCount++
     $trustedWorkflow = [System.IO.File]::ReadAllText(
         (Resolve-Path (Join-Path $RepositoryRoot '.github\workflows\pull-request-contract.yml')).Path)
-    if ($trustedWorkflow -notmatch '(?m)^  pull_request_target:\s*$' -or
+    if ($trustedWorkflow -notmatch '(?ms)^  pull_request_target:\s*\r?\n\s+types:\s*\[[^\]]*edited[^\]]*\]' -or
         $trustedWorkflow -notmatch '(?ms)^permissions:\s*\r?\n  contents:\s*read\s*$' -or
+        $trustedWorkflow -notmatch '(?m)^\s{4}name:\s*Pull request body contract\s*$' -or
         $trustedWorkflow -notmatch 'ref:\s*\$\{\{ github\.event\.pull_request\.base\.sha \}\}' -or
         $trustedWorkflow -notmatch 'persist-credentials:\s*false' -or
         $trustedWorkflow -notmatch 'Assert-PullRequestContract\.ps1\s+-EventPath\s+\$env:GITHUB_EVENT_PATH') {

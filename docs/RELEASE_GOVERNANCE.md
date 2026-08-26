@@ -11,25 +11,26 @@ The canonical GitHub ruleset request bodies are tracked in:
 - [`.github/rulesets/main.json`](../.github/rulesets/main.json)
 - [`.github/rulesets/release-tags.json`](../.github/rulesets/release-tags.json)
 
-`main` has no bypass actor. When the contract is active, every change must arrive through a pull request, the branch must be current with its base, and these five exact checks must pass. Each context is pinned to the GitHub Actions integration (`15368`), not just to a reusable status name:
+`main` has no bypass actor. When the contract is active, every change must arrive through a pull request, the branch must be current with its base, and these six exact checks must pass. Each context is pinned to the GitHub Actions integration (`15368`), not just to a reusable status name:
 
 1. `Governance guards`
-2. `x64 Debug`
-3. `x64 Release`
-4. `ARM64 compile`
-5. `Validate unsigned x64 release artifact`
+2. `Pull request body contract`
+3. `x64 Debug`
+4. `x64 Release`
+5. `ARM64 compile`
+6. `Validate unsigned x64 release artifact`
 
 Deletion and non-fast-forward updates are rejected. Review conversations must be resolved, stale reviews are dismissed on a new push, and only squash or rebase merge is allowed. The approval count is intentionally zero because this is currently a one-maintainer repository; the pull-request boundary and required checks are enforced, but they are not misrepresented as an independent human approval.
 
 `release-tags` targets `refs/tags/v*`, permits the first creation of a version tag, and rejects every later update or deletion. It also has no bypass actor.
 
-The dedicated `Pull request body contract` workflow is introduced through a two-step rollout because a new required context cannot protect the pull request that first adds its workflow. The first pull request installs a read-only `pull_request_target` job that checks out and executes only the trusted base commit. After GitHub has emitted that context from the default branch, a separate protected pull request must add it to both the tracked and live `main` rulesets before any release Candidate is created. Until that follow-up is merged, the five checks above remain the exact enforced set and the body contract is not claimed as a required protected check.
+`Pull request body contract` is the dedicated sixth required check. Its read-only `pull_request_target` job checks out and executes only the exact trusted base commit with persisted credentials disabled; it never executes pull-request-head code. The context was observed from the default branch before both tracked and live `main` rulesets were updated. The duplicate head-controlled enforcement was then removed. Body edits retrigger this small trusted check without rerunning the full Windows CI.
 
-`main`에는 bypass actor가 없습니다. 계약이 활성화되면 모든 변경은 pull request를 거쳐야 하고 base의 최신 상태여야 하며 GitHub Actions integration(`15368`)에 고정된 위 다섯 검사를 정확히 통과해야 합니다. 삭제와 non-fast-forward update, 미해결 review 대화, stale review를 허용하지 않으며 squash 또는 rebase merge만 사용합니다. 현재 단일 maintainer 저장소이므로 승인 수는 의도적으로 0입니다. PR 경계와 자동 검사는 강제하지만 독립적인 사람 승인으로 과장하지 않습니다.
+`main`에는 bypass actor가 없습니다. 계약이 활성화되면 모든 변경은 pull request를 거쳐야 하고 base의 최신 상태여야 하며 GitHub Actions integration(`15368`)에 고정된 위 여섯 검사를 정확히 통과해야 합니다. 삭제와 non-fast-forward update, 미해결 review 대화, stale review를 허용하지 않으며 squash 또는 rebase merge만 사용합니다. 현재 단일 maintainer 저장소이므로 승인 수는 의도적으로 0입니다. PR 경계와 자동 검사는 강제하지만 독립적인 사람 승인으로 과장하지 않습니다.
 
 `release-tags`는 `refs/tags/v*`의 최초 생성을 허용하지만 이후 모든 update와 삭제를 거부하며 bypass actor가 없습니다.
 
-전용 `Pull request body contract` workflow는 새 required context를 처음 추가하는 PR 자체에는 적용할 수 없으므로 2단계로 배포합니다. 첫 PR은 PR head를 실행하지 않고 신뢰된 base commit만 checkout·실행하는 read-only `pull_request_target` job을 설치합니다. GitHub가 default branch에서 새 context를 생성한 뒤 별도 보호 PR이 tracked·live `main` ruleset 모두에 이를 추가해야 하며, 이 후속 PR이 merge되기 전에는 위 다섯 검사가 실제 강제 집합이고 본문 계약을 required protected check로 주장하지 않습니다. Release Candidate는 후속 배포가 끝난 뒤에만 만듭니다.
+`Pull request body contract`는 전용 여섯 번째 required check입니다. read-only `pull_request_target` job은 credential persistence를 끄고 정확한 신뢰 base commit만 checkout·실행하며 PR head 코드를 실행하지 않습니다. default branch에서 context가 실제 생성된 것을 확인한 뒤 tracked·live `main` ruleset을 함께 갱신했고, 그 다음 head-controlled 중복 enforcement를 제거했습니다. PR 본문 수정은 전체 Windows CI가 아니라 이 작은 trusted check만 다시 실행합니다.
 
 ## Contract verification / 계약 검증
 
