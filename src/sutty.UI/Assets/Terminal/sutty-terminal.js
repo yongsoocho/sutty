@@ -159,6 +159,45 @@
   searchNext.addEventListener('click', findNext);
   searchClose.addEventListener('click', hideSearch);
 
+  function handleAppShortcut(event) {
+    if (event.altKey && !event.ctrlKey && !event.shiftKey) {
+      const navigationMatch = /^Digit([1-7])$/.exec(event.code);
+      if (navigationMatch) {
+        event.preventDefault();
+        event.stopPropagation();
+        post({ type: 'appShortcut', action: 'navigate', number: Number(navigationMatch[1]) });
+        return true;
+      }
+    }
+
+    if (event.ctrlKey && !event.altKey && !event.shiftKey) {
+      const tabMatch = /^Digit([1-9])$/.exec(event.code);
+      let action = null;
+      let number = 0;
+      if (tabMatch) {
+        action = 'selectTab';
+        number = Number(tabMatch[1]);
+      } else if (event.code === 'KeyT') {
+        action = 'newTab';
+      } else if (event.code === 'Comma') {
+        action = 'settings';
+      }
+
+      if (action) {
+        event.preventDefault();
+        event.stopPropagation();
+        post({ type: 'appShortcut', action: action, number: number });
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Capture before xterm's hidden textarea or the search input sees the key so the
+  // application shortcut has identical behaviour for every focus target in WebView2.
+  document.addEventListener('keydown', handleAppShortcut, true);
+
   terminal.attachCustomKeyEventHandler(function (event) {
     if (event.type !== 'keydown') {
       return true;

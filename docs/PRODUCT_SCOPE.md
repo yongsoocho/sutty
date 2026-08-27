@@ -19,13 +19,21 @@ Local-first is a product boundary, not a temporary implementation detail:
 - settings, history, saved hosts, trust records, and transfer recovery stay on the current Windows device;
 - shareable definitions must be credential-free and require local credential binding after import.
 
-### Five primary workspaces
+### App navigation and core execution surfaces
+
+The global navigation is **Home**, **Hosts**, **Transfers**, **Commands**, and **Settings**.
+Each selected SSH tab owns **Terminal**, **Files**, **Commands**, and **Tunnels** for one exact
+host context. Local PowerShell is an explicit new-tab choice, and Multi is an advanced action
+under Commands rather than a primary destination.
+
+The following execution surfaces remain part of the Alpha capability contract; this table is a
+capability classification, not the visual navigation hierarchy.
 
 | Surface | Alpha contract |
 | --- | --- |
 | Local | Tabbed Windows shell sessions through ConPTY. |
 | Terminal | Persistent interactive SSH PTY with resize, keyboard, mouse, Unicode/IME, search, and clipboard handling. |
-| REPL | Structured non-interactive commands with distinct input/output blocks, status, timing, and cancellation. |
+| Commands runner | Structured non-interactive commands with distinct input/output blocks, status, timing, and cancellation. The legacy persisted value `Repl` remains internal for compatibility. |
 | Files | Session-bound SFTP tree and safe upload/download workflows with explicit collision handling. |
 | Multi | Structured commands and SFTP operations sent only to explicitly selected sessions; default selection is zero. |
 
@@ -83,13 +91,21 @@ Local-first는 임시 구현 방식이 아니라 제품 경계입니다.
 - 설정, 기록, 저장 Host, 신뢰 정보, 전송 복구 상태는 현재 Windows 장치에 둡니다.
 - 공유 정의에는 자격증명을 넣지 않으며 가져온 뒤 각 사용자가 로컬 자격증명을 연결해야 합니다.
 
-### 주 작업 공간 5개
+### 앱 내비게이션과 핵심 실행 화면
+
+전역 내비게이션은 **Home**, **Hosts**, **Transfers**, **Commands**, **Settings**입니다.
+선택한 SSH 탭은 하나의 정확한 Host 문맥에서 **Terminal**, **Files**, **Commands**,
+**Tunnels**를 소유합니다. Local PowerShell은 새 탭 메뉴에서 명시적으로 선택하며,
+Multi는 주 이동 목적지가 아니라 Commands 아래의 고급 작업입니다.
+
+아래 실행 화면은 Alpha 기능 계약에 계속 포함됩니다. 이 표는 기능 분류이며 화면의
+내비게이션 계층을 뜻하지 않습니다.
 
 | 화면 | Alpha 계약 |
 | --- | --- |
 | Local | ConPTY 기반 탭형 Windows shell 세션 |
 | Terminal | 크기 변경, 키보드, 마우스, Unicode/IME, 검색, clipboard를 처리하는 지속형 SSH PTY |
-| REPL | 입력·출력 블록, 상태, 실행 시간, 취소를 구분하는 구조화 비대화형 명령 |
+| Commands runner | 입력·출력 블록, 상태, 실행 시간, 취소를 구분하는 구조화 비대화형 명령. 호환성을 위해 기존 저장값 `Repl`은 내부에만 유지 |
 | Files | 세션에 연결된 SFTP tree와 명시적 충돌 정책을 사용하는 안전한 업로드·다운로드 |
 | Multi | 사용자가 명시적으로 선택한 세션에만 보내는 구조화 명령·SFTP 작업. 기본 선택은 0개 |
 

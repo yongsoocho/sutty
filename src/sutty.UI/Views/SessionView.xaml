@@ -145,8 +145,9 @@
                     </Button.Flyout>
                 </Button>
 
-                <!--  REPL | TERMINAL 세그먼트 토글 (설정에 저장)  -->
+                <!--  Commands | Terminal 세그먼트 토글 (설정에 저장)  -->
                 <Border
+                    x:Name="ViewModeSwitcher"
                     Grid.Column="5"
                     Padding="0"
                     VerticalAlignment="Center"
@@ -162,7 +163,8 @@
                             Background="Transparent"
                             BorderThickness="0"
                             Click="ReplBtn_Click"
-                            Content="REPL"
+                            AutomationProperties.Name="{x:Bind h:Loc.T('명령 보기', 'Commands view')}"
+                            Content="{x:Bind h:Loc.T('명령', 'COMMANDS')}"
                             CornerRadius="6"
                             FontSize="11"
                             FontWeight="SemiBold" />
@@ -173,6 +175,7 @@
                             Background="Transparent"
                             BorderThickness="0"
                             Click="TerminalBtn_Click"
+                            AutomationProperties.Name="{x:Bind h:Loc.T('터미널 보기', 'Terminal view')}"
                             Content="TERMINAL"
                             CornerRadius="6"
                             FontSize="11"

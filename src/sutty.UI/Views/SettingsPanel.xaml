@@ -41,7 +41,7 @@
         <!--  타이틀바 오버레이 영역(40px)을 피해서 시작  -->
         <NavigationView
             x:Name="SettingsNav"
-            Margin="0,36,0,0"
+            Margin="0"
             Background="Transparent"
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"
@@ -70,7 +70,7 @@
                         <FontIcon Glyph="&#xE72E;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="{x:Bind h:Loc.T('지원', 'Support')}" FontSize="12.5" Tag="Support">
+                <NavigationViewItem Content="{x:Bind h:Loc.T('문제 해결', 'Troubleshooting')}" FontSize="12.5" Tag="Troubleshooting">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE897;" />
                     </NavigationViewItem.Icon>
@@ -235,8 +235,8 @@
                                     Header="{x:Bind h:Loc.T('기본 보기 모드', 'Default view mode')}"
                                     MaxColumns="2"
                                     SelectionChanged="TerminalModeRadios_SelectionChanged">
-                                    <x:String>REPL</x:String>
-                                    <x:String>TERMINAL</x:String>
+                                    <RadioButton Content="{x:Bind h:Loc.T('명령', 'COMMANDS')}" Tag="Repl" />
+                                    <RadioButton Content="TERMINAL" Tag="Terminal" />
                                 </RadioButtons>
                                 <ToggleSwitch
                                     x:Name="StructuredHighlightToggle"
@@ -425,14 +425,27 @@
                     <StackPanel
                         x:Name="SecurityPane"
                         Visibility="Collapsed">
-                        <local:KnownHostsManagerPanel x:Name="KnownHostsPanel" />
+                        <Expander Header="{x:Bind h:Loc.T('고급 · Known Hosts 관리', 'Advanced · Known Hosts management')}">
+                            <local:KnownHostsManagerPanel x:Name="KnownHostsPanel" />
+                        </Expander>
                     </StackPanel>
 
-                    <!--  ── Privacy-safe product Support Bundle ──  -->
+                    <!--  ── Troubleshooting: raw diagnostics remain explicitly advanced. ──  -->
                     <StackPanel
                         x:Name="SupportPane"
+                        Spacing="12"
                         Visibility="Collapsed">
-                        <local:SupportBundlePanel x:Name="SupportBundlePanel" />
+                        <TextBlock Style="{StaticResource SettingsHeading}" Text="{x:Bind h:Loc.T('문제 해결', 'Troubleshooting')}" />
+                        <Expander
+                            x:Name="RawLogsExpander"
+                            Header="{x:Bind h:Loc.T('고급 · 원시 진단 로그', 'Advanced · Raw diagnostic logs')}">
+                            <local:ConnectionLogPanel
+                                x:Name="ConnectionLogsPanel"
+                                Height="560" />
+                        </Expander>
+                        <Expander Header="{x:Bind h:Loc.T('고급 · 지원 번들 내보내기', 'Advanced · Export support bundle')}">
+                            <local:SupportBundlePanel x:Name="SupportBundlePanel" />
+                        </Expander>
                     </StackPanel>
 
                     <!--  ── Window ──  -->
@@ -504,31 +517,6 @@
                                     SpinButtonPlacementMode="Hidden"
                                     ValueChanged="NumberBox_ValueChanged"
                                     Style="{StaticResource SettingsNumber}" />
-                                <TextBlock Style="{StaticResource SettingsLabel}" Text="SETTINGS WINDOW (WIDTH × HEIGHT)" />
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <NumberBox
-                                        x:Name="SettingWidthBox"
-                                        Grid.Column="0"
-                                        Maximum="7680"
-                                        Minimum="360"
-                                        PlaceholderText="width"
-                                        SpinButtonPlacementMode="Hidden"
-                                        ValueChanged="NumberBox_ValueChanged"
-                                        Style="{StaticResource SettingsNumber}" />
-                                    <NumberBox
-                                        x:Name="SettingHeightBox"
-                                        Grid.Column="1"
-                                        Maximum="4320"
-                                        Minimum="360"
-                                        PlaceholderText="height"
-                                        SpinButtonPlacementMode="Hidden"
-                                        ValueChanged="NumberBox_ValueChanged"
-                                        Style="{StaticResource SettingsNumber}" />
-                                </Grid>
                             </StackPanel>
                         </Border>
                     </StackPanel>

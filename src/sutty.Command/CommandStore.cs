@@ -11,6 +11,9 @@ public static class CommandStore
     private static readonly object Gate = new();
     private static bool _initialized;
 
+    /// <summary>Raised after a command template or its usage ordering changes.</summary>
+    public static event EventHandler? Changed;
+
     private static SqliteConnection Open() => Db.Open();
 
     public static void EnsureInitialized()
@@ -73,13 +76,15 @@ public static class CommandStore
         EnsureInitialized();
         using var conn = Open();
         var id = InsertInternal(conn, name, commandText);
-        return new CommandTemplate
+        var template = new CommandTemplate
         {
             Id = id,
             Name = name,
             CommandText = commandText,
             CreatedAt = DateTime.Now,
         };
+        NotifyChanged();
+        return template;
     }
 
     public static void Delete(long id)
@@ -90,6 +95,7 @@ public static class CommandStore
         cmd.CommandText = "DELETE FROM commands WHERE id = $id";
         cmd.Parameters.AddWithValue("$id", id);
         cmd.ExecuteNonQuery();
+        NotifyChanged();
     }
 
     /// <summary>실행할 때마다 호출 — 다음에 목록 상단으로 올라온다.</summary>
@@ -102,6 +108,7 @@ public static class CommandStore
         cmd.Parameters.AddWithValue("$now", DateTime.Now.ToString("o"));
         cmd.Parameters.AddWithValue("$id", id);
         cmd.ExecuteNonQuery();
+        NotifyChanged();
     }
 
     private static long InsertInternal(SqliteConnection conn, string name, string commandText)
@@ -115,5 +122,23 @@ public static class CommandStore
         cmd.Parameters.AddWithValue("$text", commandText);
         cmd.Parameters.AddWithValue("$now", DateTime.Now.ToString("o"));
         return Convert.ToInt64(cmd.ExecuteScalar());
+    }
+
+    private static void NotifyChanged()
+    {
+        if (Changed is not { } callbacks)
+            return;
+        foreach (EventHandler callback in callbacks.GetInvocationList())
+        {
+            try
+            {
+                callback(null, EventArgs.Empty);
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Command change observer failed: {error.GetType().Name}");
+            }
+        }
     }
 }

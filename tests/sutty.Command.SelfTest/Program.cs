@@ -28,6 +28,20 @@ try
     Assert(!File.Exists(Db.PathOverride), "no bundled local database");
     Assert(HostHistoryStore.GetRecent().Count == 0, "new history store has no bundled rows");
 
+    var commandChanges = 0;
+    EventHandler commandChanged = (_, _) => commandChanges++;
+    CommandStore.Changed += commandChanged;
+    var commandTemplate = CommandStore.Add("Health", "uptime");
+    Assert(commandChanges == 1 && CommandStore.GetAll().Single().Id == commandTemplate.Id,
+        "adding a command notifies all command views");
+    CommandStore.IncrementUsage(commandTemplate.Id);
+    Assert(commandChanges == 2 && CommandStore.GetAll().Single().UsageCount == 1,
+        "command usage reorder notifies all command views");
+    CommandStore.Delete(commandTemplate.Id);
+    Assert(commandChanges == 3 && CommandStore.GetAll().Count == 0,
+        "deleting a command notifies all command views");
+    CommandStore.Changed -= commandChanged;
+
     HostHistoryStore.SetPinned(
         "legacy.example",
         "Legacy host",

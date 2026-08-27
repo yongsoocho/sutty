@@ -16,7 +16,7 @@
                     FontSize="15"
                     FontWeight="SemiBold"
                     Foreground="{ThemeResource TextPrimary}"
-                    Text="{x:Bind h:Loc.T('접속 기록', 'History')}" />
+                    Text="{x:Bind h:Loc.T('호스트', 'Hosts')}" />
 
                 <AutoSuggestBox
                     x:Name="SearchBox"
@@ -33,7 +33,7 @@
                     FontSize="10.5"
                     FontWeight="SemiBold"
                     Foreground="{ThemeResource TextMuted}"
-                    Text="{x:Bind h:Loc.T('자주 접속', 'FREQUENT')}" />
+                    Text="{x:Bind h:Loc.T('즐겨찾기', 'FAVORITES')}" />
                 <ItemsRepeater x:Name="TopRepeater" ItemsSource="{x:Bind TopHosts}">
                     <ItemsRepeater.Layout>
                         <UniformGridLayout

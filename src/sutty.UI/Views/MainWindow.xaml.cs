@@ -12,6 +12,9 @@ using sutty.Core.Sessions;
 using sutty.Core.Sftp;
 using sutty.Core.Terminal;
 using sutty.Setting;
+using sutty.UI.Controls;
+using sutty.UI.Services;
+using sutty.UI.ViewModels;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -33,12 +36,19 @@ namespace sutty.UI.Views
         private static readonly TimeSpan BroadcastCommandTimeout = TimeSpan.FromSeconds(60);
 
         private readonly SessionManager _sessions = new();
+        private readonly AppShellViewModel _shellState = new();
+        private readonly NavigationService _navigation;
+        private readonly Dictionary<AppGlobalPage, FrameworkElement> _globalPages = [];
+        private readonly Dictionary<SessionView, SessionWorkspaceView> _sessionWorkspaces = [];
+        private readonly List<HostListPanel> _hostPanels = [];
         private readonly SemaphoreSlim _hostKeyPromptGate = new(1, 1);
         private SupportBundleContext? _lastFailedSupportContext;
         private DateTimeOffset _lastFailedSupportOccurredUtc = DateTimeOffset.MinValue;
         private long _lastFailedSupportSequence;
-        private Window? _settingWindow;
-        private FileTreePanel? _fileTreePanel;
+        private HomeDashboardPanel? _homeDashboard;
+        private SettingsPanel? _embeddedSettings;
+        private MultiCommandPanel? _multiCommandPanel;
+        private double _detailsPaneWidth = 316;
         private string _appIconPath = "";
         private bool _isMultiView;
         private int _broadcastInProgress;
@@ -57,6 +67,7 @@ namespace sutty.UI.Views
         private bool _restoringWorkspace;
         private bool _windowClosing;
         private bool _suppressWorkspacePersistence;
+        private bool _suppressTabActivation;
 
         private enum MultiSftpOperation
         {
@@ -73,6 +84,7 @@ namespace sutty.UI.Views
         public MainWindow(sutty.Command.SuttyLaunchRequest? launchRequest)
         {
             _launchRequest = launchRequest ?? sutty.Command.SuttyLaunchRequest.Default;
+            _navigation = new NavigationService(_shellState);
             ViewModel = new sutty.UI.ViewModels.MainViewModel();
             InitializeComponent();
 
@@ -95,7 +107,6 @@ namespace sutty.UI.Views
                 _windowClosing = true;
                 FlushWorkspaceSnapshot();
                 FlushRightPanelWidth();
-                _settingWindow?.Close();
                 foreach (var localView in GetOpenLocalTerminalViews())
                     _ = localView.CloseAsync();
                 LocalCredentialVault.Default.Dispose();
@@ -109,6 +120,7 @@ namespace sutty.UI.Views
                 (s, size) => { s.MainWindowWidth = size.Width; s.MainWindowHeight = size.Height; });
 
             RestoreRightPanelWidth();
+            HideDetailsPane();
             InitializeWorkspacePersistence();
             Root.Loaded += Root_Loaded;
 
@@ -445,13 +457,15 @@ namespace sutty.UI.Views
         {
             var saved = SettingsService.Current.RightPanelWidth;
             if (saved > 0)
-                RightPanelColumn.Width = new GridLength(Math.Clamp(saved, 300, 800));
+                _detailsPaneWidth = Math.Clamp(saved, 300, 800);
 
             _panelWidthSaveTimer = DispatcherQueue.CreateTimer();
             _panelWidthSaveTimer.Interval = TimeSpan.FromMilliseconds(600);
             _panelWidthSaveTimer.IsRepeating = false;
             _panelWidthSaveTimer.Tick += (_, _) =>
             {
+                if (RightPanelHost.Visibility != Visibility.Visible)
+                    return;
                 SettingsService.Current.RightPanelWidth = (int)RightPanelColumn.ActualWidth;
                 SettingsService.Save();
             };
@@ -466,12 +480,34 @@ namespace sutty.UI.Views
         // 창을 닫는 순간 디바운스 대기 중이던 폭을 놓치지 않게 즉시 저장
         private void FlushRightPanelWidth()
         {
-            if (_panelWidthSaveTimer is { IsRunning: true })
+            if (_panelWidthSaveTimer is { IsRunning: true } &&
+                RightPanelHost.Visibility == Visibility.Visible)
             {
                 _panelWidthSaveTimer.Stop();
                 SettingsService.Current.RightPanelWidth = (int)RightPanelColumn.ActualWidth;
                 SettingsService.Save();
             }
+        }
+
+        private void ShowDetailsPane()
+        {
+            RightPanelColumn.MinWidth = 300;
+            RightPanelColumn.Width = new GridLength(Math.Clamp(_detailsPaneWidth, 300, 800));
+            RightPanelHost.Visibility = Visibility.Visible;
+            RightPanelSplitter.Visibility = Visibility.Visible;
+            _navigation.SetDetailsPaneOpen(true);
+        }
+
+        private void HideDetailsPane()
+        {
+            if (RightPanelHost.Visibility == Visibility.Visible && RightPanelColumn.ActualWidth >= 300)
+                _detailsPaneWidth = RightPanelColumn.ActualWidth;
+            RightPanelHost.Visibility = Visibility.Collapsed;
+            RightPanelSplitter.Visibility = Visibility.Collapsed;
+            RightPanelColumn.MinWidth = 0;
+            RightPanelColumn.Width = new GridLength(0);
+            RightPanel.Content = null;
+            _navigation.SetDetailsPaneOpen(false);
         }
 
         // ── 테마 (전환 UI는 Setting > Appearance에 있음) ──
@@ -482,12 +518,6 @@ namespace sutty.UI.Views
             var preset = Helpers.ThemeManager.Find(theme);
             ApplyTitleBarColors(this, preset);
 
-            // 설정 창이 열려 있으면 같이 바꿔 준다
-            if (_settingWindow?.Content is FrameworkElement settingRoot)
-            {
-                settingRoot.RequestedTheme = Root.RequestedTheme;
-                ApplyTitleBarColors(_settingWindow, preset);
-            }
         }
 
         private static void ApplyTitleBarColors(Window window, Helpers.ThemePreset preset)
@@ -529,50 +559,135 @@ namespace sutty.UI.Views
             NavigationView sender,
             NavigationViewItemInvokedEventArgs args)
         {
-            if (args.InvokedItemContainer is NavigationViewItem item && item.Tag is "Setting")
-            {
-                OpenSettingWindow();
-            }
+            // SelectionChanged handles a new item; an already-selected item does not raise
+            // it, so route that invocation explicitly as well.
+            if (args.InvokedItemContainer is NavigationViewItem { Tag: string tag })
+                SelectNavigationItem(tag);
         }
 
         private void LeftNav_SelectionChanged(
             NavigationView sender,
             NavigationViewSelectionChangedEventArgs args)
         {
-            if (args.SelectedItem is NavigationViewItem item)
-            {
-                RightPanel.Content = item.Tag switch
-                {
-                    "Home" => CreateHomePanel(),
-                    "Search" => CreateHostListPanel(),
-                    "Folder" => CreateFileTreePanel(),
-                    "Command" => CreateCommandPanel(),
-                    "Multi" => CreateMultiPanel(),
-                    "Logs" => new ConnectionLogPanel(),
-                    _ => null
-                };
+            if (args.SelectedItem is not NavigationViewItem { Tag: string tag })
+                return;
 
-                // Multi에서는 메인 영역이 4×4 세션 그리드로 바뀐다
-                _isMultiView = item.Tag as string == "Multi";
-                MultiGrid.Visibility = _isMultiView ? Visibility.Visible : Visibility.Collapsed;
-                UpdateSessionArea();
-            }
+            var page = tag switch
+            {
+                "Home" => AppGlobalPage.Home,
+                "Hosts" => AppGlobalPage.Hosts,
+                "Transfers" => AppGlobalPage.Transfers,
+                "Commands" => AppGlobalPage.Commands,
+                "Settings" => AppGlobalPage.Settings,
+                _ => (AppGlobalPage?)null,
+            };
+            if (page is { } destination)
+                NavigateGlobal(destination);
         }
 
-        private HomePanel CreateHomePanel()
+        private void NavigateGlobal(AppGlobalPage page)
         {
-            var panel = new HomePanel
+            if (page != AppGlobalPage.Home)
+                ClearCachedHomeSecrets();
+            _navigation.NavigateGlobal(page);
+            _isMultiView = false;
+            MultiGrid.Visibility = Visibility.Collapsed;
+            HideDetailsPane();
+            GlobalPageHost.Content = GetGlobalPage(page);
+            UpdateSessionArea();
+        }
+
+        private FrameworkElement GetGlobalPage(AppGlobalPage page)
+        {
+            if (_globalPages.TryGetValue(page, out var cached))
             {
-                OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this)
+                if (cached is Border { Child: TransferCenterPanel transfers })
+                    transfers.RefreshFromStore();
+                if (page == AppGlobalPage.Home)
+                    _homeDashboard?.RefreshHosts();
+                if (page == AppGlobalPage.Hosts)
+                {
+                    foreach (var hosts in _hostPanels)
+                        hosts.RefreshFromStore();
+                }
+                return cached;
+            }
+
+            var created = page switch
+            {
+                AppGlobalPage.Home => CreateHomeDashboard(),
+                AppGlobalPage.Hosts => WrapGlobalPage(CreateHostListPanel()),
+                AppGlobalPage.Transfers => WrapGlobalPage(new TransferCenterPanel()),
+                AppGlobalPage.Commands => CreateCommandsDashboard(),
+                AppGlobalPage.Settings => CreateEmbeddedSettingsPanel(),
+                _ => throw new ArgumentOutOfRangeException(nameof(page)),
             };
-            panel.ConnectRequested += async (_, info) => await OpenSessionTabAsync(info);
+            _globalPages[page] = created;
+            return created;
+        }
+
+        private HomeDashboardPanel CreateHomeDashboard()
+        {
+            var dashboard = new HomeDashboardPanel
+            {
+                OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this),
+            };
+            dashboard.ConnectRequested += async (_, info) => await OpenSessionTabAsync(info);
+            dashboard.HistoryConnectRequested += async (_, host) => await OpenHistoryDraftAsync(host);
+            _homeDashboard = dashboard;
+            return dashboard;
+        }
+
+        private CommandsDashboardPanel CreateCommandsDashboard()
+        {
+            var dashboard = new CommandsDashboardPanel();
+            dashboard.RunRequested += async (_, command) => await RunCommandOnActiveSessionAsync(command);
+            dashboard.PowerToolsRequested += (_, _) => OpenMultiPowerTools();
+            dashboard.SetPowerToolsAvailable(GetOpenTerminalViews().Count >= 2);
+            return dashboard;
+        }
+
+        private SettingsPanel CreateEmbeddedSettingsPanel()
+        {
+            if (_embeddedSettings is not null)
+                return _embeddedSettings;
+
+            var panel = new SettingsPanel
+            {
+                OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this),
+                SupportBundleTargetsProvider = CreateSupportBundleTargets,
+            };
+            panel.SettingsChanged += (_, args) => ApplySettingsChanges(args.Changes);
+            panel.ThemeChanged += (_, themeName) => ApplyTheme(themeName);
+            _embeddedSettings = panel;
             return panel;
+        }
+
+        private static FrameworkElement WrapGlobalPage(FrameworkElement content) => new Border
+        {
+            Padding = new Thickness(24),
+            Child = content,
+        };
+
+        private void OpenMultiPowerTools()
+        {
+            if (GetOpenTerminalViews().Count < 2)
+                return;
+            ClearCachedHomeSecrets();
+            _multiCommandPanel ??= CreateMultiPanel();
+            RightPanel.Content = _multiCommandPanel;
+            ShowDetailsPane();
+            _isMultiView = true;
+            MultiGrid.SetSessions(GetOpenTerminalViews());
+            MultiGrid.Visibility = Visibility.Visible;
+            UpdateSessionArea();
         }
 
         private HostListPanel CreateHostListPanel()
         {
             var panel = new HostListPanel();
             panel.ConnectRequested += async (_, host) => await OpenHistoryDraftAsync(host);
+            _hostPanels.Add(panel);
             return panel;
         }
 
@@ -729,8 +844,7 @@ namespace sutty.UI.Views
             draft.RoutePolicy = new ConnectionRoutePolicy { DisableDirect = true };
             draft.SaveProfile = !string.IsNullOrWhiteSpace(draft.SavedHostId);
             SelectNavigationItem("Home");
-            if (RightPanel.Content is HomePanel editor)
-                editor.ApplyConnectionDraft(draft);
+            _homeDashboard?.ApplyConnectionDraft(draft);
         }
 
         private async Task<bool> PromptForHistoryPasswordAsync(SshConnectionInfo draft)
@@ -770,132 +884,6 @@ namespace sutty.UI.Views
 
             draft.Password = passwordBox.Password;
             return draft.Password.Length > 0;
-        }
-
-        private FileTreePanel CreateFileTreePanel()
-        {
-            if (_fileTreePanel is null)
-            {
-                _fileTreePanel = new FileTreePanel
-                {
-                    OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this),
-                };
-                _fileTreePanel.OpenTerminalHereRequested += FileTree_OpenTerminalHereRequested;
-            }
-
-            var panel = _fileTreePanel;
-            panel.OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
-            panel.RefreshLanguage();
-            // Reconcile the cached panel immediately so stale nodes and transfers from a
-            // previously active server are invalidated before the control is reattached.
-            _ = LoadFileTreeForActiveSessionAsync(panel);
-            // The first call can happen while the cached control is still unloaded. Run a
-            // second pass after the selection change attaches it so cwd navigation is applied.
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                if (ReferenceEquals(panel, RightPanel.Content))
-                    _ = LoadFileTreeForActiveSessionAsync(panel);
-            });
-            return panel;
-        }
-
-        private async void FileTree_OpenTerminalHereRequested(object? sender, string remotePath)
-        {
-            var view = ActiveSessionView;
-            if (view is null)
-            {
-                await ShowOpenTerminalFailedAsync();
-                return;
-            }
-
-            var allowExistingInput = false;
-            if (view.HasOpenInteractiveTerminal)
-            {
-                allowExistingInput = await ConfirmTerminalInputAsync(remotePath);
-                if (!allowExistingInput)
-                    return;
-            }
-
-            if (await view.OpenDirectoryInTerminalAsync(remotePath, allowExistingInput))
-                return;
-
-            // The PTY may have opened while the remote path was being validated. Never
-            // inject into that newly-existing foreground program without a fresh prompt.
-            if (!allowExistingInput && view.HasOpenInteractiveTerminal)
-            {
-                if (!await ConfirmTerminalInputAsync(remotePath))
-                    return;
-                if (await view.OpenDirectoryInTerminalAsync(remotePath, true))
-                    return;
-            }
-
-            await ShowOpenTerminalFailedAsync();
-        }
-
-        private async Task<bool> ConfirmTerminalInputAsync(string remotePath)
-        {
-            var content = new StackPanel { Spacing = 8 };
-            content.Children.Add(new TextBlock
-            {
-                Text = Helpers.Loc.T(
-                    "터미널에서 이미 프로그램이 실행 중일 수 있습니다. 아래 명령을 현재 PTY 입력으로 보내시겠습니까?",
-                    "A program may already be running in the terminal. Send this command to the current PTY input?"),
-                TextWrapping = TextWrapping.Wrap,
-            });
-            content.Children.Add(new TextBlock
-            {
-                Text = $"cd {remotePath}",
-                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-                Foreground = Helpers.ThemeResources.Brush(Root, "AccentTeal"),
-                TextWrapping = TextWrapping.Wrap,
-                IsTextSelectionEnabled = true,
-            });
-
-            var dialog = new ContentDialog
-            {
-                Title = Helpers.Loc.T("기존 터미널 입력 확인", "Confirm terminal input"),
-                Content = content,
-                PrimaryButtonText = Helpers.Loc.T("cd 명령 보내기", "Send cd command"),
-                CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = Content.XamlRoot,
-            };
-            return await dialog.ShowAsync() == ContentDialogResult.Primary;
-        }
-
-        private async Task ShowOpenTerminalFailedAsync()
-        {
-            var dialog = new ContentDialog
-            {
-                Title = Helpers.Loc.T("터미널에서 열 수 없음", "Could not open in terminal"),
-                Content = Helpers.Loc.T(
-                    "활성 SSH 세션과 원격 경로를 확인하세요.",
-                    "Check the active SSH session and remote path."),
-                CloseButtonText = "OK",
-                XamlRoot = Content.XamlRoot,
-            };
-            await dialog.ShowAsync();
-        }
-
-        private async Task LoadFileTreeForActiveSessionAsync(FileTreePanel panel)
-        {
-            var view = ActiveSessionView;
-            await panel.LoadAsync(view?.Session);
-            if (view is null || !ReferenceEquals(view, ActiveSessionView) ||
-                !ReferenceEquals(panel, RightPanel.Content))
-                return;
-
-            if (view.WorkingDirectory.StartsWith("/", StringComparison.Ordinal))
-                await panel.NavigateToPathAsync(view.WorkingDirectory);
-        }
-
-        private void SessionView_WorkingDirectoryChanged(object? sender, string remotePath)
-        {
-            if (sender is not SessionView view || !ReferenceEquals(view, ActiveSessionView) ||
-                RightPanel.Content is not FileTreePanel panel)
-                return;
-
-            _ = panel.NavigateToPathAsync(remotePath);
         }
 
         private MultiCommandPanel CreateMultiPanel()
@@ -1647,29 +1635,25 @@ namespace sutty.UI.Views
             }
         }
 
-        private CommandPanel CreateCommandPanel()
+        private async Task RunCommandOnActiveSessionAsync(string command)
         {
-            var panel = new CommandPanel();
-            // playbook 실행 → 현재 선택된 세션 탭의 터미널에 입력
-            panel.RunRequested += async (_, command) =>
+            if ((TitleTabs.SelectedItem as TabViewItem)?.DataContext is not SessionView view)
             {
-                if ((TitleTabs.SelectedItem as TabViewItem)?.DataContext is not SessionView view)
+                var dialog = new ContentDialog
                 {
-                    var dialog = new ContentDialog
-                    {
-                        Title = Helpers.Loc.T("활성 세션 없음", "No active session"),
-                        Content = Helpers.Loc.T(
-                            "명령을 실행할 세션이 없습니다. 먼저 서버에 연결하세요.",
-                            "There is no session to run the command in. Connect to a server first."),
-                        CloseButtonText = "OK",
-                        XamlRoot = Content.XamlRoot,
-                    };
-                    await dialog.ShowAsync();
-                    return;
-                }
-                await view.RunExternalCommandAsync(command);
-            };
-            return panel;
+                    Title = Helpers.Loc.T("활성 세션 없음", "No active session"),
+                    Content = Helpers.Loc.T(
+                        "명령을 실행할 세션이 없습니다. 먼저 서버에 연결하세요.",
+                        "There is no session to run the command in. Connect to a server first."),
+                    CloseButtonText = "OK",
+                    XamlRoot = Content.XamlRoot,
+                };
+                await dialog.ShowAsync();
+                return;
+            }
+            await view.RunExternalCommandAsync(command);
+            if (_sessionWorkspaces.TryGetValue(view, out var workspace))
+                ActivateWorkspace(workspace, SessionWorkspaceSection.Commands);
         }
 
         // ── 세션 탭 ──
@@ -1680,7 +1664,7 @@ namespace sutty.UI.Views
 
         private ISshSession? ActiveSession => ActiveSessionView?.Session;
 
-        private async void Root_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+        private void Root_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
             var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
             var altDown = IsKeyDown(Windows.System.VirtualKey.Menu);
@@ -1690,14 +1674,9 @@ namespace sutty.UI.Views
             {
                 if (shortcutNumber is int tabNumber)
                 {
-                    var index = tabNumber - 1;
-                    if (index >= 0 && index < TitleTabs.TabItems.Count)
+                    if (SelectTabWithShortcut(tabNumber))
                     {
                         e.Handled = true;
-                        if (_isMultiView && LeftNav.MenuItems.Count > 0)
-                            LeftNav.SelectedItem = LeftNav.MenuItems[0];
-                        TitleTabs.SelectedItem = TitleTabs.TabItems[index];
-                        UpdateSessionArea();
                     }
                     return;
                 }
@@ -1705,7 +1684,7 @@ namespace sutty.UI.Views
                 if (e.Key == Windows.System.VirtualKey.T)
                 {
                     e.Handled = true;
-                    await OpenLocalTerminalTabAsync();
+                    ShowNewTabMenu();
                     return;
                 }
 
@@ -1727,19 +1706,76 @@ namespace sutty.UI.Views
             if (ShortcutNumber(sender.Key) is not int navigationNumber)
                 return;
 
-            var items = LeftNav.MenuItems
-                .Concat(LeftNav.FooterMenuItems)
-                .OfType<NavigationViewItem>()
-                .ToArray();
-            var navigationIndex = navigationNumber - 1;
-            if (navigationIndex < 0 || navigationIndex >= items.Length)
-                return;
+            NavigateWithAccelerator(navigationNumber);
+        }
 
-            var item = items[navigationIndex];
-            if (item.Tag is "Setting")
-                OpenSettingWindow();
-            else
-                LeftNav.SelectedItem = item;
+        private void NavigateWithAccelerator(int navigationNumber)
+        {
+
+            if (NavigationService.TryGetGlobalPageForAccelerator(navigationNumber, out var page))
+            {
+                SelectNavigationItem(page.ToString());
+                return;
+            }
+
+            if ((TitleTabs.SelectedItem as TabViewItem)?.DataContext is SessionView sessionView &&
+                _sessionWorkspaces.TryGetValue(sessionView, out var workspace) &&
+                NavigationService.TryGetSessionSectionForAccelerator(
+                    navigationNumber,
+                    out var section))
+            {
+                ActivateWorkspace(workspace, section);
+                return;
+            }
+
+            // Alt+6 still returns to a selected local terminal. Alt+7 is deliberately
+            // consumed for local tabs because there is no remote filesystem.
+            if (navigationNumber == 6 && TitleTabs.SelectedItem is TabViewItem)
+                ActivateSelectedSession();
+        }
+
+        private void TerminalView_AppShortcutRequested(
+            object? sender,
+            TerminalAppShortcutRequest request)
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(() => HandleTerminalAppShortcut(request));
+                return;
+            }
+
+            HandleTerminalAppShortcut(request);
+        }
+
+        private void HandleTerminalAppShortcut(TerminalAppShortcutRequest request)
+        {
+            switch (request.Action)
+            {
+                case TerminalAppShortcutAction.Navigate:
+                    NavigateWithAccelerator(request.Number);
+                    break;
+                case TerminalAppShortcutAction.SelectTab:
+                    SelectTabWithShortcut(request.Number);
+                    break;
+                case TerminalAppShortcutAction.NewTab:
+                    ShowNewTabMenu();
+                    break;
+                case TerminalAppShortcutAction.Settings:
+                    OpenSettingWindow();
+                    break;
+            }
+        }
+
+        private bool SelectTabWithShortcut(int tabNumber)
+        {
+            var index = tabNumber - 1;
+            if (index < 0 || index >= TitleTabs.TabItems.Count)
+                return false;
+
+            TitleTabs.SelectedItem = TitleTabs.TabItems[index];
+            ActivateSelectedSession();
+            UpdateSessionArea();
+            return true;
         }
 
         private static int? ShortcutNumber(Windows.System.VirtualKey key)
@@ -1757,8 +1793,27 @@ namespace sutty.UI.Views
                 .GetKeyStateForCurrentThread(key)
                 .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
-        private async void TitleTabs_AddTabButtonClick(TabView sender, object args)
-            => await OpenLocalTerminalTabAsync();
+        private void TitleTabs_AddTabButtonClick(TabView sender, object args) => ShowNewTabMenu();
+
+        private void ShowNewTabMenu() => NewTabMenu.ShowAt(TitleTabs);
+
+        private void NewSshConnection_Click(object sender, RoutedEventArgs e)
+        {
+            SelectNavigationItem("Home");
+            DispatcherQueue.TryEnqueue(() => _homeDashboard?.FocusQuickConnect());
+        }
+
+        private void OpenSavedHost_Click(object sender, RoutedEventArgs e) =>
+            SelectNavigationItem("Hosts");
+
+        private async void OpenLocalPowerShell_Click(object sender, RoutedEventArgs e) =>
+            await OpenLocalTerminalTabAsync();
+
+        private void ImportHosts_Click(object sender, RoutedEventArgs e)
+        {
+            SelectNavigationItem("Settings");
+            CreateEmbeddedSettingsPanel().NavigateToSection("Connection");
+        }
 
         private async Task OpenLocalTerminalTabAsync()
         {
@@ -1777,12 +1832,8 @@ namespace sutty.UI.Views
                 return;
             }
 
-            // The + button is a direct request to show a terminal. Leave the Multi
-            // dashboard first so the newly selected local tab is immediately visible.
-            if (_isMultiView && LeftNav.MenuItems.Count > 0)
-                LeftNav.SelectedItem = LeftNav.MenuItems[0];
-
             var view = new LocalTerminalView();
+            view.AppShortcutRequested += TerminalView_AppShortcutRequested;
             var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
             {
                 Width = 7,
@@ -1829,9 +1880,11 @@ namespace sutty.UI.Views
                 IsClosable = true,
                 DataContext = view,
             };
+            tab.Tapped += SessionTab_Tapped;
 
             TitleTabs.TabItems.Add(tab);
             TitleTabs.SelectedItem = tab;
+            ActivateSelectedSession();
             UpdateSessionArea();
             QueueWorkspaceSnapshot();
         }
@@ -1851,6 +1904,7 @@ namespace sutty.UI.Views
                     XamlRoot = Content.XamlRoot,
                 };
                 await limitDialog.ShowAsync();
+                info.ClearTransientSecrets();
                 return;
             }
 
@@ -1861,11 +1915,15 @@ namespace sutty.UI.Views
             catch (Exception error) when (error is not OutOfMemoryException and not AccessViolationException)
             {
                 await HandlePreflightFailureAsync(info, error);
+                info.ClearTransientSecrets();
                 return;
             }
 
             if (!await ConfirmHighRiskConnectionFeaturesAsync(info))
+            {
+                info.ClearTransientSecrets();
                 return;
+            }
 
             info.HostKeyPromptAsync ??= (verification, ct) => DispatchPromptToUiAsync(
                 () => PromptUnknownHostKeyAsync(verification, ct),
@@ -1883,11 +1941,16 @@ namespace sutty.UI.Views
             catch (Exception error) when (error is not OutOfMemoryException and not AccessViolationException)
             {
                 await HandlePreflightFailureAsync(info, error);
+                info.ClearTransientSecrets();
                 return;
             }
-            var savedProfile = await PersistSavedProfileAsync(info);
+            sutty.Command.HostProfile? savedProfile = null;
             var view = new SessionView(session);
-            view.WorkingDirectoryChanged += SessionView_WorkingDirectoryChanged;
+            view.AppShortcutRequested += TerminalView_AppShortcutRequested;
+            var workspace = new SessionWorkspaceView(
+                view,
+                WinRT.Interop.WindowNative.GetWindowHandle(this));
+            _sessionWorkspaces[view] = workspace;
 
             // 리디자인 탭 헤더: [상태점] 세션이름 username
             var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
@@ -1953,22 +2016,40 @@ namespace sutty.UI.Views
                 IsClosable = true,
                 DataContext = view,
             };
+            tab.Tapped += SessionTab_Tapped;
 
             TitleTabs.TabItems.Add(tab);
             TitleTabs.SelectedItem = tab;
+            ActivateWorkspace(workspace, workspace.CurrentSection);
             UpdateSessionArea();
             QueueWorkspaceSnapshot();
 
             var timer = Stopwatch.StartNew();
-            var outcome = "Failed";
+            var outcome = ConnectionAttemptOutcome.Failed;
             string? errorCode = ConnectionDiagnosticErrorCodes.UnexpectedFailure;
             try
             {
                 await session.ConnectAsync();
                 if (session.State == SessionState.Connected)
                 {
-                    outcome = "Success";
+                    outcome = ConnectionAttemptOutcome.Success;
                     errorCode = null;
+                    // Persist only after the connection proves usable. This keeps failed
+                    // one-off attempts out of Saved Hosts while secrets are still available
+                    // for an explicitly requested encrypted-vault save.
+                    if (ConnectionPersistencePolicy.ShouldOfferSave(
+                            outcome,
+                            info.SaveProfile,
+                            info.SavedHostId))
+                    {
+                        await OfferSaveAfterSuccessAsync(info);
+                    }
+                    if (ConnectionPersistencePolicy.ShouldPersistProfile(
+                            outcome,
+                            info.SaveProfile))
+                    {
+                        savedProfile = await PersistSavedProfileAsync(info);
+                    }
                     var connectedProfileId = savedProfile?.Id ?? info.SavedHostId;
                     if (!string.IsNullOrWhiteSpace(connectedProfileId))
                         sutty.Command.HostProfileStore.MarkConnected(connectedProfileId);
@@ -1980,7 +2061,7 @@ namespace sutty.UI.Views
             }
             catch (OperationCanceledException)
             {
-                outcome = "Cancelled";
+                outcome = ConnectionAttemptOutcome.Cancelled;
                 errorCode = session.LastDiagnostic?.ErrorCode ??
                     ConnectionDiagnosticErrorCodes.ConnectionCancelled;
             }
@@ -2004,13 +2085,7 @@ namespace sutty.UI.Views
             finally
             {
                 timer.Stop();
-                info.Password = "";
-                info.Passphrase = "";
-                if (info.Route is not null)
-                {
-                    info.Route.Password = "";
-                    info.Route.Passphrase = "";
-                }
+                info.ClearTransientSecrets();
                 try
                 {
                     sutty.Command.HostHistoryStore.Append(
@@ -2021,7 +2096,7 @@ namespace sutty.UI.Views
                         info.AuthMethod.ToString(),
                         info.AuthMethod == SshAuthMethod.PublicKey ? info.PrivateKeyPath : "",
                         info.Tags,
-                        outcome,
+                        outcome.ToString(),
                         errorCode,
                         timer.ElapsedMilliseconds);
                 }
@@ -2032,14 +2107,16 @@ namespace sutty.UI.Views
                     Debug.WriteLine($"Connection history append failed: {historyError.GetType().Name}");
                 }
 
-                if (RightPanel.Content is HostListPanel historyPanel)
+                foreach (var historyPanel in _hostPanels)
                     historyPanel.RefreshFromStore();
+                _homeDashboard?.RefreshHosts();
             }
 
-            if (outcome is "Failed" or "Cancelled")
+            if (outcome is ConnectionAttemptOutcome.Failed or
+                ConnectionAttemptOutcome.Cancelled)
                 RememberFailedSupportContext(session, errorCode);
 
-            if (outcome == "Failed")
+            if (outcome == ConnectionAttemptOutcome.Failed)
                 await ShowConnectionFailureAsync(session);
         }
 
@@ -2103,52 +2180,13 @@ namespace sutty.UI.Views
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
             });
-            content.Children.Add(CreateConnectionStageSummary(correlationId));
-
-            var identity = new StackPanel { Spacing = 3 };
-            identity.Children.Add(new TextBlock
-            {
-                Text = diagnosis.ErrorCode,
-                Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
-                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                IsTextSelectionEnabled = true,
-            });
-            identity.Children.Add(new TextBlock
-            {
-                Text = $"{Helpers.Loc.T("실패 단계", "Failed stage")}: {LocalizeDiagnosticStage(diagnosis.Stage)}",
-                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
-                FontSize = 10.5,
-            });
-            content.Children.Add(new Border
-            {
-                Padding = new Thickness(10),
-                Background = Helpers.ThemeResources.Brush(Root, "CardBg"),
-                BorderBrush = Helpers.ThemeResources.Brush(Root, "CardBorder"),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(7),
-                Child = identity,
-            });
             content.Children.Add(new TextBlock
             {
                 Text = Helpers.Loc.T(diagnosis.UserActionKo, diagnosis.UserActionEn),
                 Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
                 TextWrapping = TextWrapping.Wrap,
             });
-            content.Children.Add(new Expander
-            {
-                Header = Helpers.Loc.T("기술 상세", "Technical details"),
-                IsExpanded = false,
-                Content = new TextBlock
-                {
-                    Text = $"{diagnosis.TechnicalDetail}{Environment.NewLine}correlation={correlationId}",
-                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
-                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-                    FontSize = 10.5,
-                    TextWrapping = TextWrapping.Wrap,
-                    IsTextSelectionEnabled = true,
-                },
-            });
+            content.Children.Add(CreateDiagnosticDetails(correlationId, diagnosis));
             content.Children.Add(new TextBlock
             {
                 Text = Helpers.Loc.T(
@@ -2177,7 +2215,7 @@ namespace sutty.UI.Views
 
             var result = await dialog.ShowAsync();
             if (result == ContentDialogResult.Primary)
-                SelectNavigationItem("Logs");
+                OpenTroubleshooting();
             else if (result == ContentDialogResult.Secondary)
             {
                 Helpers.ClipboardHelper.CopyText(BuildSafeDiagnosticSummary(
@@ -2206,35 +2244,8 @@ namespace sutty.UI.Views
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
             });
-            content.Children.Add(CreateConnectionStageSummary(
-                session.CorrelationContext.CorrelationId));
-
             if (diagnosis is not null)
             {
-                var identity = new StackPanel { Spacing = 3 };
-                identity.Children.Add(new TextBlock
-                {
-                    Text = diagnosis.ErrorCode,
-                    Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
-                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    IsTextSelectionEnabled = true,
-                });
-                identity.Children.Add(new TextBlock
-                {
-                    Text = $"{Helpers.Loc.T("실패 단계", "Failed stage")}: {LocalizeDiagnosticStage(diagnosis.Stage)}",
-                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
-                    FontSize = 10.5,
-                });
-                content.Children.Add(new Border
-                {
-                    Padding = new Thickness(10),
-                    Background = Helpers.ThemeResources.Brush(Root, "CardBg"),
-                    BorderBrush = Helpers.ThemeResources.Brush(Root, "CardBorder"),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(7),
-                    Child = identity,
-                });
                 content.Children.Add(new TextBlock
                 {
                     Text = Helpers.Loc.T(diagnosis.UserActionKo, diagnosis.UserActionEn),
@@ -2243,27 +2254,9 @@ namespace sutty.UI.Views
                 });
             }
 
-            var technicalText = string.Join(
-                Environment.NewLine,
-                new[]
-                {
-                    diagnosis?.TechnicalDetail,
-                    $"correlation={session.CorrelationContext.CorrelationId}",
-                }.Where(value => !string.IsNullOrWhiteSpace(value)));
-            content.Children.Add(new Expander
-            {
-                Header = Helpers.Loc.T("기술 상세", "Technical details"),
-                IsExpanded = false,
-                Content = new TextBlock
-                {
-                    Text = technicalText,
-                    Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
-                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-                    FontSize = 10.5,
-                    TextWrapping = TextWrapping.Wrap,
-                    IsTextSelectionEnabled = true,
-                },
-            });
+            content.Children.Add(CreateDiagnosticDetails(
+                session.CorrelationContext.CorrelationId,
+                diagnosis));
             content.Children.Add(new TextBlock
             {
                 Text = Helpers.Loc.T(
@@ -2286,15 +2279,57 @@ namespace sutty.UI.Views
                 PrimaryButtonText = Helpers.Loc.T("상세 로그 열기", "Open detailed logs"),
                 SecondaryButtonText = Helpers.Loc.T("안전한 요약 복사", "Copy safe summary"),
                 CloseButtonText = Helpers.Loc.T("닫기", "Close"),
-                DefaultButton = ContentDialogButton.Primary,
+                DefaultButton = ContentDialogButton.Close,
                 XamlRoot = Content.XamlRoot,
             };
 
             var result = await dialog.ShowAsync();
             if (result == ContentDialogResult.Primary)
-                SelectNavigationItem("Logs");
+                OpenTroubleshooting();
             else if (result == ContentDialogResult.Secondary)
                 Helpers.ClipboardHelper.CopyText(BuildSafeConnectionSummary(session));
+        }
+
+        private Expander CreateDiagnosticDetails(
+            string correlationId,
+            ConnectionDiagnosticResult? diagnosis)
+        {
+            var details = new StackPanel { Spacing = 8 };
+            details.Children.Add(CreateConnectionStageSummary(correlationId));
+            if (diagnosis is not null)
+            {
+                details.Children.Add(new TextBlock
+                {
+                    Text = $"{diagnosis.ErrorCode} · " +
+                        $"{LocalizeDiagnosticStage(diagnosis.Stage)}",
+                    Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
+                    FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                    FontSize = 10.5,
+                    IsTextSelectionEnabled = true,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+            }
+            details.Children.Add(new TextBlock
+            {
+                Text = string.Join(
+                    Environment.NewLine,
+                    new[]
+                    {
+                        diagnosis?.TechnicalDetail,
+                        $"correlation={correlationId}",
+                    }.Where(value => !string.IsNullOrWhiteSpace(value))),
+                Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                FontSize = 10.5,
+                IsTextSelectionEnabled = true,
+                TextWrapping = TextWrapping.Wrap,
+            });
+            return new Expander
+            {
+                Header = Helpers.Loc.T("진단 상세", "Diagnostic details"),
+                IsExpanded = false,
+                Content = details,
+            };
         }
 
         private Border CreateConnectionStageSummary(string correlationId)
@@ -2443,8 +2478,17 @@ namespace sutty.UI.Views
                 .Concat(LeftNav.FooterMenuItems)
                 .OfType<NavigationViewItem>()
                 .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, tag, StringComparison.Ordinal));
-            if (item is not null)
+            if (item is null)
+                return;
+            if (ReferenceEquals(LeftNav.SelectedItem, item) &&
+                Enum.TryParse<AppGlobalPage>(tag, out var page))
+            {
+                NavigateGlobal(page);
+            }
+            else
+            {
                 LeftNav.SelectedItem = item;
+            }
         }
 
         private async Task<sutty.Command.HostProfile?> PersistSavedProfileAsync(SshConnectionInfo info)
@@ -3047,29 +3091,170 @@ namespace sutty.UI.Views
             object sender,
             SelectionChangedEventArgs e)
         {
+            if (_suppressTabActivation)
+                return;
+            ActivateSelectedSession();
             UpdateSessionArea();
             QueueWorkspaceSnapshot();
         }
 
+        private async Task OfferSaveAfterSuccessAsync(SshConnectionInfo info)
+        {
+            if (info.SaveProfile || !string.IsNullOrWhiteSpace(info.SavedHostId))
+                return;
+
+            var nameBox = new TextBox
+            {
+                Header = Helpers.Loc.T("표시 이름", "Display name"),
+                Text = info.Title,
+                PlaceholderText = info.Host,
+            };
+            var rememberSecret = new CheckBox
+            {
+                Content = Helpers.Loc.T(
+                    "자격증명을 Windows 암호화 저장소에 저장",
+                    "Save credential in the Windows encrypted vault"),
+                IsChecked = false,
+                Visibility = info.AuthMethod is SshAuthMethod.Password or
+                    SshAuthMethod.KeyboardInteractive or SshAuthMethod.PublicKey
+                    ? Visibility.Visible
+                    : Visibility.Collapsed,
+            };
+            var content = new StackPanel { Spacing = 10 };
+            content.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    "연결에 성공했습니다. 다음 연결을 위해 이 호스트를 저장할 수 있습니다.",
+                    "Connection succeeded. You can save this host for next time."),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(nameBox);
+            content.Children.Add(rememberSecret);
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Content.XamlRoot,
+                Title = Helpers.Loc.T("호스트 저장", "Save host"),
+                Content = content,
+                PrimaryButtonText = Helpers.Loc.T("저장", "Save"),
+                CloseButtonText = Helpers.Loc.T("지금은 안 함", "Not now"),
+                DefaultButton = ContentDialogButton.Close,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                return;
+
+            info.DisplayName = string.IsNullOrWhiteSpace(nameBox.Text)
+                ? info.Title
+                : nameBox.Text.Trim();
+            info.SaveProfile = true;
+            info.RememberCredential = rememberSecret.IsChecked == true;
+        }
+
+        private void SessionTab_Tapped(object sender, TappedRoutedEventArgs e)
+        {
+            if (sender is not TabViewItem tab || IsTapFromButton(e.OriginalSource, tab))
+                return;
+
+            TitleTabs.SelectedItem = tab;
+            ActivateSelectedSession();
+            UpdateSessionArea();
+        }
+
+        private static bool IsTapFromButton(object? originalSource, TabViewItem tab)
+        {
+            for (var current = originalSource as DependencyObject;
+                 current is not null && !ReferenceEquals(current, tab);
+                 current = VisualTreeHelper.GetParent(current))
+            {
+                if (current is Microsoft.UI.Xaml.Controls.Primitives.ButtonBase)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void ActivateSelectedSession()
+        {
+            if (TitleTabs.SelectedItem is not TabViewItem selected)
+            {
+                NavigateGlobal(AppGlobalPage.Home);
+                return;
+            }
+
+            ClearCachedHomeSecrets();
+            _isMultiView = false;
+            MultiGrid.Visibility = Visibility.Collapsed;
+            HideDetailsPane();
+            LeftNav.SelectedItem = null;
+            if (selected.DataContext is SessionView sessionView &&
+                _sessionWorkspaces.TryGetValue(sessionView, out var workspace))
+            {
+                _navigation.ActivateSession(workspace.ViewModel);
+                SessionHost.Content = workspace;
+            }
+            else
+            {
+                _navigation.ActivateSession(null);
+                SessionHost.Content = selected.DataContext as FrameworkElement;
+            }
+        }
+
+        private void ActivateWorkspace(
+            SessionWorkspaceView workspace,
+            SessionWorkspaceSection section)
+        {
+            ArgumentNullException.ThrowIfNull(workspace);
+            ClearCachedHomeSecrets();
+            _isMultiView = false;
+            MultiGrid.Visibility = Visibility.Collapsed;
+            HideDetailsPane();
+            LeftNav.SelectedItem = null;
+            workspace.NavigateTo(section);
+            _navigation.NavigateWorkspace(workspace.ViewModel, section);
+            SessionHost.Content = workspace;
+            UpdateSessionArea();
+        }
+
+        private void ClearCachedHomeSecrets()
+        {
+            if (_shellState.Mode == AppShellMode.Global &&
+                _shellState.GlobalPage == AppGlobalPage.Home)
+            {
+                _homeDashboard?.ClearTransientSecrets();
+            }
+        }
+
         private void UpdateSessionArea()
         {
+            if (_globalPages.TryGetValue(AppGlobalPage.Commands, out var commandPage) &&
+                commandPage is CommandsDashboardPanel commands)
+            {
+                commands.SetPowerToolsAvailable(GetOpenTerminalViews().Count >= 2);
+            }
             EmptyTabHeader.Visibility = TitleTabs.TabItems.Count == 0
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-            SessionHost.Content = (TitleTabs.SelectedItem as TabViewItem)?.DataContext as FrameworkElement;
-            SessionHost.Visibility = _isMultiView ? Visibility.Collapsed : Visibility.Visible;
-            NoSessionState.Visibility = !_isMultiView && TitleTabs.TabItems.Count == 0
+            var showGlobal = !_isMultiView && _shellState.Mode == AppShellMode.Global;
+            var showSession = !_isMultiView && _shellState.Mode == AppShellMode.Session;
+            GlobalPageHost.Visibility = showGlobal ? Visibility.Visible : Visibility.Collapsed;
+            SessionHost.Visibility = showSession ? Visibility.Visible : Visibility.Collapsed;
+            MultiGrid.Visibility = _isMultiView ? Visibility.Visible : Visibility.Collapsed;
+            NoSessionState.Visibility = showSession && TitleTabs.SelectedItem is null
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+
+            if (showSession && TitleTabs.SelectedItem is TabViewItem selected)
+            {
+                SessionHost.Content = selected.DataContext is SessionView sessionView &&
+                    _sessionWorkspaces.TryGetValue(sessionView, out var workspace)
+                    ? workspace
+                    : selected.DataContext as FrameworkElement;
+            }
 
             // Multi 그리드가 보이는 중이면 열린 세션 목록으로 갱신
             if (_isMultiView)
                 MultiGrid.SetSessions(GetOpenTerminalViews());
 
-            // Keep the cached Files panel bound to the active tab even while it is hidden.
-            // This invalidates old-server nodes/transfers before the panel can be shown again.
-            if (_fileTreePanel is { } fileTree)
-                _ = LoadFileTreeForActiveSessionAsync(fileTree);
         }
 
         private System.Collections.Generic.List<SessionView> GetOpenSessionViews()
@@ -3119,21 +3304,68 @@ namespace sutty.UI.Views
                 RememberFailedSupportContext(
                     closingSession.Session,
                     allowUnsequencedOverwrite: false);
-                _fileTreePanel?.CancelTransfersForSession(closingSession.Session, userInitiated: true);
+                if (_sessionWorkspaces.TryGetValue(closingSession, out var closingWorkspace))
+                    closingWorkspace.CancelTransfers(userInitiated: true);
             }
 
-            sender.TabItems.Remove(args.Tab);
+            var preserveGlobalPage = !_isMultiView &&
+                _shellState.Mode == AppShellMode.Global;
+            var preserveMultiView = _isMultiView;
+            _suppressTabActivation = true;
+            try
+            {
+                sender.TabItems.Remove(args.Tab);
+                if (!preserveGlobalPage && !preserveMultiView &&
+                    sender.TabItems.Count > 0 &&
+                    (sender.SelectedItem is null ||
+                     !sender.TabItems.Contains(sender.SelectedItem)))
+                {
+                    sender.SelectedItem = sender.TabItems[0];
+                }
+            }
+            finally
+            {
+                _suppressTabActivation = false;
+            }
+
+            if (preserveMultiView)
+            {
+                var remainingTerminals = GetOpenTerminalViews();
+                if (remainingTerminals.Count >= 2)
+                {
+                    MultiGrid.SetSessions(remainingTerminals);
+                }
+                else
+                {
+                    // Multi is available only while at least two terminal sessions exist.
+                    SelectNavigationItem("Commands");
+                }
+            }
+            else if (!preserveGlobalPage && sender.TabItems.Count == 0)
+            {
+                SelectNavigationItem("Home");
+            }
+            else if (!preserveGlobalPage)
+            {
+                ActivateSelectedSession();
+            }
             UpdateSessionArea();
             QueueWorkspaceSnapshot();
 
             // 탭은 먼저 닫고, 연결 정리는 백그라운드로 (UI가 안 막히게)
             if (args.Tab.DataContext is SessionView view)
             {
-                view.WorkingDirectoryChanged -= SessionView_WorkingDirectoryChanged;
+                view.AppShortcutRequested -= TerminalView_AppShortcutRequested;
+                if (_sessionWorkspaces.Remove(view, out var workspace))
+                {
+                    _navigation.ForgetWorkspace(workspace.ViewModel);
+                    await workspace.DetachAsync(userInitiated: true);
+                }
                 await _sessions.CloseAsync(view.Session);
             }
             else if (args.Tab.DataContext is LocalTerminalView localView)
             {
+                localView.AppShortcutRequested -= TerminalView_AppShortcutRequested;
                 await localView.CloseAsync();
             }
         }
@@ -3142,34 +3374,15 @@ namespace sutty.UI.Views
 
         private void OpenSettingWindow()
         {
-            if (_settingWindow is null)
-            {
-                var panel = new SettingsPanel();
-                panel.SupportBundleTargetsProvider = CreateSupportBundleTargets;
-                panel.SettingsChanged += (_, args) => ApplySettingsChanges(args.Changes);
-                panel.ThemeChanged += (_, themeName) => ApplyTheme(themeName);
+            SelectNavigationItem("Settings");
+        }
 
-                _settingWindow = new Window
-                {
-                    Title = Helpers.Loc.T("Sutty — 설정", "Sutty — Settings"),
-                    ExtendsContentIntoTitleBar = true,
-                    Content = panel,
-                };
-                panel.OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(_settingWindow);
-                _settingWindow.AppWindow.SetIcon(_appIconPath); // 설정 창에도 앱 아이콘
-                panel.RequestedTheme = Root.RequestedTheme;
-                ApplyTitleBarColors(_settingWindow, Helpers.ThemeManager.Find(SettingsService.Current.Theme));
-                _settingWindow.Closed += (_, _) => _settingWindow = null;
-
-                // 저장된 크기로 열고, 드래그 리사이즈도 기억
-                Helpers.WindowSizePersistence.Attach(_settingWindow,
-                    s => new SizeInt32(s.SettingWindowWidth, s.SettingWindowHeight),
-                    (s, size) => { s.SettingWindowWidth = size.Width; s.SettingWindowHeight = size.Height; });
-
-                _settingWindow.Activate();
-            }
-
-            DispatcherQueue.TryEnqueue(() => BringToFront(_settingWindow));
+        private void OpenTroubleshooting()
+        {
+            SelectNavigationItem("Settings");
+            CreateEmbeddedSettingsPanel().NavigateToSection(
+                "Troubleshooting",
+                showAdvancedLogs: true);
         }
 
         private IReadOnlyList<SupportBundleTarget> CreateSupportBundleTargets()
@@ -3441,8 +3654,8 @@ namespace sutty.UI.Views
                 changes.HasFlag(SettingChangeKind.TerminalMode) ||
                 changes.HasFlag(SettingChangeKind.TerminalFeatures))
             {
-                foreach (var view in GetOpenSessionViews())
-                    view.ApplyTerminalSettings();
+                foreach (var workspace in _sessionWorkspaces.Values)
+                    workspace.ReapplyTerminalSettings();
 
                 if (changes.HasFlag(SettingChangeKind.TerminalAppearance))
                 {
@@ -3454,13 +3667,25 @@ namespace sutty.UI.Views
             if (changes.HasFlag(SettingChangeKind.Language))
             {
                 Bindings.Update();
-                if (_settingWindow is not null)
-                    _settingWindow.Title = Helpers.Loc.T("Sutty — 설정", "Sutty — Settings");
-                foreach (var view in GetOpenSessionViews())
-                    view.RefreshLanguage();
+                foreach (var workspace in _sessionWorkspaces.Values)
+                    workspace.RefreshLanguage();
                 foreach (var localView in GetOpenLocalTerminalViews())
                     localView.RefreshLanguage();
                 MultiGrid.RefreshLanguage();
+                _homeDashboard?.RefreshLanguage();
+                foreach (var hosts in _hostPanels)
+                    hosts.RefreshLanguage();
+                if (_globalPages.TryGetValue(AppGlobalPage.Transfers, out var transferPage) &&
+                    transferPage is Border { Child: TransferCenterPanel transfers })
+                {
+                    transfers.RefreshLanguage();
+                }
+                if (_globalPages.TryGetValue(AppGlobalPage.Commands, out var commandsPage) &&
+                    commandsPage is CommandsDashboardPanel commands)
+                {
+                    commands.RefreshLanguage();
+                }
+                _multiCommandPanel?.RefreshLanguage();
 
                 // 입력 중인 Home 폼이나 검색 상태를 잃지 않고 현재 패널의
                 // one-time localization binding만 다시 평가한다.
@@ -3477,22 +3702,14 @@ namespace sutty.UI.Views
 
             var applyDefaultPort = (changes & SettingChangeKind.ConnectionPort) != 0;
             var applyDefaultKeepAlive = (changes & SettingChangeKind.ConnectionKeepAlive) != 0;
-            if ((applyDefaultPort || applyDefaultKeepAlive) &&
-                RightPanel.Content is HomePanel homePanel)
-            {
-                homePanel.ApplyConnectionDefaults(applyDefaultPort, applyDefaultKeepAlive);
-            }
+            if (applyDefaultPort || applyDefaultKeepAlive)
+                _homeDashboard?.ApplyConnectionDefaults(applyDefaultPort, applyDefaultKeepAlive);
 
-            if (changes.HasFlag(SettingChangeKind.History) &&
-                RightPanel.Content is HostListPanel historyPanel)
+            if (changes.HasFlag(SettingChangeKind.History) ||
+                changes.HasFlag(SettingChangeKind.HostProfiles))
             {
-                historyPanel.RefreshFromStore();
-            }
-
-            if (changes.HasFlag(SettingChangeKind.HostProfiles) &&
-                RightPanel.Content is HostListPanel importedHostsPanel)
-            {
-                importedHostsPanel.RefreshFromStore();
+                foreach (var hosts in _hostPanels)
+                    hosts.RefreshFromStore();
             }
 
             if (changes.HasFlag(SettingChangeKind.Window))
@@ -3518,25 +3735,14 @@ namespace sutty.UI.Views
             if (s.MainWindowWidth > 0 && s.MainWindowHeight > 0)
                 AppWindow.ResizeClient(new SizeInt32(s.MainWindowWidth, s.MainWindowHeight));
 
-            if (_settingWindow is not null && s.SettingWindowWidth > 0 && s.SettingWindowHeight > 0)
-                _settingWindow.AppWindow.ResizeClient(new SizeInt32(s.SettingWindowWidth, s.SettingWindowHeight));
-
-            // 오른쪽 패널 폭도 숫자로 지정 가능
+            // Right details remains collapsed by default; remember a requested width and
+            // apply it only while an explicit details surface is open.
             if (s.RightPanelWidth > 0)
-                RightPanelColumn.Width = new GridLength(Math.Clamp(s.RightPanelWidth, 300, 800));
-        }
-
-        private static void BringToFront(Window window)
-        {
-            if (window.AppWindow.Presenter is OverlappedPresenter presenter)
             {
-                if (presenter.State == OverlappedPresenterState.Minimized)
-                    presenter.Restore();
-
-                presenter.IsAlwaysOnTop = true;
-                presenter.IsAlwaysOnTop = false;
+                _detailsPaneWidth = Math.Clamp(s.RightPanelWidth, 300, 800);
+                if (RightPanelHost.Visibility == Visibility.Visible)
+                    RightPanelColumn.Width = new GridLength(_detailsPaneWidth);
             }
-            window.Activate();
         }
     }
 }

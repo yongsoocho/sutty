@@ -9,4 +9,17 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\sutty.Setting\sutty.Setting.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\sutty.UI\ViewModels\AppShellViewModel.cs"
+             Link="ShellState\AppShellViewModel.cs" />
+    <Compile Include="..\..\src\sutty.UI\ViewModels\SessionWorkspaceViewModel.cs"
+             Link="ShellState\SessionWorkspaceViewModel.cs" />
+    <Compile Include="..\..\src\sutty.UI\Services\NavigationService.cs"
+             Link="ShellState\NavigationService.cs" />
+    <Compile Include="..\..\src\sutty.UI\Services\ConnectionPersistencePolicy.cs"
+             Link="ShellState\ConnectionPersistencePolicy.cs" />
+  </ItemGroup>
 </Project>
