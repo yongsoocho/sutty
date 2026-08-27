@@ -1,5 +1,19 @@
 using sutty.Core.Sftp;
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Reflection;
+
+if (args.Length == 7 && args[0] == "--queue-lease-probe")
+{
+    await RunQueueLeaseProbeAsync(
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6]);
+    return;
+}
 
 Assert(RemotePath.Normalize(@"/srv/a\b") == @"/srv/a\b",
     "POSIX backslash filename is preserved");
@@ -305,6 +319,8 @@ try
 
     var queuePath = Path.Combine(scratch, "transfer-queue.json");
     var queue = new SftpTransferQueueStore(queuePath);
+    var queueChanges = new ConcurrentBag<SftpTransferQueueChangeKind>();
+    queue.Changed += (_, change) => queueChanges.Add(change.Kind);
     var queuedJob = new SftpQueuedJob
     {
         Id = "restart-safe-job",
@@ -343,11 +359,21 @@ try
         ],
     };
     queue.Upsert(queuedJob);
+    Assert(queueChanges.Contains(SftpTransferQueueChangeKind.Upserted),
+        "durable queue publishes an in-process upsert change event");
+    Assert(queue.TryAcquireTargetLease(
+               queuedJob.Id, "saved-beta", "active-same-process-worker", out var activeLease) &&
+           activeLease is not null,
+        "an active target holds its execution lease before publishing Running");
     Assert(queue.RecoverIncomplete().Single().State == SftpQueueJobState.Running,
-        "reading the queue in the same app does not interrupt active work");
+        "recovery does not interrupt a same-process worker holding its lease");
     Assert(new SftpTransferQueueStore(queuePath).RecoverIncomplete().Single().State ==
            SftpQueueJobState.Running,
-        "multiple queue readers in the same app share the active runtime owner");
+        "multiple queue readers observe the active execution lease");
+    activeLease!.Dispose();
+    Assert(queue.RecoverIncomplete().Single().State == SftpQueueJobState.Interrupted,
+        "a same-process orphaned Running target becomes recoverable after its lease is gone");
+    queue.UpdateTarget(queuedJob.Id, "saved-beta", SftpQueueTargetState.Running);
     var activeOwner = queue.Get(queuedJob.Id)!.RuntimeOwnerId;
     File.WriteAllText(
         queuePath,
@@ -417,6 +443,12 @@ try
     foreach (var concurrentLease in concurrentLeases)
         concurrentLease.Dispose();
 
+    await AssertCrossProcessTargetLeaseAsync(
+        queuePath,
+        queuedJob.Id,
+        "saved-beta",
+        scratch);
+
     queue.UpdateTarget(queuedJob.Id, "saved-beta", SftpQueueTargetState.Succeeded);
     Assert(SftpTransferQueueStore.GetProgressPercentage(queue.Get(queuedJob.Id)!) == 100,
         "a completed durable job is always presented as 100 percent");
@@ -458,6 +490,98 @@ try
         "an entirely cancelled durable job remains claimable for explicit retry");
     cancelledJobLease!.Dispose();
 
+    var failedSelection = queuedJob with
+    {
+        Id = "failed-selection-job",
+        Targets =
+        [
+            queuedJob.Targets[0] with
+            {
+                Id = "failed-selection",
+                State = SftpQueueTargetState.Failed,
+            },
+            queuedJob.Targets[1] with
+            {
+                Id = "interrupted-selection",
+                State = SftpQueueTargetState.Interrupted,
+            },
+        ],
+    };
+    Assert(SftpTransferQueueStore.GetFailedTargetIds(failedSelection)
+            .SetEquals(["failed-selection"]),
+        "failed-only selection excludes interrupted targets");
+
+    var concurrentQueuePath = Path.Combine(scratch, "concurrent-transfer-queue.json");
+    Parallel.For(0, 32, index =>
+    {
+        new SftpTransferQueueStore(concurrentQueuePath).Upsert(new SftpQueuedJob
+        {
+            Id = $"concurrent-job-{index}",
+            Mode = SftpQueueMode.Single,
+            Direction = sutty.Core.Sftp.SftpTransferDirection.Upload,
+            SourcePath = source,
+            DestinationPath = $"/concurrent/{index}",
+            Targets =
+            [
+                new SftpQueuedTarget
+                {
+                    Id = $"concurrent-target-{index}",
+                    DisplayName = $"target {index}",
+                    SourcePath = source,
+                    DestinationPath = $"/concurrent/{index}",
+                },
+            ],
+        });
+    });
+    Assert(new SftpTransferQueueStore(concurrentQueuePath).GetAll().Count == 32,
+        "cross-instance concurrent queue mutations do not lose jobs");
+
+    var readerWriterQueuePath = Path.Combine(scratch, "reader-writer-transfer-queue.json");
+    var readerWriterJob = queuedJob with
+    {
+        Id = "reader-writer-job",
+        State = SftpQueueJobState.Pending,
+        Targets =
+        [
+            queuedJob.Targets[1] with
+            {
+                Id = "reader-writer-target",
+                State = SftpQueueTargetState.Pending,
+            },
+        ],
+    };
+    new SftpTransferQueueStore(readerWriterQueuePath).Upsert(readerWriterJob);
+    var readerWriterErrors = new ConcurrentBag<Exception>();
+    Parallel.For(0, 128, index =>
+    {
+        try
+        {
+            var store = new SftpTransferQueueStore(readerWriterQueuePath);
+            if (index % 2 == 0)
+            {
+                store.Upsert(readerWriterJob with
+                {
+                    UpdatedAtUtc = DateTimeOffset.UtcNow.AddTicks(index),
+                });
+            }
+            else
+            {
+                Assert(store.Get(readerWriterJob.Id) is not null,
+                    "concurrent queue reader observes the durable job");
+                Assert(store.GetAll().Any(job => job.Id == readerWriterJob.Id),
+                    "concurrent queue snapshot includes the durable job");
+            }
+        }
+        catch (Exception error)
+        {
+            readerWriterErrors.Add(error);
+        }
+    });
+    Assert(readerWriterErrors.IsEmpty,
+        "cross-instance concurrent readers and atomic-replace writers do not conflict");
+
+    await TransferCenterServiceSelfTests.RunAsync(scratch);
+
     var cancelledPath = Path.Combine(downloads, "cancelled.txt");
     using var cancelled = new CancellationTokenSource();
     cancelled.Cancel();
@@ -493,6 +617,113 @@ static async Task AssertThrowsAsync<TException>(Func<Task> action, string descri
 
     throw new InvalidOperationException(
         $"Self-test failed: {description} did not throw {typeof(TException).Name}.");
+}
+
+static async Task RunQueueLeaseProbeAsync(
+    string queuePath,
+    string jobId,
+    string targetId,
+    string readyPath,
+    string releasePath,
+    string resultPath)
+{
+    var queue = new SftpTransferQueueStore(queuePath);
+    var acquired = queue.TryAcquireRetryTargetLease(
+        jobId,
+        targetId,
+        "cross-process-probe",
+        out var lease);
+    await File.WriteAllTextAsync(resultPath, acquired ? "acquired" : "denied");
+    await File.WriteAllTextAsync(readyPath, "ready");
+    if (!acquired)
+        return;
+
+    try
+    {
+        await WaitForFileAsync(releasePath, TimeSpan.FromSeconds(15));
+    }
+    finally
+    {
+        lease!.Dispose();
+    }
+}
+
+static async Task AssertCrossProcessTargetLeaseAsync(
+    string queuePath,
+    string jobId,
+    string targetId,
+    string scratch)
+{
+    var probeId = Guid.NewGuid().ToString("N");
+    var readyPath = Path.Combine(scratch, $"lease-{probeId}.ready");
+    var releasePath = Path.Combine(scratch, $"lease-{probeId}.release");
+    var resultPath = Path.Combine(scratch, $"lease-{probeId}.result");
+    var processPath = Environment.ProcessPath ??
+        throw new InvalidOperationException("The self-test process path is unavailable.");
+    var start = new ProcessStartInfo
+    {
+        FileName = processPath,
+        UseShellExecute = false,
+        RedirectStandardError = true,
+    };
+    if (string.Equals(
+            Path.GetFileNameWithoutExtension(processPath),
+            "dotnet",
+            StringComparison.OrdinalIgnoreCase))
+    {
+        start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
+    }
+    start.ArgumentList.Add("--queue-lease-probe");
+    start.ArgumentList.Add(queuePath);
+    start.ArgumentList.Add(jobId);
+    start.ArgumentList.Add(targetId);
+    start.ArgumentList.Add(readyPath);
+    start.ArgumentList.Add(releasePath);
+    start.ArgumentList.Add(resultPath);
+
+    using var process = Process.Start(start) ??
+        throw new InvalidOperationException("Could not start the queue lease probe.");
+    try
+    {
+        await WaitForFileAsync(readyPath, TimeSpan.FromSeconds(10));
+        Assert(await File.ReadAllTextAsync(resultPath) == "acquired",
+            "a child process acquires the target execution lease");
+        var competingQueue = new SftpTransferQueueStore(queuePath);
+        Assert(!competingQueue.TryAcquireRetryTargetLease(
+                   jobId,
+                   targetId,
+                   "parent-process-contender",
+                   out var competingLease) &&
+               competingLease is null,
+            "a second process cannot execute the same durable target concurrently");
+
+        await File.WriteAllTextAsync(releasePath, "release");
+        using var exitTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await process.WaitForExitAsync(exitTimeout.Token);
+        var error = await process.StandardError.ReadToEndAsync(exitTimeout.Token);
+        Assert(process.ExitCode == 0,
+            $"cross-process lease probe exits successfully ({error})");
+        Assert(competingQueue.TryAcquireRetryTargetLease(
+                   jobId,
+                   targetId,
+                   "parent-process-after-release",
+                   out var releasedLease) &&
+               releasedLease is not null,
+            "cross-process target lease is claimable after its owner exits");
+        releasedLease!.Dispose();
+    }
+    finally
+    {
+        if (!process.HasExited)
+            process.Kill(entireProcessTree: true);
+    }
+}
+
+static async Task WaitForFileAsync(string path, TimeSpan timeout)
+{
+    using var cancellation = new CancellationTokenSource(timeout);
+    while (!File.Exists(path))
+        await Task.Delay(20, cancellation.Token);
 }
 
 sealed class InlineProgress<T>(Action<T> report) : IProgress<T>

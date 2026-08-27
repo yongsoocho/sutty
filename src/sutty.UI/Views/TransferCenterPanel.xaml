@@ -5,13 +5,15 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:h="using:sutty.UI.Helpers"
-    xmlns:local="using:sutty.UI.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:sutty.UI.ViewModels"
     Loaded="TransferCenterPanel_Loaded"
+    Unloaded="TransferCenterPanel_Unloaded"
     mc:Ignorable="d">
 
-    <Grid Padding="20" RowSpacing="14">
+    <Grid Padding="20" RowSpacing="12">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -31,55 +33,95 @@
                 <TextBlock
                     FontSize="11"
                     Foreground="{ThemeResource TextMuted}"
-                    Text="{x:Bind h:Loc.T('저장된 전송 작업의 읽기 전용 스냅샷입니다. 새로 고침하면 최신 상태를 다시 읽습니다.', 'A read-only snapshot of saved transfer jobs. Refresh to read the latest state.')}"
+                    Text="{x:Bind h:Loc.T('저장된 큐를 실시간으로 확인하고 제어합니다. 일치하는 Files 세션이 연결되어 있을 때만 단일 전송 제어가 활성화됩니다.', 'Monitor and control the durable queue live. Single-transfer controls are enabled only while a matching Files session is connected.')}"
                     TextWrapping="Wrap" />
             </StackPanel>
-            <Button
+            <StackPanel
                 Grid.Column="1"
-                MinWidth="92"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Center"
-                AutomationProperties.Name="{x:Bind h:Loc.T('전송 목록 새로 고침', 'Refresh transfer list')}"
-                Click="Refresh_Click"
-                Content="{x:Bind h:Loc.T('새로 고침', 'Refresh')}"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('저장된 전송 큐를 다시 읽습니다.', 'Read the saved transfer queue again.')}" />
+                Orientation="Horizontal"
+                Spacing="8">
+                <Button
+                    x:Name="RemoveCompletedButton"
+                    MinWidth="112"
+                    AutomationProperties.Name="{x:Bind h:Loc.T('완료된 전송 모두 제거', 'Remove all completed transfers')}"
+                    Click="RemoveAllCompleted_Click"
+                    Content="{x:Bind h:Loc.T('완료 기록 정리', 'Clear completed')}" />
+                <Button
+                    MinWidth="92"
+                    AutomationProperties.Name="{x:Bind h:Loc.T('전송 목록 새로 고침', 'Refresh transfer list')}"
+                    Click="Refresh_Click"
+                    Content="{x:Bind h:Loc.T('새로 고침', 'Refresh')}"
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('저장된 전송 큐를 다시 읽습니다.', 'Read the durable transfer queue again.')}" />
+            </StackPanel>
         </Grid>
 
         <Grid Grid.Row="1" ColumnSpacing="10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <ComboBox
                 x:Name="StateFilter"
-                MinWidth="164"
+                MinWidth="176"
                 AutomationProperties.Name="{x:Bind h:Loc.T('전송 상태 필터', 'Transfer state filter')}"
                 SelectedIndex="0"
                 SelectionChanged="StateFilter_SelectionChanged">
                 <ComboBoxItem Content="{x:Bind h:Loc.T('모든 상태', 'All states')}" />
-                <ComboBoxItem Content="{x:Bind h:Loc.T('진행 및 복구 필요', 'Active and recoverable')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('대기 및 진행 중', 'Pending and active')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('일시 정지 및 복구 필요', 'Paused and recoverable')}" />
                 <ComboBoxItem Content="{x:Bind h:Loc.T('실패', 'Failed')}" />
                 <ComboBoxItem Content="{x:Bind h:Loc.T('완료', 'Completed')}" />
                 <ComboBoxItem Content="{x:Bind h:Loc.T('취소됨', 'Cancelled')}" />
             </ComboBox>
+            <ComboBox
+                x:Name="DirectionFilter"
+                Grid.Column="1"
+                MinWidth="128"
+                AutomationProperties.Name="{x:Bind h:Loc.T('전송 방향 필터', 'Transfer direction filter')}"
+                SelectedIndex="0"
+                SelectionChanged="DirectionFilter_SelectionChanged">
+                <ComboBoxItem Content="{x:Bind h:Loc.T('모든 방향', 'All directions')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('업로드', 'Uploads')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('다운로드', 'Downloads')}" />
+            </ComboBox>
+            <TextBox
+                x:Name="TargetFilter"
+                Grid.Column="2"
+                MinWidth="164"
+                AutomationProperties.Name="{x:Bind h:Loc.T('전송 대상 필터', 'Transfer target filter')}"
+                PlaceholderText="{x:Bind h:Loc.T('호스트 또는 대상 검색', 'Filter host or target')}"
+                TextChanged="TargetFilter_TextChanged" />
             <TextBlock
                 x:Name="SnapshotTimeText"
-                Grid.Column="1"
+                Grid.Column="3"
                 VerticalAlignment="Center"
                 FontSize="10.5"
                 Foreground="{ThemeResource TextFaint}"
                 TextTrimming="CharacterEllipsis" />
             <TextBlock
                 x:Name="CountText"
-                Grid.Column="2"
+                Grid.Column="4"
                 VerticalAlignment="Center"
                 FontFamily="Cascadia Mono, Consolas"
                 FontSize="10.5"
                 Foreground="{ThemeResource TextFaint}" />
         </Grid>
 
-        <Grid Grid.Row="2">
+        <TextBlock
+            x:Name="LiveStatusText"
+            Grid.Row="2"
+            AutomationProperties.LiveSetting="Polite"
+            FontSize="10.5"
+            Foreground="{ThemeResource TextMuted}"
+            TextWrapping="Wrap"
+            Visibility="Collapsed" />
+
+        <Grid Grid.Row="3">
             <ListView
                 x:Name="TransferList"
                 AutomationProperties.Name="{x:Bind h:Loc.T('저장된 전송 작업', 'Saved transfer jobs')}"
@@ -95,7 +137,7 @@
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="local:TransferCenterItemVm">
+                    <DataTemplate x:DataType="vm:TransferCenterItemViewModel">
                         <Border
                             Padding="13"
                             Background="{ThemeResource CardBg}"
@@ -108,6 +150,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
                                 <Grid ColumnSpacing="9">
@@ -115,27 +158,35 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <FontIcon
                                         VerticalAlignment="Center"
                                         FontSize="17"
                                         Foreground="{ThemeResource AccentTeal}"
-                                        Glyph="{x:Bind DirectionGlyph}" />
+                                        Glyph="{x:Bind DirectionGlyph, Mode=OneWay}" />
                                     <StackPanel Grid.Column="1" Spacing="1">
                                         <TextBlock
                                             FontSize="12.5"
                                             FontWeight="SemiBold"
                                             Foreground="{ThemeResource TextPrimary}"
-                                            Text="{x:Bind Name}"
+                                            Text="{x:Bind Name, Mode=OneWay}"
                                             TextTrimming="CharacterEllipsis" />
                                         <TextBlock
                                             FontSize="10.5"
                                             Foreground="{ThemeResource TextMuted}"
-                                            Text="{x:Bind TargetText}"
+                                            Text="{x:Bind TargetText, Mode=OneWay}"
                                             TextTrimming="CharacterEllipsis" />
                                     </StackPanel>
-                                    <Border
+                                    <ProgressRing
                                         Grid.Column="2"
+                                        Width="16"
+                                        Height="16"
+                                        VerticalAlignment="Center"
+                                        IsActive="{x:Bind IsBusy, Mode=OneWay}"
+                                        Visibility="{x:Bind BusyVisibility, Mode=OneWay}" />
+                                    <Border
+                                        Grid.Column="3"
                                         Padding="8,2"
                                         VerticalAlignment="Center"
                                         Background="{ThemeResource PillBg}"
@@ -144,7 +195,7 @@
                                             FontSize="10"
                                             FontWeight="SemiBold"
                                             Foreground="{ThemeResource TextPrimary}"
-                                            Text="{x:Bind StateText}" />
+                                            Text="{x:Bind StateText, Mode=OneWay}" />
                                     </Border>
                                 </Grid>
 
@@ -153,9 +204,9 @@
                                     FontFamily="Cascadia Mono, Consolas"
                                     FontSize="10.5"
                                     Foreground="{ThemeResource TextMuted}"
-                                    Text="{x:Bind PathText}"
+                                    Text="{x:Bind PathText, Mode=OneWay}"
                                     TextTrimming="CharacterEllipsis"
-                                    ToolTipService.ToolTip="{x:Bind PathText}" />
+                                    ToolTipService.ToolTip="{x:Bind PathText, Mode=OneWay}" />
 
                                 <Grid Grid.Row="2" ColumnSpacing="10">
                                     <Grid.ColumnDefinitions>
@@ -165,10 +216,10 @@
                                     <ProgressBar
                                         Height="4"
                                         VerticalAlignment="Center"
-                                        IsIndeterminate="{x:Bind IsIndeterminate}"
+                                        IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
                                         Maximum="100"
-                                        Value="{x:Bind ProgressPercent}"
-                                        Visibility="{x:Bind ProgressVisibility}" />
+                                        Value="{x:Bind ProgressPercent, Mode=OneWay}"
+                                        Visibility="{x:Bind ProgressVisibility, Mode=OneWay}" />
                                     <TextBlock
                                         Grid.Column="1"
                                         MinWidth="54"
@@ -177,7 +228,7 @@
                                         FontFamily="Cascadia Mono, Consolas"
                                         FontSize="10"
                                         Foreground="{ThemeResource TextFaint}"
-                                        Text="{x:Bind ProgressText}" />
+                                        Text="{x:Bind ProgressText, Mode=OneWay}" />
                                 </Grid>
 
                                 <Grid Grid.Row="3" ColumnSpacing="10">
@@ -187,19 +238,67 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock
                                         MaxLines="2"
+                                        AutomationProperties.LiveSetting="Polite"
                                         FontSize="10.5"
                                         Foreground="{ThemeResource StatusRed}"
-                                        Text="{x:Bind ErrorText}"
+                                        Text="{x:Bind ErrorText, Mode=OneWay}"
                                         TextTrimming="CharacterEllipsis"
                                         TextWrapping="Wrap"
-                                        Visibility="{x:Bind ErrorVisibility}" />
+                                        Visibility="{x:Bind ErrorVisibility, Mode=OneWay}" />
                                     <TextBlock
                                         Grid.Column="1"
                                         HorizontalAlignment="Right"
                                         FontSize="10"
                                         Foreground="{ThemeResource TextFaint}"
-                                        Text="{x:Bind UpdatedText}" />
+                                        Text="{x:Bind UpdatedText, Mode=OneWay}" />
                                 </Grid>
+
+                                <StackPanel
+                                    Grid.Row="4"
+                                    HorizontalAlignment="Right"
+                                    Orientation="Horizontal"
+                                    Spacing="6">
+                                    <Button
+                                        MinWidth="0"
+                                        Padding="10,5"
+                                        AutomationProperties.Name="{x:Bind PauseAutomationName, Mode=OneWay}"
+                                        Click="Pause_Click"
+                                        Content="{x:Bind h:Loc.T('일시 정지', 'Pause')}"
+                                        IsEnabled="{x:Bind CanPause, Mode=OneWay}"
+                                        Visibility="{x:Bind PauseVisibility, Mode=OneWay}" />
+                                    <Button
+                                        MinWidth="0"
+                                        Padding="10,5"
+                                        AutomationProperties.Name="{x:Bind ResumeAutomationName, Mode=OneWay}"
+                                        Click="Resume_Click"
+                                        Content="{x:Bind h:Loc.T('재개', 'Resume')}"
+                                        IsEnabled="{x:Bind CanResume, Mode=OneWay}"
+                                        Visibility="{x:Bind ResumeVisibility, Mode=OneWay}" />
+                                    <Button
+                                        MinWidth="0"
+                                        Padding="10,5"
+                                        AutomationProperties.Name="{x:Bind RetryAutomationName, Mode=OneWay}"
+                                        Click="RetryFailed_Click"
+                                        Content="{x:Bind h:Loc.T('실패만 재시도', 'Retry failed')}"
+                                        IsEnabled="{x:Bind CanRetry, Mode=OneWay}"
+                                        Visibility="{x:Bind RetryVisibility, Mode=OneWay}" />
+                                    <Button
+                                        MinWidth="0"
+                                        Padding="10,5"
+                                        AutomationProperties.Name="{x:Bind CancelAutomationName, Mode=OneWay}"
+                                        Click="Cancel_Click"
+                                        Content="{x:Bind h:Loc.T('취소', 'Cancel')}"
+                                        IsEnabled="{x:Bind CanCancel, Mode=OneWay}"
+                                        Visibility="{x:Bind CancelVisibility, Mode=OneWay}" />
+                                    <Button
+                                        MinWidth="0"
+                                        Padding="10,5"
+                                        AutomationProperties.Name="{x:Bind RemoveAutomationName, Mode=OneWay}"
+                                        Click="RemoveCompleted_Click"
+                                        Content="{x:Bind h:Loc.T('기록 제거', 'Remove')}"
+                                        IsEnabled="{x:Bind CanRemove, Mode=OneWay}"
+                                        Visibility="{x:Bind RemoveVisibility, Mode=OneWay}" />
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>

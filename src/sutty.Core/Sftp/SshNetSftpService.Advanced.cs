@@ -1126,13 +1126,30 @@ public sealed partial class SshNetSftpService
     {
         ValidateRemotePathSegment(name);
         if (string.IsNullOrWhiteSpace(name) ||
+            name.Length > 255 ||
             name is "." or ".." ||
+            name.EndsWith(' ') ||
+            name.EndsWith('.') ||
             name.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, '/', '\\']) >= 0 ||
             name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
-            Path.IsPathRooted(name))
+            Path.IsPathRooted(name) ||
+            IsReservedWindowsDeviceName(name))
         {
             throw new IOException($"The server returned an unsafe file name: {name}");
         }
+    }
+
+    private static bool IsReservedWindowsDeviceName(string name)
+    {
+        var stem = name.Split('.', 2)[0].TrimEnd(' ', '.');
+        return stem.Equals("CON", StringComparison.OrdinalIgnoreCase) ||
+               stem.Equals("PRN", StringComparison.OrdinalIgnoreCase) ||
+               stem.Equals("AUX", StringComparison.OrdinalIgnoreCase) ||
+               stem.Equals("NUL", StringComparison.OrdinalIgnoreCase) ||
+               stem.Length == 4 &&
+               (stem.StartsWith("COM", StringComparison.OrdinalIgnoreCase) ||
+                stem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase)) &&
+               stem[3] is >= '1' and <= '9';
     }
 
     private static void CopyWithCheckpoint(

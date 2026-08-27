@@ -142,6 +142,7 @@ try
         "workspace clear");
 
     ShellStateSelfTests.Run();
+    await LocalFileBrowserSelfTests.RunAsync(scratch);
 
     File.WriteAllText(SettingsService.SettingsPath, "{broken");
     SettingsService.ResetForTests();

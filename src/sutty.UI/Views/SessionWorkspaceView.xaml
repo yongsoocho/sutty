@@ -68,10 +68,10 @@
                         x:Name="TunnelsButton"
                         MinHeight="34"
                         Padding="12,5"
-                        AutomationProperties.Name="{x:Bind h:Loc.T('세션 터널', 'Session tunnels')}"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('구성된 터널 정보', 'Configured tunnel information')}"
                         Click="TunnelsButton_Click"
-                        Content="{x:Bind h:Loc.T('터널', 'Tunnels')}"
-                        ToolTipService.ToolTip="{x:Bind h:Loc.T('이 세션의 포트 포워딩', 'Port forwarding for this session')}" />
+                        Content="{x:Bind h:Loc.T('터널 정보', 'Tunnel info')}"
+                        ToolTipService.ToolTip="{x:Bind h:Loc.T('연결할 때 구성한 포트 포워딩 보기', 'View port forwarding configured at connection time')}" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -110,7 +110,7 @@
                         <TextBlock
                             FontSize="18"
                             FontWeight="SemiBold"
-                            Text="{x:Bind h:Loc.T('세션 터널', 'Session tunnels')}" />
+                            Text="{x:Bind h:Loc.T('구성된 터널', 'Configured tunnels')}" />
                         <TextBlock
                             Foreground="{ThemeResource TextMuted}"
                             Text="{x:Bind h:Loc.T('이 연결에 구성된 포트 포워딩 규칙입니다.', 'Port forwarding rules configured for this connection.')}"

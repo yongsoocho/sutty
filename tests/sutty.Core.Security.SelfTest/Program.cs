@@ -32,6 +32,7 @@ if (args.Length == 3 &&
 
 AssertSshNet2026PublicApi();
 AssertNegotiatedConnectionInfoContract();
+AssertReconnectPolicy();
 AssertSshAgentAdapterLoads();
 AssertLastUsedRaceIsBestEffort();
 await AssertKeyboardInteractiveCancellationAsync();
@@ -2221,6 +2222,82 @@ static void AssertSshAgentAdapterLoads()
         // The Windows service or named pipe is optional on a build machine. Reaching the
         // adapter-specific transport still proves that the adapter loaded against SSH.NET.
     }
+}
+
+static void AssertReconnectPolicy()
+{
+    var source = new SshConnectionInfo
+    {
+        Host = "reconnect.example",
+        Port = 2222,
+        DisplayName = "Reconnect target",
+        Username = "operator",
+        AuthMethod = SshAuthMethod.Password,
+        Password = "must-not-copy",
+        Passphrase = "must-not-copy",
+        PrivateKeyPath = "C:\\keys\\operator.key",
+        KeepAliveSeconds = 30,
+        Compression = true,
+        Tags = ["stage"],
+        PortForwardings =
+        [
+            new SshPortForwardingRule
+            {
+                Type = SshPortForwardingType.Local,
+                BindHost = "127.0.0.1",
+                BindPort = 8022,
+                DestinationHost = "127.0.0.1",
+                DestinationPort = 22,
+            },
+        ],
+        Route = new ConnectionRoute
+        {
+            Id = "jump",
+            Type = ConnectionRouteType.SshJump,
+            Host = "jump.example",
+            Port = 22,
+            Username = "jump-user",
+            Password = "must-not-copy-route",
+            Passphrase = "must-not-copy-route",
+        },
+        RoutePolicy = new ConnectionRoutePolicy
+        {
+            DisableDirect = true,
+            RequiredRouteId = "jump",
+            AllowedRouteTypes = [ConnectionRouteType.SshJump],
+        },
+        CredentialId = "vault-reference",
+        HostKeyPromptAsync = (_, _) => Task.FromResult(HostKeyDecision.TrustOnce),
+    };
+
+    Assert(ReconnectPolicy.GetDisposition(SessionState.Connected, source) ==
+           ReconnectDisposition.Unavailable,
+        "connected sessions do not offer reconnect");
+    Assert(ReconnectPolicy.GetDisposition(SessionState.Failed, source) ==
+           ReconnectDisposition.ReviewCredentials,
+        "failed one-off sessions require credential review");
+    source.SavedHostId = "saved-host";
+    Assert(ReconnectPolicy.GetDisposition(SessionState.Disconnected, source) ==
+           ReconnectDisposition.OpenSavedHost,
+        "disconnected saved sessions reopen through Saved Hosts");
+
+    var draft = ReconnectPolicy.CreateCredentialFreeDraft(source);
+    Assert(draft.Host == source.Host && draft.Port == source.Port &&
+           draft.Route.Type == ConnectionRouteType.SshJump &&
+           draft.RoutePolicy.DisableDirect && draft.PortForwardings.Count == 1,
+        "reconnect draft preserves non-secret connection settings");
+    Assert(string.IsNullOrEmpty(draft.Password) &&
+           string.IsNullOrEmpty(draft.Passphrase) &&
+           string.IsNullOrEmpty(draft.Route.Password) &&
+           string.IsNullOrEmpty(draft.Route.Passphrase) &&
+           draft.HostKeyPromptAsync is null,
+        "reconnect draft excludes secrets and prior UI prompt delegates");
+    Assert(!draft.SaveProfile && !draft.RememberCredential &&
+           !ReferenceEquals(draft.Tags, source.Tags) &&
+           !ReferenceEquals(draft.PortForwardings, source.PortForwardings) &&
+           !ReferenceEquals(draft.Route, source.Route) &&
+           !ReferenceEquals(draft.RoutePolicy, source.RoutePolicy),
+        "reconnect draft is an independent non-persisting copy");
 }
 
 static string CreateTestSecret(string purpose) =>

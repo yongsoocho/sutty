@@ -38,6 +38,7 @@ namespace sutty.UI.Views
         private readonly SessionManager _sessions = new();
         private readonly AppShellViewModel _shellState = new();
         private readonly NavigationService _navigation;
+        private readonly ConnectionWorkflowService _connectionWorkflow = new();
         private readonly Dictionary<AppGlobalPage, FrameworkElement> _globalPages = [];
         private readonly Dictionary<SessionView, SessionWorkspaceView> _sessionWorkspaces = [];
         private readonly List<HostListPanel> _hostPanels = [];
@@ -54,6 +55,7 @@ namespace sutty.UI.Views
         private int _broadcastInProgress;
         private readonly MultiSftpTransferCoordinator _multiSftpCoordinator = new();
         private readonly SftpTransferQueueStore _sftpTransferQueue = SftpTransferQueueStore.Default;
+        private readonly string _multiSftpTargetLeaseOwnerToken = Guid.NewGuid().ToString("N");
         private MultiSftpBatchResult? _lastMultiSftpBatch;
         private MultiSftpOperation _lastMultiSftpOperation;
         private string? _lastMultiSftpSourcePath;
@@ -691,114 +693,46 @@ namespace sutty.UI.Views
             return panel;
         }
 
-        private async Task OpenHistoryDraftAsync(ViewModels.HostInfoModel host)
+        private async Task OpenHistoryDraftAsync(
+            ViewModels.HostInfoModel host,
+            bool reviewMissingReconnectSecrets = false)
         {
-            var alias = host.Alias;
-            var hostname = host.Hostname;
-            var username = host.Username;
-            var port = host.Port;
-            var authMethodName = host.AuthMethod;
-            var privateKeyPath = host.PrivateKeyPath;
-            var tags = host.Tags;
-            var profileId = host.ProfileId;
-            var credentialId = host.CredentialId;
-            var groupName = host.GroupName;
-            var environment = host.Environment;
-            var favorite = host.IsPinned;
-            var routeProfile = host.Route;
-            var tunnelProfiles = host.Tunnels;
-            CredentialSecret? credential = null;
+            var loaded = _connectionWorkflow.LoadSavedHostDraft(host);
+            var draft = loaded.Draft;
 
-            if (!string.IsNullOrWhiteSpace(profileId))
+            if (!loaded.RouteProfile.CanConnect)
             {
-                try
-                {
-                    if (sutty.Command.HostProfileStore.GetById(profileId) is { } profile)
-                    {
-                        alias = profile.DisplayName;
-                        hostname = profile.Host;
-                        username = profile.Username;
-                        port = profile.Port;
-                        authMethodName = profile.AuthMethod;
-                        privateKeyPath = profile.PrivateKeyPath;
-                        tags = profile.Tags;
-                        credentialId = profile.CredentialId;
-                        groupName = profile.GroupName;
-                        environment = profile.Environment;
-                        favorite = profile.IsFavorite;
-                        routeProfile = profile.Route;
-                        tunnelProfiles = profile.Tunnels;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(credentialId))
-                        LocalCredentialVault.Default.TryRead(credentialId, out credential);
-                }
-                catch (Exception error) when (error is System.IO.IOException or
-                                              UnauthorizedAccessException or
-                                              System.Security.Cryptography.CryptographicException or
-                                              System.ComponentModel.Win32Exception or
-                                              Microsoft.Data.Sqlite.SqliteException or
-                                              ArgumentException)
-                {
-                    Debug.WriteLine($"Saved credential load failed: {error.GetType().Name}");
-                    var warning = new ContentDialog
-                    {
-                        Title = Helpers.Loc.T("저장 자격증명 확인 필요", "Saved credential needs attention"),
-                        Content = Helpers.Loc.T(
-                            "저장된 자격증명을 읽지 못했습니다. 호스트 정보는 불러왔으며 비밀값을 다시 입력할 수 있습니다.",
-                            "The saved credential could not be read. The host details were loaded; enter the secret again."),
-                        CloseButtonText = "OK",
-                        XamlRoot = Content.XamlRoot,
-                    };
-                    await warning.ShowAsync();
-                }
+                await ShowSavedRouteIssueAsync(loaded.RouteProfile, draft);
+                return;
             }
 
-            var authMethod = Enum.TryParse<SshAuthMethod>(authMethodName, true, out var parsed) &&
-                             Enum.IsDefined(parsed)
-                ? parsed
-                : SshAuthMethod.Password;
-
-            var draft = new SshConnectionInfo
+            if (loaded.SavedDataReadFailed ||
+                reviewMissingReconnectSecrets && RequiresReconnectCredentialReview(draft))
             {
-                Host = hostname,
-                Port = port is >= 1 and <= 65535 ? port : 22,
-                DisplayName = alias,
-                Username = username,
-                AuthMethod = authMethod,
-                PrivateKeyPath = authMethod == SshAuthMethod.PublicKey ? privateKeyPath : "",
-                Password = authMethod is SshAuthMethod.Password or SshAuthMethod.KeyboardInteractive
-                    ? credential?.Password ?? ""
-                    : "",
-                Passphrase = authMethod == SshAuthMethod.PublicKey
-                    ? credential?.PrivateKeyPassphrase ?? ""
-                    : "",
-                Tags = [.. tags],
-                SavedHostId = profileId,
-                SaveProfile = !string.IsNullOrWhiteSpace(profileId),
-                RememberCredential = credential is not null,
-                CredentialId = credentialId,
-                GroupName = groupName,
-                Environment = environment,
-                IsFavorite = favorite,
-                Route = RestoreRoute(routeProfile, credential),
-                RoutePolicy = new ConnectionRoutePolicy
+                var warning = new ContentDialog
                 {
-                    DisableDirect = routeProfile.DisableDirect,
-                },
-                PortForwardings = tunnelProfiles.Select(RestoreTunnel).ToList(),
-            };
+                    Title = Helpers.Loc.T("저장 Host 확인 필요", "Saved Host needs attention"),
+                    Content = Helpers.Loc.T(
+                        "재연결에 필요할 수 있는 자격증명이 저장되어 있지 않거나 읽히지 않았습니다. 연결 편집기에서 비밀번호, 키 Passphrase, Proxy 또는 SSH Jump 자격증명을 확인한 뒤 연결하세요.",
+                        "A credential that may be required for reconnect is not stored or could not be read. Review the password, key passphrase, and proxy or SSH Jump credentials in the connection editor before connecting."),
+                    PrimaryButtonText = Helpers.Loc.T("연결 정보 확인", "Review connection"),
+                    CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = Content.XamlRoot,
+                };
+                if (await warning.ShowAsync() != ContentDialogResult.Primary)
+                    return;
 
-            if (!routeProfile.CanConnect)
-            {
-                await ShowSavedRouteIssueAsync(routeProfile, draft);
+                SelectNavigationItem("Home");
+                _homeDashboard?.ApplyConnectionDraft(loaded.Draft);
+                DispatcherQueue.TryEnqueue(() => _homeDashboard?.FocusQuickConnect());
                 return;
             }
 
             // History cards execute a connection instead of returning to the editor.
             // Secrets never live in SQLite, so request only a missing password in place.
             draft.SaveProfile = false;
-            if (authMethod == SshAuthMethod.Password &&
+            if (draft.AuthMethod == SshAuthMethod.Password &&
                 string.IsNullOrEmpty(draft.Password) &&
                 !await PromptForHistoryPasswordAsync(draft))
             {
@@ -807,6 +741,11 @@ namespace sutty.UI.Views
 
             await OpenSessionTabAsync(draft);
         }
+
+        private static bool RequiresReconnectCredentialReview(SshConnectionInfo draft) =>
+            !draft.RememberCredential &&
+            (draft.AuthMethod == SshAuthMethod.PublicKey ||
+             draft.Route is { Type: not ConnectionRouteType.Direct });
 
         private async Task ShowSavedRouteIssueAsync(
             sutty.Command.HostRouteProfile route,
@@ -967,9 +906,20 @@ namespace sutty.UI.Views
                 _lastMultiSftpQueueJobId = queueJob.Id;
                 _lastMultiSftpOptions = options;
                 var progress = CreateMultiSftpProgress(panel, queueJob.Id);
+                using var leasedTargets = AcquireMultiSftpTargetLeases(
+                    queueJob.Id,
+                    targets,
+                    retryOnly: false);
+                if (leasedTargets.Targets.Length == 0)
+                {
+                    panel.ShowSftpStatus(
+                        "선택한 서버의 전송 실행권을 얻지 못했습니다. 전송 센터에서 상태를 확인하세요.",
+                        "Could not claim the selected targets. Check their status in Transfer Center.");
+                    return;
+                }
                 _lastMultiSftpBatch = await _multiSftpCoordinator.UploadAsync(
                     request.LocalPath,
-                    targets,
+                    leasedTargets.Targets,
                     options,
                     progress);
                 PersistMultiSftpBatch(queueJob.Id, _lastMultiSftpBatch);
@@ -1051,10 +1001,21 @@ namespace sutty.UI.Views
                 _lastMultiSftpQueueJobId = queueJob.Id;
                 _lastMultiSftpOptions = options;
                 var progress = CreateMultiSftpProgress(panel, queueJob.Id);
+                using var leasedTargets = AcquireMultiSftpTargetLeases(
+                    queueJob.Id,
+                    sources,
+                    retryOnly: false);
+                if (leasedTargets.Targets.Length == 0)
+                {
+                    panel.ShowSftpStatus(
+                        "선택한 서버의 전송 실행권을 얻지 못했습니다. 전송 센터에서 상태를 확인하세요.",
+                        "Could not claim the selected targets. Check their status in Transfer Center.");
+                    return;
+                }
                 _lastMultiSftpBatch = await _multiSftpCoordinator.DownloadAsync(
                     request.RemotePath,
                     request.LocalDirectory,
-                    sources,
+                    leasedTargets.Targets,
                     options,
                     progress);
                 PersistMultiSftpBatch(queueJob.Id, _lastMultiSftpBatch);
@@ -1100,17 +1061,47 @@ namespace sutty.UI.Views
                 "Retrying failed servers only…"));
             try
             {
+                if (string.IsNullOrWhiteSpace(_lastMultiSftpQueueJobId))
+                {
+                    panel.ShowSftpStatus(
+                        "재시도할 전송 큐 기록이 없습니다.",
+                        "The transfer queue record for this retry is unavailable.");
+                    return;
+                }
+
+                var failedTargets = _lastMultiSftpBatch.Failed
+                    .Select(status => status.Target)
+                    .ToArray();
+                using var leasedTargets = AcquireMultiSftpTargetLeases(
+                    _lastMultiSftpQueueJobId,
+                    failedTargets,
+                    retryOnly: true);
+                if (leasedTargets.Targets.Length == 0)
+                {
+                    panel.ShowSftpStatus(
+                        "실패 대상이 이미 실행 중이거나 더 이상 재시도할 수 없습니다.",
+                        "The failed targets are already running or are no longer retryable.");
+                    return;
+                }
+
+                var leasedTargetIds = leasedTargets.Targets
+                    .Select(target => target.PersistenceId)
+                    .ToHashSet(StringComparer.Ordinal);
+                var leasedFailures = new MultiSftpBatchResult(
+                    _lastMultiSftpBatch.Failed
+                        .Where(status => leasedTargetIds.Contains(status.Target.PersistenceId))
+                        .ToArray());
                 var progress = CreateMultiSftpProgress(panel, _lastMultiSftpQueueJobId);
                 _lastMultiSftpBatch = _lastMultiSftpOperation == MultiSftpOperation.Upload
                     ? await _multiSftpCoordinator.RetryFailedAsync(
                         _lastMultiSftpSourcePath,
-                        _lastMultiSftpBatch,
+                        leasedFailures,
                         _lastMultiSftpOptions ?? CreateSftpTransferOptions(SftpConflictPolicy.Skip),
                         progress)
                     : await _multiSftpCoordinator.RetryFailedDownloadAsync(
                         _lastMultiSftpSourcePath,
                         _lastMultiSftpDestinationPath,
-                        _lastMultiSftpBatch,
+                        leasedFailures,
                         _lastMultiSftpOptions ?? CreateSftpTransferOptions(SftpConflictPolicy.Skip),
                         progress);
                 PersistMultiSftpBatch(_lastMultiSftpQueueJobId, _lastMultiSftpBatch);
@@ -1190,16 +1181,29 @@ namespace sutty.UI.Views
                     : MultiSftpOperation.Download;
                 _lastMultiSftpOptions = job.Options;
                 var progress = CreateMultiSftpProgress(panel, job.Id);
+                using var leasedTargets = AcquireMultiSftpTargetLeases(
+                    job.Id,
+                    targets,
+                    retryOnly: true);
+                if (leasedTargets.Targets.Length == 0)
+                {
+                    panel.ShowSftpStatus(
+                        "일치한 대상이 이미 실행 중이거나 더 이상 복원할 수 없습니다.",
+                        "The matching targets are already running or are no longer recoverable.");
+                    return;
+                }
+
+                missing = retryIds.Count - leasedTargets.Targets.Length;
                 _lastMultiSftpBatch = _lastMultiSftpOperation == MultiSftpOperation.Upload
                     ? await _multiSftpCoordinator.UploadAsync(
                         job.SourcePath,
-                        targets,
+                        leasedTargets.Targets,
                         job.Options,
                         progress)
                     : await _multiSftpCoordinator.DownloadAsync(
                         job.SourcePath,
                         job.DestinationPath,
-                        targets,
+                        leasedTargets.Targets,
                         job.Options,
                         progress);
                 PersistMultiSftpBatch(job.Id, _lastMultiSftpBatch);
@@ -1237,6 +1241,69 @@ namespace sutty.UI.Views
                 .Select(group => group.First())
                 .ToArray();
             return (targets, selected.Count);
+        }
+
+        private MultiSftpTargetLeaseBatch AcquireMultiSftpTargetLeases(
+            string jobId,
+            IReadOnlyCollection<MultiSftpTarget> targets,
+            bool retryOnly)
+        {
+            var claimedTargets = new List<MultiSftpTarget>(targets.Count);
+            var leases = new List<IDisposable>(targets.Count);
+            try
+            {
+                foreach (var target in targets)
+                {
+                    var acquired = retryOnly
+                        ? _sftpTransferQueue.TryAcquireRetryTargetLease(
+                            jobId,
+                            target.PersistenceId,
+                            _multiSftpTargetLeaseOwnerToken,
+                            out var lease)
+                        : _sftpTransferQueue.TryAcquireTargetLease(
+                            jobId,
+                            target.PersistenceId,
+                            _multiSftpTargetLeaseOwnerToken,
+                            out lease);
+                    if (!acquired || lease is null)
+                        continue;
+
+                    claimedTargets.Add(target);
+                    leases.Add(lease);
+                }
+
+                return new MultiSftpTargetLeaseBatch([.. claimedTargets], leases);
+            }
+            catch
+            {
+                foreach (var lease in leases)
+                    lease.Dispose();
+                throw;
+            }
+        }
+
+        private sealed class MultiSftpTargetLeaseBatch : IDisposable
+        {
+            private List<IDisposable>? _leases;
+
+            public MultiSftpTargetLeaseBatch(
+                MultiSftpTarget[] targets,
+                List<IDisposable> leases)
+            {
+                Targets = targets;
+                _leases = leases;
+            }
+
+            public MultiSftpTarget[] Targets { get; }
+
+            public void Dispose()
+            {
+                var leases = Interlocked.Exchange(ref _leases, null);
+                if (leases is null)
+                    return;
+                foreach (var lease in leases)
+                    lease.Dispose();
+            }
         }
 
         private static SftpQueuedJob CreateQueuedJob(
@@ -1947,6 +2014,7 @@ namespace sutty.UI.Views
             sutty.Command.HostProfile? savedProfile = null;
             var view = new SessionView(session);
             view.AppShortcutRequested += TerminalView_AppShortcutRequested;
+            view.ReconnectRequested += async (_, _) => await ReconnectSessionAsync(view);
             var workspace = new SessionWorkspaceView(
                 view,
                 WinRT.Interop.WindowNative.GetWindowHandle(this));
@@ -2118,6 +2186,75 @@ namespace sutty.UI.Views
 
             if (outcome == ConnectionAttemptOutcome.Failed)
                 await ShowConnectionFailureAsync(session);
+        }
+
+        private async Task ReconnectSessionAsync(SessionView sourceView)
+        {
+            var source = sourceView.Session;
+            var disposition = ReconnectPolicy.GetDisposition(source.State, source.Info);
+            if (disposition == ReconnectDisposition.Unavailable || _windowClosing)
+                return;
+
+            sourceView.SetReconnectPending(true);
+            try
+            {
+                if (disposition == ReconnectDisposition.OpenSavedHost &&
+                    !string.IsNullOrWhiteSpace(source.Info.SavedHostId))
+                {
+                    try
+                    {
+                        if (sutty.Command.HostProfileStore.GetById(source.Info.SavedHostId) is
+                            { } profile)
+                        {
+                            // OpenHistoryDraftAsync reloads the encrypted-vault credential and
+                            // creates a fresh session. It never reuses this session's terminal,
+                            // command cells, trust-once decision, or transport objects.
+                            await OpenHistoryDraftAsync(
+                                CreateHostInfo(profile),
+                                reviewMissingReconnectSecrets: true);
+                            return;
+                        }
+                    }
+                    catch (Exception error) when (error is IOException or
+                                                  UnauthorizedAccessException or
+                                                  Microsoft.Data.Sqlite.SqliteException or
+                                                  ArgumentException)
+                    {
+                        Debug.WriteLine($"Saved Host reconnect lookup failed: {error.GetType().Name}");
+                    }
+                }
+
+                var draft = ReconnectPolicy.CreateCredentialFreeDraft(source.Info);
+                // The profile may have been deleted after the original session opened. Do not
+                // keep stale persistence or vault references in the one-off editor fallback.
+                draft.SavedHostId = null;
+                draft.CredentialId = null;
+
+                var dialog = new ContentDialog
+                {
+                    Title = Helpers.Loc.T("새 SSH 세션 준비", "Prepare a new SSH session"),
+                    Content = Helpers.Loc.T(
+                        "재연결은 새 원격 Shell을 엽니다. 이전 명령과 터미널 입력은 자동으로 다시 실행하지 않습니다. " +
+                        "보안을 위해 비밀번호와 Passphrase를 다시 확인한 뒤 연결하세요.",
+                        "Reconnect opens a new remote shell. Previous commands and terminal input are not replayed. " +
+                        "For safety, review the password or passphrase before connecting."),
+                    PrimaryButtonText = Helpers.Loc.T("연결 정보 확인", "Review connection"),
+                    CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = Content.XamlRoot,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                    return;
+
+                SelectNavigationItem("Home");
+                _homeDashboard?.ApplyConnectionDraft(draft);
+                DispatcherQueue.TryEnqueue(() => _homeDashboard?.FocusQuickConnect());
+            }
+            finally
+            {
+                if (!_windowClosing)
+                    sourceView.SetReconnectPending(false);
+            }
         }
 
         private async Task HandlePreflightFailureAsync(
@@ -2722,51 +2859,6 @@ namespace sutty.UI.Views
             DestinationHost = tunnel.DestinationHost,
             DestinationPort = tunnel.DestinationPort,
         };
-
-        private static ConnectionRoute RestoreRoute(
-            sutty.Command.HostRouteProfile profile,
-            CredentialSecret? credential)
-        {
-            var type = Enum.TryParse<ConnectionRouteType>(profile.Type, out var parsedType) &&
-                       Enum.IsDefined(parsedType)
-                ? parsedType
-                : ConnectionRouteType.Direct;
-            var auth = Enum.TryParse<SshAuthMethod>(profile.AuthMethod, out var parsedAuth) &&
-                       Enum.IsDefined(parsedAuth)
-                ? parsedAuth
-                : SshAuthMethod.Password;
-            return new ConnectionRoute
-            {
-                Id = profile.Id,
-                Type = type,
-                Host = profile.Host,
-                Port = profile.Port,
-                Username = profile.Username,
-                Password = credential?.RoutePassword ?? "",
-                AuthMethod = auth,
-                PrivateKeyPath = profile.PrivateKeyPath,
-                Passphrase = credential?.RoutePrivateKeyPassphrase ?? "",
-                Command = profile.Command,
-                ProxyDns = profile.ProxyDns,
-            };
-        }
-
-        private static SshPortForwardingRule RestoreTunnel(
-            sutty.Command.HostTunnelProfile profile)
-        {
-            var type = Enum.TryParse<SshPortForwardingType>(profile.Type, out var parsed) &&
-                       Enum.IsDefined(parsed)
-                ? parsed
-                : SshPortForwardingType.Local;
-            return new SshPortForwardingRule
-            {
-                Type = type,
-                BindHost = profile.BindHost,
-                BindPort = profile.BindPort,
-                DestinationHost = profile.DestinationHost,
-                DestinationPort = profile.DestinationPort,
-            };
-        }
 
         private Task<System.Collections.Generic.IReadOnlyList<string>?>
             PromptKeyboardInteractiveAsync(

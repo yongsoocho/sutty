@@ -14,7 +14,6 @@
     <Grid RowSpacing="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -26,291 +25,403 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <TextBlock
-                VerticalAlignment="Center"
-                FontSize="15"
-                FontWeight="SemiBold"
-                Foreground="{ThemeResource TextPrimary}"
-                Text="Files" />
-            <Border
-                Grid.Column="1"
-                Padding="8,2"
-                VerticalAlignment="Center"
-                Background="{ThemeResource AccentTint}"
-                CornerRadius="10">
-                <TextBlock
-                    CharacterSpacing="40"
-                    FontSize="10.5"
-                    Foreground="{ThemeResource AccentTeal}"
-                    Text="SFTP" />
+            <TextBlock VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"
+                       Foreground="{ThemeResource TextPrimary}" Text="Files" />
+            <Border Grid.Column="1" Padding="8,2" VerticalAlignment="Center"
+                    Background="{ThemeResource AccentTint}" CornerRadius="10">
+                <TextBlock CharacterSpacing="40" FontSize="10.5"
+                           Foreground="{ThemeResource AccentTeal}" Text="LOCAL ↔ SFTP" />
+            </Border>
+            <TextBlock Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center"
+                       FontSize="10.5" Foreground="{ThemeResource TextFaint}"
+                       Text="{x:Bind h:Loc.T('여러 항목을 선택한 뒤 가운데 전송 버튼을 사용하세요', 'Select multiple items, then use the transfer buttons')}" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1"
+                      HorizontalContentAlignment="Stretch"
+                      HorizontalScrollBarVisibility="Auto"
+                      HorizontalScrollMode="Enabled"
+                      VerticalContentAlignment="Stretch"
+                      VerticalScrollBarVisibility="Disabled"
+                      VerticalScrollMode="Disabled"
+                      ZoomMode="Disabled">
+        <Grid MinWidth="684" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="280" />
+                <ColumnDefinition Width="104" />
+                <ColumnDefinition Width="*" MinWidth="280" />
+            </Grid.ColumnDefinitions>
+
+            <Border Padding="8" Background="{ThemeResource CardBg}"
+                    BorderBrush="{ThemeResource CardBorder}" BorderThickness="1" CornerRadius="8">
+                <Grid RowSpacing="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid ColumnSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="13" Foreground="{ThemeResource AccentBlue}" Glyph="&#xE8B7;" />
+                            <TextBlock VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextPrimary}"
+                                       Text="{x:Bind h:Loc.T('로컬', 'LOCAL')}" />
+                        </StackPanel>
+                        <TextBlock x:Name="LocalSelectionText" Grid.Column="1" VerticalAlignment="Center"
+                                   FontSize="10" Foreground="{ThemeResource TextMuted}"
+                                   Text="{x:Bind h:Loc.T('선택 없음', 'No selection')}" />
+                    </Grid>
+
+                    <Grid Grid.Row="1" ColumnSpacing="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="30" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="LocalParentButton" Padding="0"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('로컬 상위 폴더', 'Local parent folder')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="LocalParent_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('상위 폴더', 'Parent folder')}">
+                            <FontIcon FontSize="12" Glyph="&#xE74A;" />
+                        </Button>
+                        <TextBox x:Name="LocalPathBox" Grid.Column="1" MinHeight="30" Padding="8,3"
+                                 AutomationProperties.Name="{x:Bind h:Loc.T('로컬 폴더 경로', 'Local folder path')}"
+                                 FontFamily="Cascadia Mono, Consolas" FontSize="11"
+                                 KeyDown="LocalPathBox_KeyDown" />
+                        <Button Grid.Column="2" Padding="0"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('로컬 경로 열기', 'Open local path')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="LocalGoPath_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('경로 열기', 'Open path')}">
+                            <FontIcon FontSize="12" Glyph="&#xE72A;" />
+                        </Button>
+                        <Button Grid.Column="3" Padding="0"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('로컬 새로 고침', 'Refresh local folder')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="LocalRefresh_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('새로 고침', 'Refresh')}">
+                            <FontIcon FontSize="12" Glyph="&#xE72C;" />
+                        </Button>
+                        <Button Grid.Column="4" Padding="0"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('로컬 폴더 선택', 'Choose local folder')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="ChooseLocalFolder_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('폴더 선택…', 'Choose folder…')}">
+                            <FontIcon FontSize="12" Glyph="&#xE8B7;" />
+                        </Button>
+                    </Grid>
+
+                    <Grid Grid.Row="2" Padding="29,0,8,2" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="50" />
+                            <ColumnDefinition Width="74" />
+                            <ColumnDefinition Width="112" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontSize="9.5" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('이름', 'Name')}" />
+                        <TextBlock Grid.Column="1" FontSize="9.5" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('형식', 'Type')}" />
+                        <TextBlock Grid.Column="2" FontSize="9.5" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('크기', 'Size')}" TextAlignment="Right" />
+                        <TextBlock Grid.Column="3" FontSize="9.5" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('수정됨', 'Modified')}" TextAlignment="Right" />
+                    </Grid>
+
+                    <Grid Grid.Row="3">
+                        <ListView x:Name="LocalList"
+                                  AutomationProperties.Name="{x:Bind h:Loc.T('로컬 파일 목록', 'Local file list')}"
+                                  DoubleTapped="LocalItem_DoubleTapped"
+                                  ItemsSource="{x:Bind LocalBrowser.Items}"
+                                  KeyDown="LocalList_KeyDown"
+                                  SelectionChanged="BrowserSelection_Changed"
+                                  SelectionMode="Extended">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="MinHeight" Value="30" />
+                                    <Setter Property="Padding" Value="4,2" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:LocalFileItemViewModel">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ContextFlyout>
+                                            <MenuFlyout>
+                                                <MenuFlyoutItem Click="UploadLocalItem_Click" Icon="Upload" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('원격 현재 폴더로 업로드', 'Upload to current remote folder')}" />
+                                                <MenuFlyoutItem Click="CopyLocalPath_Click" Icon="Copy" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('경로 복사', 'Copy path')}" />
+                                            </MenuFlyout>
+                                        </Grid.ContextFlyout>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="20" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="50" />
+                                            <ColumnDefinition Width="74" />
+                                            <ColumnDefinition Width="112" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid>
+                                            <FontIcon FontSize="13" Foreground="{ThemeResource AccentBlue}"
+                                                      Glyph="&#xE8B7;" Visibility="{x:Bind IsDirectory}" />
+                                            <FontIcon FontSize="13" Foreground="{ThemeResource TextMuted}"
+                                                      Glyph="&#xE8A5;" Visibility="{x:Bind IsFile}" />
+                                        </Grid>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="11.5"
+                                                   Foreground="{ThemeResource TextPrimary}" Text="{x:Bind Name}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="9.5"
+                                                   Foreground="{ThemeResource TextFaint}" Text="{x:Bind TypeText}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="3" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="9.5"
+                                                   Foreground="{ThemeResource TextFaint}" Text="{x:Bind SizeText}"
+                                                   TextAlignment="Right" />
+                                        <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="9.5"
+                                                   Foreground="{ThemeResource TextFaint}" Text="{x:Bind ModifiedText}"
+                                                   TextAlignment="Right" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <ProgressRing x:Name="LocalLoadingRing" Width="28" Height="28"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <TextBlock x:Name="LocalEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   FontSize="11" Foreground="{ThemeResource TextMuted}"
+                                   Text="{x:Bind h:Loc.T('이 폴더가 비어 있습니다', 'This folder is empty')}"
+                                   Visibility="Collapsed" />
+                    </Grid>
+                    <TextBlock x:Name="LocalStatusText" Grid.Row="4" FontSize="10"
+                               AutomationProperties.LiveSetting="Polite"
+                               Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap" Visibility="Collapsed" />
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Center" Spacing="8">
+                <Button x:Name="UploadSelectedButton" HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('선택한 로컬 항목 업로드', 'Upload selected local items')}"
+                        Click="UploadSelected_Click" Content="{x:Bind h:Loc.T('업로드  →', 'Upload  →')}"
+                        IsEnabled="False"
+                        ToolTipService.ToolTip="{x:Bind h:Loc.T('원격 현재 폴더로 전송', 'Transfer to the current remote folder')}" />
+                <Button x:Name="DownloadSelectedButton" HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('선택한 원격 항목 다운로드', 'Download selected remote items')}"
+                        Click="DownloadSelected_Click" Content="{x:Bind h:Loc.T('←  다운로드', '←  Download')}"
+                        IsEnabled="False"
+                        ToolTipService.ToolTip="{x:Bind h:Loc.T('로컬 현재 폴더로 전송', 'Transfer to the current local folder')}" />
+                <TextBlock Margin="4,4" FontSize="9.5" Foreground="{ThemeResource TextFaint}"
+                           Text="{x:Bind h:Loc.T('충돌 정책은 전송 전에 확인됩니다.', 'Conflict policy is reviewed before transfer.')}"
+                           TextAlignment="Center" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Border Grid.Column="2" Padding="8" Background="{ThemeResource CardBg}"
+                    BorderBrush="{ThemeResource CardBorder}" BorderThickness="1" CornerRadius="8">
+                <Grid RowSpacing="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid ColumnSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="13" Foreground="{ThemeResource AccentTeal}" Glyph="&#xE968;" />
+                            <TextBlock VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextPrimary}"
+                                       Text="{x:Bind h:Loc.T('원격', 'REMOTE')}" />
+                        </StackPanel>
+                        <TextBlock x:Name="RemoteSelectionText" Grid.Column="1" VerticalAlignment="Center"
+                                   FontSize="10" Foreground="{ThemeResource TextMuted}"
+                                   Text="{x:Bind h:Loc.T('선택 없음', 'No selection')}" />
+                    </Grid>
+
+                    <Grid Grid.Row="1" ColumnSpacing="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="30" />
+                            <ColumnDefinition Width="30" />
+                        </Grid.ColumnDefinitions>
+                        <Button Padding="0" AutomationProperties.Name="{x:Bind h:Loc.T('원격 상위 폴더', 'Remote parent folder')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="ParentPath_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('상위 폴더', 'Parent folder')}">
+                            <FontIcon FontSize="12" Glyph="&#xE74A;" />
+                        </Button>
+                        <TextBox x:Name="PathBox" Grid.Column="1" MinHeight="30" Padding="8,3"
+                                 AutomationProperties.Name="{x:Bind h:Loc.T('원격 폴더 경로', 'Remote folder path')}"
+                                 FontFamily="Cascadia Mono, Consolas" FontSize="11"
+                                 KeyDown="PathBox_KeyDown" PlaceholderText="/var/www" />
+                        <Button Grid.Column="2" Padding="0"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('원격 경로 열기', 'Open remote path')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="GoPath_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('경로 열기', 'Open path')}">
+                            <FontIcon FontSize="12" Glyph="&#xE72A;" />
+                        </Button>
+                        <Button Grid.Column="3" Padding="0"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('원격 새로 고침', 'Refresh remote folder')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="Refresh_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('새로 고침', 'Refresh')}">
+                            <FontIcon FontSize="12" Glyph="&#xE72C;" />
+                        </Button>
+                        <Button Grid.Column="4" Padding="0"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('현재 원격 폴더에 새 폴더 만들기', 'Create folder in current remote folder')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="NewFolderInCurrentPath_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('현재 폴더에 새 폴더', 'New folder here')}">
+                            <SymbolIcon Symbol="NewFolder" />
+                        </Button>
+                        <Button Grid.Column="5" Padding="0"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('원격 파일명 검색', 'Search remote filenames')}"
+                                Background="{ThemeResource InputBg}" BorderBrush="{ThemeResource InputBorder}"
+                                Click="Search_Click" CornerRadius="6"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('현재 폴더 아래에서 파일명 검색', 'Search filenames below the current folder')}">
+                            <FontIcon FontSize="12" Glyph="&#xE721;" />
+                        </Button>
+                    </Grid>
+
+                    <Grid Grid.Row="2" Padding="29,0,8,2" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="76" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontSize="9.5" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('이름', 'Name')}" />
+                        <TextBlock Grid.Column="1" FontSize="9.5" Foreground="{ThemeResource TextFaint}"
+                                   Text="{x:Bind h:Loc.T('크기', 'Size')}" TextAlignment="Right" />
+                    </Grid>
+
+                    <Grid Grid.Row="3">
+                        <ListView x:Name="FileTree" AllowDrop="True"
+                                  AutomationProperties.Name="{x:Bind h:Loc.T('원격 파일 목록', 'Remote file list')}"
+                                  CanDragItems="False" CanReorderItems="False"
+                                  DragOver="Tree_DragOver" Drop="Tree_Drop"
+                                  ItemsSource="{x:Bind RemoteItems}"
+                                  KeyDown="RemoteList_KeyDown"
+                                  SelectionChanged="BrowserSelection_Changed" SelectionMode="Extended">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="MinHeight" Value="30" />
+                                    <Setter Property="Padding" Value="4,2" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FileNode">
+                                    <Grid AllowDrop="True" ColumnSpacing="8" DoubleTapped="Node_DoubleTapped"
+                                          DragOver="Node_DragOver" Drop="Node_Drop">
+                                        <Grid.ContextFlyout>
+                                            <MenuFlyout>
+                                                <MenuFlyoutItem Click="DownloadRemoteItemToLocal_Click" Icon="Download" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('로컬 현재 폴더로 다운로드', 'Download to current local folder')}"
+                                                    Visibility="{x:Bind CanDownload}" />
+                                                <MenuFlyoutItem Click="Download_Click" Icon="Save" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('다른 이름으로 다운로드…', 'Download / Save as…')}"
+                                                    Visibility="{x:Bind CanDownload}" />
+                                                <MenuFlyoutItem Click="NewFolder_Click" Icon="NewFolder" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('새 폴더…', 'New folder…')}" Visibility="{x:Bind IsDirectory}" />
+                                                <MenuFlyoutItem Click="Rename_Click" Icon="Rename" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('이름 바꾸기…', 'Rename…')}" Visibility="{x:Bind CanModify}" />
+                                                <MenuFlyoutItem Click="MoveTo_Click" Icon="Forward" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('다른 폴더로 이동…', 'Move to another folder…')}" Visibility="{x:Bind CanModify}" />
+                                                <MenuFlyoutItem Click="ChangePermissions_Click" Icon="Edit" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('권한 변경…', 'Change permissions…')}" Visibility="{x:Bind CanModify}" />
+                                                <MenuFlyoutItem Click="Delete_Click" Icon="Delete" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('삭제…', 'Delete…')}" Visibility="{x:Bind CanModify}" />
+                                                <MenuFlyoutSeparator />
+                                                <MenuFlyoutItem Click="OpenTerminalHere_Click" Icon="OpenFile" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('여기서 터미널 열기', 'Open in terminal')}" />
+                                                <MenuFlyoutItem Click="CopyPath_Click" Icon="Copy" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('경로 복사', 'Copy path')}" />
+                                            </MenuFlyout>
+                                        </Grid.ContextFlyout>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="20" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="76" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid>
+                                            <FontIcon FontSize="13" Foreground="{ThemeResource AccentBlue}"
+                                                      Glyph="&#xE8B7;" Visibility="{x:Bind IsDirectory}" />
+                                            <FontIcon FontSize="13" Foreground="{ThemeResource TextMuted}"
+                                                      Glyph="&#xE8A5;" Visibility="{x:Bind IsFile}" />
+                                        </Grid>
+                                        <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="11.5"
+                                                   Foreground="{ThemeResource TextPrimary}" Text="{x:Bind Name}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="9.5"
+                                                   Foreground="{ThemeResource TextFaint}" Text="{x:Bind SizeText}"
+                                                   TextAlignment="Right" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <ProgressRing x:Name="LoadingRing" Width="28" Height="28"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" IsActive="False" />
+                        <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Spacing="8" Visibility="Collapsed">
+                            <FontIcon HorizontalAlignment="Center" FontSize="26"
+                                      Foreground="{ThemeResource TextMuted}" Glyph="&#xE8CE;" />
+                            <TextBlock HorizontalAlignment="Center" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextMuted}"
+                                       Text="{x:Bind h:Loc.T('활성 세션 없음', 'No active session')}" />
+                            <TextBlock HorizontalAlignment="Center" FontSize="11"
+                                       Foreground="{ThemeResource TextMuted}"
+                                       Text="{x:Bind h:Loc.T('서버에 연결하면 원격 파일이 표시됩니다', 'Connect to a server to browse remote files')}"
+                                       TextAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel x:Name="SftpUnavailableState" HorizontalAlignment="Center" MaxWidth="240"
+                                    VerticalAlignment="Center" Spacing="8" Visibility="Collapsed">
+                            <FontIcon HorizontalAlignment="Center" FontSize="26"
+                                      Foreground="{ThemeResource StatusRed}" Glyph="&#xE783;" />
+                            <TextBlock HorizontalAlignment="Center" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextPrimary}"
+                                       Text="{x:Bind h:Loc.T('SFTP 사용 불가', 'SFTP unavailable')}" />
+                            <TextBlock HorizontalAlignment="Center" FontSize="11"
+                                       Foreground="{ThemeResource TextMuted}"
+                                       Text="{x:Bind h:Loc.T('SSH 터미널은 계속 사용할 수 있습니다.', 'The SSH terminal is still available.')}"
+                                       TextAlignment="Center" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
             </Border>
         </Grid>
+        </ScrollViewer>
 
-        <Grid Grid.Row="1" ColumnSpacing="5">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="30" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="30" />
-                <ColumnDefinition Width="30" />
-                <ColumnDefinition Width="30" />
-            </Grid.ColumnDefinitions>
-            <Button
-                Padding="0"
-                AutomationProperties.Name="{x:Bind h:Loc.T('상위 폴더', 'Parent folder')}"
-                Background="{ThemeResource InputBg}"
-                BorderBrush="{ThemeResource InputBorder}"
-                Click="ParentPath_Click"
-                CornerRadius="6"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('상위 폴더', 'Parent folder')}">
-                <FontIcon FontSize="12" Glyph="&#xE74A;" />
-            </Button>
-            <TextBox
-                x:Name="PathBox"
-                Grid.Column="1"
-                MinHeight="30"
-                Padding="8,3"
-                FontFamily="Cascadia Mono, Consolas"
-                FontSize="11.5"
-                KeyDown="PathBox_KeyDown"
-                PlaceholderText="/var/www" />
-            <Button
-                Grid.Column="2"
-                Padding="0"
-                AutomationProperties.Name="{x:Bind h:Loc.T('경로 열기', 'Open path')}"
-                Background="{ThemeResource InputBg}"
-                BorderBrush="{ThemeResource InputBorder}"
-                Click="GoPath_Click"
-                CornerRadius="6"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('경로 열기', 'Open path')}">
-                <FontIcon FontSize="12" Glyph="&#xE72A;" />
-            </Button>
-            <Button
-                Grid.Column="3"
-                Padding="0"
-                AutomationProperties.Name="{x:Bind h:Loc.T('새로 고침', 'Refresh')}"
-                Background="{ThemeResource InputBg}"
-                BorderBrush="{ThemeResource InputBorder}"
-                Click="Refresh_Click"
-                CornerRadius="6"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('새로 고침', 'Refresh')}">
-                <FontIcon FontSize="12" Glyph="&#xE72C;" />
-            </Button>
-            <Button
-                Grid.Column="4"
-                Padding="0"
-                AutomationProperties.Name="{x:Bind h:Loc.T('원격 파일명 검색', 'Search remote filenames')}"
-                Background="{ThemeResource InputBg}"
-                BorderBrush="{ThemeResource InputBorder}"
-                Click="Search_Click"
-                CornerRadius="6"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('현재 폴더 아래에서 파일명 검색', 'Search filenames below the current folder')}">
-                <FontIcon FontSize="12" Glyph="&#xE721;" />
-            </Button>
-        </Grid>
-
-        <TreeView
-            x:Name="FileTree"
-            Grid.Row="2"
-            AllowDrop="True"
-            CanDragItems="False"
-            CanReorderItems="False"
-            DragOver="Tree_DragOver"
-            Drop="Tree_Drop"
-            Expanding="FileTree_Expanding"
-            ItemsSource="{x:Bind RootNodes}"
-            SelectionMode="Single">
-            <TreeView.ItemTemplate>
-                <DataTemplate x:DataType="vm:FileNode">
-                    <TreeViewItem
-                        AllowDrop="True"
-                        DoubleTapped="Node_DoubleTapped"
-                        DragOver="Node_DragOver"
-                        Drop="Node_Drop"
-                        HasUnrealizedChildren="{x:Bind HasUnrealizedChildren, Mode=OneWay}"
-                        HorizontalContentAlignment="Stretch"
-                        IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
-                        ItemsSource="{x:Bind Children}"
-                        MinHeight="27"
-                        Padding="0">
-                        <TreeViewItem.ContextFlyout>
-                            <MenuFlyout>
-                                <MenuFlyoutItem
-                                    Click="Download_Click"
-                                    Icon="Download"
-                                    Tag="{x:Bind}"
-                                    Text="{x:Bind h:Loc.T('다른 이름으로 다운로드…', 'Download / Save as…')}"
-                                    Visibility="{x:Bind CanDownload}" />
-                                <MenuFlyoutItem
-                                    Click="NewFolder_Click"
-                                    Icon="NewFolder"
-                                    Tag="{x:Bind}"
-                                    Text="{x:Bind h:Loc.T('새 폴더…', 'New folder…')}"
-                                    Visibility="{x:Bind IsDirectory}" />
-                                <MenuFlyoutItem
-                                    Click="Rename_Click"
-                                    Icon="Rename"
-                                    Tag="{x:Bind}"
-                                    Text="{x:Bind h:Loc.T('이름 바꾸기…', 'Rename…')}"
-                                    Visibility="{x:Bind CanModify}" />
-                                <MenuFlyoutItem
-                                    Click="MoveTo_Click"
-                                    Icon="Forward"
-                                    Tag="{x:Bind}"
-                                    Text="{x:Bind h:Loc.T('다른 폴더로 이동…', 'Move to another folder…')}"
-                                    Visibility="{x:Bind CanModify}" />
-                                <MenuFlyoutItem
-                                    Click="ChangePermissions_Click"
-                                    Icon="Edit"
-                                    Tag="{x:Bind}"
-                                    Text="{x:Bind h:Loc.T('권한 변경…', 'Change permissions…')}"
-                                    Visibility="{x:Bind CanModify}" />
-                                <MenuFlyoutItem
-                                    Click="Delete_Click"
-                                    Icon="Delete"
-                                    Tag="{x:Bind}"
-                                    Text="{x:Bind h:Loc.T('삭제…', 'Delete…')}"
-                                    Visibility="{x:Bind CanModify}" />
-                                <MenuFlyoutSeparator />
-                                <MenuFlyoutItem
-                                    Click="OpenTerminalHere_Click"
-                                    Icon="OpenFile"
-                                    Tag="{x:Bind}"
-                                    Text="{x:Bind h:Loc.T('여기서 터미널 열기', 'Open in terminal')}" />
-                                <MenuFlyoutItem
-                                    Click="CopyPath_Click"
-                                    Icon="Copy"
-                                    Tag="{x:Bind}"
-                                    Text="{x:Bind h:Loc.T('경로 복사', 'Copy path')}" />
-                            </MenuFlyout>
-                        </TreeViewItem.ContextFlyout>
-                        <StackPanel Margin="6,3" Orientation="Horizontal" Spacing="7">
-                            <FontIcon
-                                FontSize="13"
-                                Foreground="{ThemeResource AccentBlue}"
-                                Glyph="&#xE8B7;"
-                                Visibility="{x:Bind FolderClosedVisible, Mode=OneWay}" />
-                            <FontIcon
-                                FontSize="13"
-                                Foreground="{ThemeResource AccentTeal}"
-                                Glyph="&#xE838;"
-                                Visibility="{x:Bind FolderOpenVisible, Mode=OneWay}" />
-                            <FontIcon
-                                FontSize="13"
-                                Foreground="{ThemeResource TextMuted}"
-                                Glyph="&#xE8A5;"
-                                Visibility="{x:Bind IsFile}" />
-                            <TextBlock
-                                FontFamily="Cascadia Mono, Consolas"
-                                FontSize="12"
-                                Foreground="{ThemeResource TextPrimary}"
-                                Text="{x:Bind Name}" />
-                            <TextBlock
-                                VerticalAlignment="Center"
-                                FontFamily="Cascadia Mono, Consolas"
-                                FontSize="10"
-                                Foreground="{ThemeResource TextFaint}"
-                                Text="{x:Bind SizeText}" />
-                        </StackPanel>
-                    </TreeViewItem>
-                </DataTemplate>
-            </TreeView.ItemTemplate>
-        </TreeView>
-
-        <ProgressRing
-            x:Name="LoadingRing"
-            Grid.Row="2"
-            Width="28"
-            Height="28"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            IsActive="False" />
-
-        <StackPanel
-            x:Name="EmptyState"
-            Grid.Row="2"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            Spacing="8"
-            Visibility="Collapsed">
-            <FontIcon
-                HorizontalAlignment="Center"
-                FontSize="26"
-                Foreground="{ThemeResource TextMuted}"
-                Glyph="&#xE8CE;" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                FontSize="13"
-                FontWeight="SemiBold"
-                Foreground="{ThemeResource TextMuted}"
-                Text="{x:Bind h:Loc.T('활성 세션 없음', 'No active session')}" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                FontSize="11"
-                Foreground="{ThemeResource TextMuted}"
-                Text="{x:Bind h:Loc.T('서버에 연결하면 파일 트리가 표시됩니다', 'Connect to a server to browse its files')}"
-                TextAlignment="Center"
-                TextWrapping="Wrap" />
-        </StackPanel>
-
-        <StackPanel
-            x:Name="SftpUnavailableState"
-            Grid.Row="2"
-            HorizontalAlignment="Center"
-            MaxWidth="240"
-            VerticalAlignment="Center"
-            Spacing="8"
-            Visibility="Collapsed">
-            <FontIcon
-                HorizontalAlignment="Center"
-                FontSize="26"
-                Foreground="{ThemeResource StatusRed}"
-                Glyph="&#xE783;" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                FontSize="13"
-                FontWeight="SemiBold"
-                Foreground="{ThemeResource TextPrimary}"
-                Text="{x:Bind h:Loc.T('SFTP 사용 불가', 'SFTP unavailable')}" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                FontSize="11"
-                Foreground="{ThemeResource TextMuted}"
-                Text="{x:Bind h:Loc.T('SSH 터미널은 계속 사용할 수 있습니다.', 'The SSH terminal is still available.')}"
-                TextAlignment="Center"
-                TextWrapping="Wrap" />
-        </StackPanel>
-
-        <Border
-            x:Name="TransfersPanel"
-            Grid.Row="3"
-            MaxHeight="150"
-            Padding="8"
-            Background="{ThemeResource CardBg}"
-            BorderBrush="{ThemeResource CardBorder}"
-            BorderThickness="1"
-            CornerRadius="7"
-            Visibility="Collapsed">
+        <Border x:Name="TransfersPanel" Grid.Row="2" MaxHeight="150" Padding="8"
+                Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
+                BorderThickness="1" CornerRadius="7" Visibility="Collapsed">
             <StackPanel Spacing="5">
                 <Grid ColumnSpacing="6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontSize="10.5"
-                        FontWeight="SemiBold"
-                        Foreground="{ThemeResource TextMuted}"
-                        Text="{x:Bind h:Loc.T('전송', 'TRANSFERS')}" />
-                    <Button
-                        x:Name="ResumeRestoredButton"
-                        Grid.Column="1"
-                        MinHeight="24"
-                        Padding="7,2"
-                        Click="ResumeRestoredTransfers_Click"
-                        Content="{x:Bind h:Loc.T('복원 작업 재개', 'Resume restored')}"
-                        FontSize="10"
-                        Visibility="Collapsed" />
+                    <TextBlock VerticalAlignment="Center" FontSize="10.5" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextMuted}"
+                               Text="{x:Bind h:Loc.T('전송', 'TRANSFERS')}" />
+                    <Button x:Name="ResumeRestoredButton" Grid.Column="1" MinHeight="24" Padding="7,2"
+                            Click="ResumeRestoredTransfers_Click"
+                            Content="{x:Bind h:Loc.T('복원 작업 재개', 'Resume restored')}"
+                            FontSize="10" Visibility="Collapsed" />
                 </Grid>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{x:Bind Transfers}">
@@ -328,56 +439,30 @@
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
-                                    <FontIcon
-                                        Grid.RowSpan="2"
-                                        VerticalAlignment="Center"
-                                        FontSize="12"
-                                        Foreground="{ThemeResource AccentTeal}"
-                                        Glyph="{x:Bind DirectionGlyph}" />
-                                    <TextBlock
-                                        Grid.Column="1"
-                                        FontFamily="Cascadia Mono, Consolas"
-                                        FontSize="10.5"
-                                        Foreground="{ThemeResource TextPrimary}"
-                                        Text="{x:Bind Name}"
-                                        TextTrimming="CharacterEllipsis" />
-                                    <Button
-                                        Grid.Column="2"
-                                        Grid.RowSpan="2"
-                                        Padding="3"
-                                        VerticalAlignment="Center"
-                                        Background="Transparent"
-                                        BorderThickness="0"
-                                        Click="PauseTransfer_Click"
-                                        Tag="{x:Bind}"
-                                        ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 일시 정지', 'Pause transfer')}"
-                                        Visibility="{x:Bind CanPause, Mode=OneWay}">
+                                    <FontIcon Grid.RowSpan="2" VerticalAlignment="Center" FontSize="12"
+                                              Foreground="{ThemeResource AccentTeal}" Glyph="{x:Bind DirectionGlyph}" />
+                                    <TextBlock Grid.Column="1" FontFamily="Cascadia Mono, Consolas" FontSize="10.5"
+                                               Foreground="{ThemeResource TextPrimary}" Text="{x:Bind Name}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.Column="2" Grid.RowSpan="2" Padding="3" VerticalAlignment="Center"
+                                            AutomationProperties.Name="{x:Bind h:Loc.T('전송 일시 정지', 'Pause transfer')}"
+                                            Background="Transparent" BorderThickness="0" Click="PauseTransfer_Click"
+                                            Tag="{x:Bind}" ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 일시 정지', 'Pause transfer')}"
+                                            Visibility="{x:Bind CanPause, Mode=OneWay}">
                                         <FontIcon FontSize="9" Glyph="&#xE769;" />
                                     </Button>
-                                    <Button
-                                        Grid.Column="3"
-                                        Grid.RowSpan="2"
-                                        Padding="3"
-                                        VerticalAlignment="Center"
-                                        Background="Transparent"
-                                        BorderThickness="0"
-                                        Click="ResumePausedTransfer_Click"
-                                        Tag="{x:Bind}"
-                                        ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 재개', 'Resume transfer')}"
-                                        Visibility="{x:Bind CanResume, Mode=OneWay}">
+                                    <Button Grid.Column="3" Grid.RowSpan="2" Padding="3" VerticalAlignment="Center"
+                                            AutomationProperties.Name="{x:Bind h:Loc.T('전송 재개', 'Resume transfer')}"
+                                            Background="Transparent" BorderThickness="0" Click="ResumePausedTransfer_Click"
+                                            Tag="{x:Bind}" ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 재개', 'Resume transfer')}"
+                                            Visibility="{x:Bind CanResume, Mode=OneWay}">
                                         <FontIcon FontSize="9" Glyph="&#xE768;" />
                                     </Button>
-                                    <Button
-                                        Grid.Column="4"
-                                        Grid.RowSpan="2"
-                                        Padding="3"
-                                        VerticalAlignment="Center"
-                                        Background="Transparent"
-                                        BorderThickness="0"
-                                        Click="CancelTransfer_Click"
-                                        Tag="{x:Bind}"
-                                        ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 취소', 'Cancel transfer')}"
-                                        Visibility="{x:Bind CanCancel, Mode=OneWay}">
+                                    <Button Grid.Column="4" Grid.RowSpan="2" Padding="3" VerticalAlignment="Center"
+                                            AutomationProperties.Name="{x:Bind h:Loc.T('전송 취소', 'Cancel transfer')}"
+                                            Background="Transparent" BorderThickness="0" Click="CancelTransfer_Click"
+                                            Tag="{x:Bind}" ToolTipService.ToolTip="{x:Bind h:Loc.T('전송 취소', 'Cancel transfer')}"
+                                            Visibility="{x:Bind CanCancel, Mode=OneWay}">
                                         <FontIcon FontSize="9" Glyph="&#xE711;" />
                                     </Button>
                                     <Grid Grid.Row="1" Grid.Column="1" ColumnSpacing="6">
@@ -386,29 +471,16 @@
                                             <ColumnDefinition Width="38" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <ProgressBar
-                                            Width="56"
-                                            VerticalAlignment="Center"
-                                            Maximum="1"
-                                            Value="{x:Bind Progress, Mode=OneWay}" />
-                                        <TextBlock
-                                            Grid.Column="1"
-                                            MinWidth="38"
-                                            VerticalAlignment="Center"
-                                            FontFamily="Cascadia Mono, Consolas"
-                                            FontSize="10"
-                                            FontWeight="SemiBold"
-                                            Foreground="{ThemeResource AccentTeal}"
-                                            Text="{x:Bind ProgressText, Mode=OneWay}"
-                                            TextAlignment="Right" />
-                                        <TextBlock
-                                            Grid.Column="2"
-                                            VerticalAlignment="Center"
-                                            FontFamily="Cascadia Mono, Consolas"
-                                            FontSize="9.5"
-                                            Foreground="{ThemeResource TextFaint}"
-                                            Text="{x:Bind DetailText, Mode=OneWay}"
-                                            TextTrimming="CharacterEllipsis" />
+                                        <ProgressBar Width="56" VerticalAlignment="Center" Maximum="1"
+                                                     Value="{x:Bind Progress, Mode=OneWay}" />
+                                        <TextBlock Grid.Column="1" MinWidth="38" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="{ThemeResource AccentTeal}"
+                                                   Text="{x:Bind ProgressText, Mode=OneWay}" TextAlignment="Right" />
+                                        <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="9.5"
+                                                   Foreground="{ThemeResource TextFaint}"
+                                                   Text="{x:Bind DetailText, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                                     </Grid>
                                 </Grid>
                             </DataTemplate>
@@ -418,13 +490,8 @@
             </StackPanel>
         </Border>
 
-        <TextBlock
-            x:Name="StatusText"
-            Grid.Row="4"
-            Margin="4,0"
-            FontSize="10.5"
-            Foreground="{ThemeResource StatusRed}"
-            TextWrapping="Wrap"
-            Visibility="Collapsed" />
+        <TextBlock x:Name="StatusText" Grid.Row="3" Margin="4,0" FontSize="10.5"
+                   AutomationProperties.LiveSetting="Polite"
+                   Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap" Visibility="Collapsed" />
     </Grid>
 </UserControl>
