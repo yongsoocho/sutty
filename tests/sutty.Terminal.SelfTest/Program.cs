@@ -191,6 +191,17 @@ static void VerifyPackagedRenderer()
            bridge.Contains("writeComplete", StringComparison.Ordinal) &&
            bridge.Contains("ResizeObserver", StringComparison.Ordinal),
         "terminal bridge covers input, output acknowledgement, and resize");
+    Assert(bridge.Contains("type: 'appShortcut'", StringComparison.Ordinal) &&
+           bridge.Contains("action: 'navigate'", StringComparison.Ordinal) &&
+           bridge.Contains("action = 'selectTab'", StringComparison.Ordinal) &&
+           bridge.Contains("action = 'newTab'", StringComparison.Ordinal) &&
+           bridge.Contains("action = 'settings'", StringComparison.Ordinal) &&
+           bridge.Contains("event.preventDefault()", StringComparison.Ordinal) &&
+           bridge.Contains("document.addEventListener('keydown', handleAppShortcut, true)", StringComparison.Ordinal) &&
+           bridge.Contains("/^Digit([1-7])$/", StringComparison.Ordinal) &&
+           bridge.Contains("/^Digit([1-9])$/", StringComparison.Ordinal) &&
+           !bridge.Contains("/^Numpad([1-7])$/", StringComparison.Ordinal),
+        "terminal bridge captures documented Alt and Ctrl application shortcuts for all WebView focus targets without intercepting AltGr or numpad input");
 
     // Git may materialize text assets with CRLF on Windows. Pin the reviewed content
     // independently of that checkout-only line-ending conversion.

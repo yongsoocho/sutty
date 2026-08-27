@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="sutty.UI.Views.SessionWorkspaceView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:h="using:sutty.UI.Helpers"
+    xmlns:local="using:sutty.UI.Views"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Background="{ThemeResource PanelBg}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="52" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border
+            Grid.Row="0"
+            Padding="16,7"
+            Background="{ThemeResource AppBg}"
+            BorderBrush="{ThemeResource ShellBorder}"
+            BorderThickness="0,0,0,1">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Spacing="1">
+                    <TextBlock
+                        FontSize="13"
+                        FontWeight="SemiBold"
+                        Foreground="{ThemeResource TextPrimary}"
+                        Text="{x:Bind ViewModel.DisplayName}" />
+                    <TextBlock
+                        AutomationProperties.Name="{x:Bind ViewModel.ConnectionIdentity}"
+                        FontFamily="Cascadia Mono, Consolas"
+                        FontSize="10.5"
+                        Foreground="{ThemeResource TextMuted}"
+                        Text="{x:Bind ViewModel.ConnectionIdentity}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                    <ToggleButton
+                        x:Name="TerminalButton"
+                        MinHeight="34"
+                        Padding="12,5"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('세션 터미널', 'Session terminal')}"
+                        Click="TerminalButton_Click"
+                        Content="{x:Bind h:Loc.T('터미널', 'Terminal')}"
+                        ToolTipService.ToolTip="Alt+6" />
+                    <ToggleButton
+                        x:Name="FilesButton"
+                        MinHeight="34"
+                        Padding="12,5"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('세션 파일', 'Session files')}"
+                        Click="FilesButton_Click"
+                        Content="{x:Bind h:Loc.T('파일', 'Files')}"
+                        ToolTipService.ToolTip="Alt+7" />
+                    <ToggleButton
+                        x:Name="CommandsButton"
+                        MinHeight="34"
+                        Padding="12,5"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('세션 명령', 'Session commands')}"
+                        Click="CommandsButton_Click"
+                        Content="{x:Bind h:Loc.T('명령', 'Commands')}"
+                        ToolTipService.ToolTip="{x:Bind h:Loc.T('저장 명령과 구조화된 실행 결과', 'Saved commands and structured results')}" />
+                    <ToggleButton
+                        x:Name="TunnelsButton"
+                        MinHeight="34"
+                        Padding="12,5"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('세션 터널', 'Session tunnels')}"
+                        Click="TunnelsButton_Click"
+                        Content="{x:Bind h:Loc.T('터널', 'Tunnels')}"
+                        ToolTipService.ToolTip="{x:Bind h:Loc.T('이 세션의 포트 포워딩', 'Port forwarding for this session')}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid x:Name="InteractivePane">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="CommandLibraryColumn" Width="0" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border
+                    x:Name="CommandLibraryHost"
+                    Grid.Column="0"
+                    Padding="14"
+                    Background="{ThemeResource SidePanelBg}"
+                    BorderBrush="{ThemeResource ShellBorder}"
+                    BorderThickness="0,0,1,0"
+                    Visibility="Collapsed">
+                    <local:CommandPanel x:Name="CommandLibrary" />
+                </Border>
+                <ContentControl
+                    x:Name="SessionContent"
+                    Grid.Column="1"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch" />
+            </Grid>
+
+            <local:FileTreePanel
+                x:Name="FilesPanel"
+                Padding="16"
+                Visibility="Collapsed" />
+
+            <ScrollViewer x:Name="TunnelsPane" Visibility="Collapsed">
+                <StackPanel MaxWidth="840" Padding="28" Spacing="14">
+                    <StackPanel Spacing="3">
+                        <TextBlock
+                            FontSize="18"
+                            FontWeight="SemiBold"
+                            Text="{x:Bind h:Loc.T('세션 터널', 'Session tunnels')}" />
+                        <TextBlock
+                            Foreground="{ThemeResource TextMuted}"
+                            Text="{x:Bind h:Loc.T('이 연결에 구성된 포트 포워딩 규칙입니다.', 'Port forwarding rules configured for this connection.')}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                    <ItemsControl x:Name="TunnelsList" ItemsSource="{x:Bind Tunnels}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border
+                                    Margin="0,0,0,8"
+                                    Padding="14,11"
+                                    Background="{ThemeResource CardBg}"
+                                    BorderBrush="{ThemeResource CardBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                    <TextBlock
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="12"
+                                        IsTextSelectionEnabled="True"
+                                        Text="{Binding}"
+                                        TextWrapping="Wrap" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock
+                        x:Name="NoTunnelsState"
+                        Margin="0,24,0,0"
+                        HorizontalAlignment="Center"
+                        AutomationProperties.LiveSetting="Polite"
+                        Foreground="{ThemeResource TextMuted}"
+                        Text="{x:Bind h:Loc.T('이 세션에는 구성된 터널이 없습니다.', 'This session has no configured tunnels.')}" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -1,4 +1,5 @@
 using sutty.Core.Sftp;
+using System.Collections.Concurrent;
 
 Assert(RemotePath.Normalize(@"/srv/a\b") == @"/srv/a\b",
     "POSIX backslash filename is preserved");
@@ -327,6 +328,8 @@ try
                 SourcePath = source,
                 DestinationPath = "/deploy/source.txt",
                 State = SftpQueueTargetState.Succeeded,
+                BytesTransferred = 100,
+                TotalBytes = 100,
             },
             new SftpQueuedTarget
             {
@@ -335,6 +338,7 @@ try
                 SourcePath = source,
                 DestinationPath = "/deploy/source.txt",
                 State = SftpQueueTargetState.Running,
+                TotalBytes = 100,
             },
         ],
     };
@@ -358,6 +362,8 @@ try
         "restart recovery selects interrupted servers only");
     Assert(recovered.Options.ConflictPolicy == SftpConflictPolicy.Rename,
         "durable transfer queue preserves the per-job conflict policy");
+    Assert(SftpTransferQueueStore.GetProgressPercentage(recovered) == 50,
+        "durable transfer progress projects byte counters across targets");
     Assert(!File.ReadAllText(queuePath).Contains("password", StringComparison.OrdinalIgnoreCase),
         "durable transfer queue contains no credentials");
 
@@ -366,6 +372,91 @@ try
     Assert(paused.State == SftpQueueJobState.Paused &&
            SftpTransferQueueStore.GetRetryTargetIds(paused).SetEquals(["saved-beta"]),
         "paused transfer remains durable and is explicitly resumable");
+
+    Assert(queue.TryAcquireRetryTargetLease(
+               queuedJob.Id, "saved-beta", "files-panel-one", out var firstLease) &&
+           firstLease is not null,
+        "first files panel atomically claims a queued target");
+    Assert(!queue.TryAcquireRetryTargetLease(
+               queuedJob.Id, "saved-beta", "files-panel-one", out var duplicateLease) &&
+           duplicateLease is null,
+        "one files panel cannot claim the same queued target twice");
+    var secondQueueReader = new SftpTransferQueueStore(queuePath);
+    Assert(!secondQueueReader.TryAcquireRetryTargetLease(
+               queuedJob.Id, "saved-beta", "files-panel-two", out var competingLease) &&
+           competingLease is null,
+        "queue readers in the same process share target leases");
+    Assert(!File.ReadAllText(queuePath).Contains("files-panel-one", StringComparison.Ordinal),
+        "in-process target lease owner is never persisted");
+    firstLease!.Dispose();
+    Assert(secondQueueReader.TryAcquireRetryTargetLease(
+               queuedJob.Id, "saved-beta", "files-panel-two", out var releasedLease) &&
+           releasedLease is not null,
+        "disposing a target lease makes the target claimable again");
+    firstLease.Dispose();
+    Assert(!queue.TryAcquireRetryTargetLease(
+               queuedJob.Id, "saved-beta", "files-panel-three", out var staleReleaseLease) &&
+           staleReleaseLease is null,
+        "disposing a stale lease twice cannot release the current owner");
+    releasedLease!.Dispose();
+
+    var concurrentLeases = new ConcurrentBag<IDisposable>();
+    Parallel.For(0, 32, contender =>
+    {
+        if (queue.TryAcquireRetryTargetLease(
+                queuedJob.Id,
+                "saved-beta",
+                $"parallel-files-panel-{contender}",
+                out var concurrentLease))
+        {
+            concurrentLeases.Add(concurrentLease!);
+        }
+    });
+    Assert(concurrentLeases.Count == 1,
+        "parallel files panels produce exactly one queued-target lease winner");
+    foreach (var concurrentLease in concurrentLeases)
+        concurrentLease.Dispose();
+
+    queue.UpdateTarget(queuedJob.Id, "saved-beta", SftpQueueTargetState.Succeeded);
+    Assert(SftpTransferQueueStore.GetProgressPercentage(queue.Get(queuedJob.Id)!) == 100,
+        "a completed durable job is always presented as 100 percent");
+    Assert(!queue.TryAcquireRetryTargetLease(
+               queuedJob.Id, "saved-beta", "stale-files-panel", out var completedLease) &&
+           completedLease is null,
+        "a stale files panel cannot claim a target completed by another panel");
+
+    queue.UpdateTarget(queuedJob.Id, "saved-beta", SftpQueueTargetState.Cancelled);
+    Assert(SftpTransferQueueStore.GetRetryTargetIds(queue.Get(queuedJob.Id)!)
+            .Contains("saved-beta"),
+        "an explicitly cancelled target remains eligible for a user retry");
+    Assert(queue.TryAcquireRetryTargetLease(
+               queuedJob.Id, "saved-beta", "cancelled-target-retry", out var cancelledLease) &&
+           cancelledLease is not null,
+        "retry lease policy matches cancelled-target retry selection");
+    cancelledLease!.Dispose();
+
+    var cancelledOnlyJob = queuedJob with
+    {
+        Id = "cancelled-only-job",
+        State = SftpQueueJobState.Cancelled,
+        Targets =
+        [
+            queuedJob.Targets[1] with
+            {
+                Id = "cancelled-only-target",
+                State = SftpQueueTargetState.Cancelled,
+            },
+        ],
+    };
+    queue.Upsert(cancelledOnlyJob);
+    Assert(queue.TryAcquireRetryTargetLease(
+               cancelledOnlyJob.Id,
+               "cancelled-only-target",
+               "cancelled-job-retry",
+               out var cancelledJobLease) &&
+           cancelledJobLease is not null,
+        "an entirely cancelled durable job remains claimable for explicit retry");
+    cancelledJobLease!.Dispose();
 
     var cancelledPath = Path.Combine(downloads, "cancelled.txt");
     using var cancelled = new CancellationTokenSource();

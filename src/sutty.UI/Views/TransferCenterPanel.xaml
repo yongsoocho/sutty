@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="sutty.UI.Views.TransferCenterPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:h="using:sutty.UI.Helpers"
+    xmlns:local="using:sutty.UI.Views"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Loaded="TransferCenterPanel_Loaded"
+    mc:Ignorable="d">
+
+    <Grid Padding="20" RowSpacing="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="3">
+                <TextBlock
+                    FontSize="20"
+                    FontWeight="SemiBold"
+                    Foreground="{ThemeResource TextPrimary}"
+                    Text="{x:Bind h:Loc.T('전송', 'Transfers')}" />
+                <TextBlock
+                    FontSize="11"
+                    Foreground="{ThemeResource TextMuted}"
+                    Text="{x:Bind h:Loc.T('저장된 전송 작업의 읽기 전용 스냅샷입니다. 새로 고침하면 최신 상태를 다시 읽습니다.', 'A read-only snapshot of saved transfer jobs. Refresh to read the latest state.')}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+            <Button
+                Grid.Column="1"
+                MinWidth="92"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="{x:Bind h:Loc.T('전송 목록 새로 고침', 'Refresh transfer list')}"
+                Click="Refresh_Click"
+                Content="{x:Bind h:Loc.T('새로 고침', 'Refresh')}"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('저장된 전송 큐를 다시 읽습니다.', 'Read the saved transfer queue again.')}" />
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ComboBox
+                x:Name="StateFilter"
+                MinWidth="164"
+                AutomationProperties.Name="{x:Bind h:Loc.T('전송 상태 필터', 'Transfer state filter')}"
+                SelectedIndex="0"
+                SelectionChanged="StateFilter_SelectionChanged">
+                <ComboBoxItem Content="{x:Bind h:Loc.T('모든 상태', 'All states')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('진행 및 복구 필요', 'Active and recoverable')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('실패', 'Failed')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('완료', 'Completed')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('취소됨', 'Cancelled')}" />
+            </ComboBox>
+            <TextBlock
+                x:Name="SnapshotTimeText"
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                FontSize="10.5"
+                Foreground="{ThemeResource TextFaint}"
+                TextTrimming="CharacterEllipsis" />
+            <TextBlock
+                x:Name="CountText"
+                Grid.Column="2"
+                VerticalAlignment="Center"
+                FontFamily="Cascadia Mono, Consolas"
+                FontSize="10.5"
+                Foreground="{ThemeResource TextFaint}" />
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <ListView
+                x:Name="TransferList"
+                AutomationProperties.Name="{x:Bind h:Loc.T('저장된 전송 작업', 'Saved transfer jobs')}"
+                Background="Transparent"
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind Items}"
+                SelectionMode="None">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Margin" Value="0,0,0,9" />
+                        <Setter Property="Padding" Value="0" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="local:TransferCenterItemVm">
+                        <Border
+                            Padding="13"
+                            Background="{ThemeResource CardBg}"
+                            BorderBrush="{ThemeResource CardBorder}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                            <Grid RowSpacing="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Grid ColumnSpacing="9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon
+                                        VerticalAlignment="Center"
+                                        FontSize="17"
+                                        Foreground="{ThemeResource AccentTeal}"
+                                        Glyph="{x:Bind DirectionGlyph}" />
+                                    <StackPanel Grid.Column="1" Spacing="1">
+                                        <TextBlock
+                                            FontSize="12.5"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource TextPrimary}"
+                                            Text="{x:Bind Name}"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <TextBlock
+                                            FontSize="10.5"
+                                            Foreground="{ThemeResource TextMuted}"
+                                            Text="{x:Bind TargetText}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <Border
+                                        Grid.Column="2"
+                                        Padding="8,2"
+                                        VerticalAlignment="Center"
+                                        Background="{ThemeResource PillBg}"
+                                        CornerRadius="9">
+                                        <TextBlock
+                                            FontSize="10"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource TextPrimary}"
+                                            Text="{x:Bind StateText}" />
+                                    </Border>
+                                </Grid>
+
+                                <TextBlock
+                                    Grid.Row="1"
+                                    FontFamily="Cascadia Mono, Consolas"
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind PathText}"
+                                    TextTrimming="CharacterEllipsis"
+                                    ToolTipService.ToolTip="{x:Bind PathText}" />
+
+                                <Grid Grid.Row="2" ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ProgressBar
+                                        Height="4"
+                                        VerticalAlignment="Center"
+                                        IsIndeterminate="{x:Bind IsIndeterminate}"
+                                        Maximum="100"
+                                        Value="{x:Bind ProgressPercent}"
+                                        Visibility="{x:Bind ProgressVisibility}" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        MinWidth="54"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="10"
+                                        Foreground="{ThemeResource TextFaint}"
+                                        Text="{x:Bind ProgressText}" />
+                                </Grid>
+
+                                <Grid Grid.Row="3" ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock
+                                        MaxLines="2"
+                                        FontSize="10.5"
+                                        Foreground="{ThemeResource StatusRed}"
+                                        Text="{x:Bind ErrorText}"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="Wrap"
+                                        Visibility="{x:Bind ErrorVisibility}" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        HorizontalAlignment="Right"
+                                        FontSize="10"
+                                        Foreground="{ThemeResource TextFaint}"
+                                        Text="{x:Bind UpdatedText}" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <StackPanel
+                x:Name="EmptyState"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="8">
+                <FontIcon
+                    HorizontalAlignment="Center"
+                    FontSize="30"
+                    Foreground="{ThemeResource TextFaint}"
+                    Glyph="&#xE896;" />
+                <TextBlock
+                    x:Name="EmptyStateText"
+                    HorizontalAlignment="Center"
+                    FontSize="11.5"
+                    Foreground="{ThemeResource TextMuted}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

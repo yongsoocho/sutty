@@ -70,7 +70,7 @@ public sealed class AppSettings
     /// <summary>Home 연결 태그 입력 시 제안할 최근 태그.</summary>
     public List<string> RecentConnectionTags { get; set; } = [];
 
-    private string _terminalMode = "Repl";
+    private string _terminalMode = "Terminal";
 
     /// <summary>
     /// 터미널 표시 방식: "Repl"(구조화된 셀) 또는 "Terminal"(대화형 PTY).

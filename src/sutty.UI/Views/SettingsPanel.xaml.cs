@@ -110,7 +110,13 @@ namespace sutty.UI.Views
             CursorBlinkToggle.IsOn = settings.TerminalCursorBlink;
             ScreenReaderToggle.IsOn = settings.TerminalScreenReaderMode;
             LoadShellProfileToggle.IsOn = settings.LoadLocalShellProfile;
-            TerminalModeRadios.SelectedIndex = settings.TerminalMode == "Terminal" ? 1 : 0;
+            TerminalModeRadios.SelectedItem = TerminalModeRadios.Items
+                .OfType<RadioButton>()
+                .FirstOrDefault(item => string.Equals(
+                    item.Tag as string,
+                    settings.TerminalMode,
+                    StringComparison.Ordinal))
+                ?? TerminalModeRadios.Items[0];
             StructuredHighlightToggle.IsOn = settings.EnableStructuredTextHighlighting;
             SeverityHighlightToggle.IsOn = settings.EnableSeverityHighlighting;
             CommandSuggestionToggle.IsOn = settings.EnableCommandSuggestions;
@@ -142,8 +148,6 @@ namespace sutty.UI.Views
 
             MainWidthBox.Value = PositiveOrNaN(settings.MainWindowWidth);
             MainHeightBox.Value = PositiveOrNaN(settings.MainWindowHeight);
-            SettingWidthBox.Value = PositiveOrNaN(settings.SettingWindowWidth);
-            SettingHeightBox.Value = PositiveOrNaN(settings.SettingWindowHeight);
             PanelWidthBox.Value = PositiveOrNaN(settings.RightPanelWidth);
 
             ReleaseVersionText.Text = AppReleaseInfo.DisplayVersion;
@@ -206,17 +210,42 @@ namespace sutty.UI.Views
             if (args.SelectedItem is not NavigationViewItem item)
                 return;
 
-            var tag = item.Tag as string;
+            ShowSection(item.Tag as string);
+        }
+
+        public void NavigateToSection(string section, bool showAdvancedLogs = false)
+        {
+            var tag = string.Equals(section, "Support", StringComparison.Ordinal)
+                ? "Troubleshooting"
+                : section;
+            var item = SettingsNav.MenuItems
+                .OfType<NavigationViewItem>()
+                .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, tag, StringComparison.Ordinal));
+            if (item is null)
+                return;
+            if (showAdvancedLogs && string.Equals(tag, "Troubleshooting", StringComparison.Ordinal))
+                RawLogsExpander.IsExpanded = true;
+            if (ReferenceEquals(SettingsNav.SelectedItem, item))
+                ShowSection(tag);
+            else
+                SettingsNav.SelectedItem = item;
+        }
+
+        private void ShowSection(string? tag)
+        {
             AppearancePane.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
             TerminalPane.Visibility = tag == "Terminal" ? Visibility.Visible : Visibility.Collapsed;
             ConnectionPane.Visibility = tag == "Connection" ? Visibility.Visible : Visibility.Collapsed;
             SecurityPane.Visibility = tag == "Security" ? Visibility.Visible : Visibility.Collapsed;
-            SupportPane.Visibility = tag == "Support" ? Visibility.Visible : Visibility.Collapsed;
+            SupportPane.Visibility = tag == "Troubleshooting" ? Visibility.Visible : Visibility.Collapsed;
             WindowPane.Visibility = tag == "Window" ? Visibility.Visible : Visibility.Collapsed;
             AboutPane.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
 
-            if (tag == "Support")
+            if (tag == "Troubleshooting")
+            {
+                ConnectionLogsPanel.RefreshLanguage();
                 SupportBundlePanel.RefreshTargets();
+            }
         }
 
         private void ThemeRadios_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -269,7 +298,9 @@ namespace sutty.UI.Views
                 return;
 
             SettingsService.Current.TerminalMode =
-                TerminalModeRadios.SelectedIndex == 1 ? "Terminal" : "Repl";
+                (TerminalModeRadios.SelectedItem as RadioButton)?.Tag as string == "Terminal"
+                    ? "Terminal"
+                    : "Repl";
             CommitChangesNow(SettingChangeKind.TerminalMode);
         }
 
@@ -587,8 +618,6 @@ namespace sutty.UI.Views
             else if (ReferenceEquals(sender, HistoryTopHostCountBox)) settings.HistoryTopHostCount = value;
             else if (ReferenceEquals(sender, MainWidthBox)) settings.MainWindowWidth = value;
             else if (ReferenceEquals(sender, MainHeightBox)) settings.MainWindowHeight = value;
-            else if (ReferenceEquals(sender, SettingWidthBox)) settings.SettingWindowWidth = value;
-            else if (ReferenceEquals(sender, SettingHeightBox)) settings.SettingWindowHeight = value;
             else if (ReferenceEquals(sender, PanelWidthBox)) settings.RightPanelWidth = value;
 
             var kind = ReferenceEquals(sender, FontSizeBox) || ReferenceEquals(sender, ScrollbackBox)
@@ -645,6 +674,7 @@ namespace sutty.UI.Views
             {
                 Bindings.Update();
                 KnownHostsPanel.RefreshLanguage();
+                ConnectionLogsPanel.RefreshLanguage();
                 SupportBundlePanel.RefreshLanguage();
             }
 

@@ -50,8 +50,8 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition
                 x:Name="RightPanelColumn"
-                Width="316"
-                MinWidth="300"
+                Width="0"
+                MinWidth="0"
                 MaxWidth="800" />
         </Grid.ColumnDefinitions>
 
@@ -109,72 +109,60 @@
                 SelectionChanged="LeftNav_SelectionChanged">
                 <NavigationView.MenuItems>
                     <NavigationViewItem
+                        AutomationProperties.Name="{x:Bind h:Loc.T('홈', 'Home')}"
                         Content="Home"
                         Style="{StaticResource CompactRailItem}"
-                        Tag="Home">
+                        Tag="Home"
+                        ToolTipService.ToolTip="Alt+1 · Home">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE80F;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
                     <NavigationViewItem
-                        Content="Search"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('호스트', 'Hosts')}"
+                        Content="Hosts"
                         Style="{StaticResource CompactRailItem}"
-                        Tag="Search">
+                        Tag="Hosts"
+                        ToolTipService.ToolTip="Alt+2 · Hosts">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE721;" Style="{StaticResource CompactRailIcon}" />
+                            <FontIcon Glyph="&#xE968;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
                     <NavigationViewItem
-                        Content="Folder"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('전송', 'Transfers')}"
+                        Content="Transfers"
                         Style="{StaticResource CompactRailItem}"
-                        Tag="Folder">
+                        Tag="Transfers"
+                        ToolTipService.ToolTip="Alt+3 · Transfers">
                         <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE8B7;" Style="{StaticResource CompactRailIcon}" />
+                            <FontIcon Glyph="&#xE898;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
-                    <!--  Command: 자주 쓰는 명령어 playbook (디자인: 번개 아이콘)  -->
                     <NavigationViewItem
-                        Content="Command"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('명령', 'Commands')}"
+                        Content="Commands"
                         Style="{StaticResource CompactRailItem}"
-                        Tag="Command">
+                        Tag="Commands"
+                        ToolTipService.ToolTip="Alt+4 · Commands">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE945;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
 
-                    <!--  Multi: 여러 세션에 동시에 명령 브로드캐스트  -->
                     <NavigationViewItem
-                        Content="Multi"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('설정', 'Settings')}"
+                        Content="Settings"
                         Style="{StaticResource CompactRailItem}"
-                        Tag="Multi">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE8A9;" Style="{StaticResource CompactRailIcon}" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
-
-                    <NavigationViewItem
-                        Content="{x:Bind h:Loc.T('로그', 'Logs')}"
-                        Style="{StaticResource CompactRailItem}"
-                        Tag="Logs">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE9D9;" Style="{StaticResource CompactRailIcon}" />
-                        </NavigationViewItem.Icon>
-                    </NavigationViewItem>
-                </NavigationView.MenuItems>
-                <NavigationView.FooterMenuItems>
-                    <NavigationViewItem
-                        Content="Setting"
-                        SelectsOnInvoked="False"
-                        Style="{StaticResource CompactRailItem}"
-                        Tag="Setting">
+                        Tag="Settings"
+                        ToolTipService.ToolTip="Alt+5 · Settings">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE713;" Style="{StaticResource CompactRailIcon}" />
                         </NavigationViewItem.Icon>
                     </NavigationViewItem>
-                </NavigationView.FooterMenuItems>
+                </NavigationView.MenuItems>
             </NavigationView>
 
             <!--
@@ -213,6 +201,32 @@
                 SelectionChanged="TitleTabs_SelectionChanged"
                 TabCloseRequested="TitleTabs_TabCloseRequested"
                 TabWidthMode="SizeToContent">
+                <TabView.Resources>
+                    <MenuFlyout x:Name="NewTabMenu" Placement="BottomEdgeAlignedLeft">
+                        <MenuFlyoutItem
+                            AutomationProperties.Name="{x:Bind h:Loc.T('새 SSH 연결', 'New SSH connection')}"
+                            Click="NewSshConnection_Click"
+                            FontWeight="SemiBold"
+                            Icon="Add"
+                            Text="{x:Bind h:Loc.T('새 SSH 연결', 'New SSH connection')}" />
+                        <MenuFlyoutItem
+                            AutomationProperties.Name="{x:Bind h:Loc.T('저장 호스트 열기', 'Open saved host')}"
+                            Click="OpenSavedHost_Click"
+                            Icon="OpenFile"
+                            Text="{x:Bind h:Loc.T('저장 호스트 열기', 'Open saved host')}" />
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem
+                            AutomationProperties.Name="{x:Bind h:Loc.T('로컬 PowerShell', 'Local PowerShell')}"
+                            Click="OpenLocalPowerShell_Click"
+                            Icon="CommandPrompt"
+                            Text="{x:Bind h:Loc.T('로컬 PowerShell', 'Local PowerShell')}" />
+                        <MenuFlyoutItem
+                            AutomationProperties.Name="{x:Bind h:Loc.T('호스트 가져오기', 'Import hosts')}"
+                            Click="ImportHosts_Click"
+                            Icon="Upload"
+                            Text="{x:Bind h:Loc.T('호스트 가져오기', 'Import hosts')}" />
+                    </MenuFlyout>
+                </TabView.Resources>
                 <TabView.TabStripHeader>
                     <!--
                         Chrome keeps a selected tab in the strip even on its start page.
@@ -225,7 +239,7 @@
                         Height="32"
                         Margin="2,6,0,0"
                         VerticalAlignment="Bottom"
-                        AutomationProperties.Name="New tab"
+                        AutomationProperties.Name="New SSH connection"
                         Background="{ThemeResource PanelBg}"
                         BorderBrush="{ThemeResource ShellBorder}"
                         BorderThickness="1,1,1,0"
@@ -246,23 +260,28 @@
                                 FontSize="12"
                                 FontWeight="SemiBold"
                                 Foreground="{ThemeResource TextPrimary}"
-                                Text="{x:Bind h:Loc.T('새 탭', 'New tab')}" />
+                                Text="{x:Bind h:Loc.T('새 SSH 연결', 'New SSH')}" />
                             <TextBlock
                                 VerticalAlignment="Center"
                                 FontSize="10.5"
                                 Foreground="{ThemeResource TextFaint}"
-                                Text="PowerShell" />
+                                Text="SSH / SFTP" />
                         </StackPanel>
                     </Border>
                 </TabView.TabStripHeader>
             </TabView>
 
-            <!--  Main Content: 선택된 탭의 SessionView (Multi 모드에서는 4×4 그리드)  -->
+            <!--  Main Content: global pages or the selected session workspace.  -->
             <Grid Grid.Row="1" Background="{ThemeResource PanelBg}">
+                <ContentControl
+                    x:Name="GlobalPageHost"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch" />
                 <ContentControl
                     x:Name="SessionHost"
                     HorizontalContentAlignment="Stretch"
-                    VerticalContentAlignment="Stretch" />
+                    VerticalContentAlignment="Stretch"
+                    Visibility="Collapsed" />
                 <local:MultiSessionGrid x:Name="MultiGrid" Visibility="Collapsed" />
                 <StackPanel
                     x:Name="NoSessionState"
@@ -278,18 +297,19 @@
                         HorizontalAlignment="Center"
                         Foreground="{ThemeResource TextMuted}"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
-                        Text="{x:Bind h:Loc.T('활성 탭 없음', 'No active tabs')}" />
+                        Text="{x:Bind h:Loc.T('연결된 세션이 없습니다', 'No connected sessions')}" />
                     <TextBlock
                         HorizontalAlignment="Center"
                         FontSize="12"
                         Foreground="{ThemeResource TextMuted}"
-                        Text="{x:Bind h:Loc.T('Home에서 SSH에 연결하거나 +로 로컬 PowerShell을 여세요 (최대 16개)', 'Connect to SSH from Home or use + for local PowerShell (max 16)')}" />
+                        Text="{x:Bind h:Loc.T('Home에서 SSH 연결을 시작하세요.', 'Start an SSH connection from Home.')}" />
                 </StackPanel>
             </Grid>
         </Grid>
 
         <!--  ── Column 2: 오른쪽 패널 크기 조절 스플리터 ──  -->
         <sizers:GridSplitter
+            x:Name="RightPanelSplitter"
             Grid.Column="1"
             Width="8"
             Margin="0,38,-4,0"
@@ -298,10 +318,11 @@
             Background="Transparent"
             Canvas.ZIndex="10"
             ResizeBehavior="CurrentAndNext"
-            ResizeDirection="Columns" />
+            ResizeDirection="Columns"
+            Visibility="Collapsed" />
 
         <!--  ── Column 3: Right Panel ──  -->
-        <Grid x:Name="RightPanelHost" Grid.Column="2">
+        <Grid x:Name="RightPanelHost" Grid.Column="2" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="38" />
                 <RowDefinition Height="*" />

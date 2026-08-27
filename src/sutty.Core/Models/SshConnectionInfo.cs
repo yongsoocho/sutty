@@ -111,4 +111,19 @@ public sealed class SshConnectionInfo
         !string.IsNullOrWhiteSpace(DisplayName) ? DisplayName
         : string.IsNullOrWhiteSpace(Username) ? Host
         : $"{Username}@{Host}";
+
+    /// <summary>
+    /// Clears transient authentication values after any normal, failed, cancelled, or
+    /// preflight-only connection path. Safe to call repeatedly.
+    /// </summary>
+    public void ClearTransientSecrets()
+    {
+        Password = "";
+        Passphrase = "";
+        if (Route is not null)
+        {
+            Route.Password = "";
+            Route.Passphrase = "";
+        }
+    }
 }

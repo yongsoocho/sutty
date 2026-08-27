@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using sutty.Core.Models;
 using sutty.Core.Routing;
 using sutty.Setting;
@@ -8,10 +9,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
 namespace sutty.UI.Views;
+
+public delegate Task HomeConnectRequestedEventHandler(object? sender, SshConnectionInfo info);
 
 /// <summary>Creates a real SSH/SFTP connection and optionally saves a reusable host profile.</summary>
 public sealed partial class HomePanel : UserControl
@@ -24,8 +28,9 @@ public sealed partial class HomePanel : UserControl
     private SshAuthMethod _authMethod = SshAuthMethod.Password;
     private string? _savedHostId;
     private string? _credentialId;
+    private bool _connectInFlight;
 
-    public event EventHandler<SshConnectionInfo>? ConnectRequested;
+    public event HomeConnectRequestedEventHandler? ConnectRequested;
     public IntPtr OwnerWindowHandle { get; set; }
     public ObservableCollection<string> Tags { get; } = [];
 
@@ -146,6 +151,12 @@ public sealed partial class HomePanel : UserControl
             Tags.Add(tag);
         }
 
+        OrganizationExpander.IsExpanded = draft.SaveProfile ||
+            _savedHostId is not null ||
+            !string.IsNullOrWhiteSpace(draft.DisplayName) ||
+            !string.IsNullOrWhiteSpace(draft.GroupName) ||
+            Tags.Count > 0 ||
+            draft.IsFavorite;
         AddTagButton.IsEnabled = Tags.Count < MaxConnectionTags;
         UpdateAuthUi();
 
@@ -173,6 +184,7 @@ public sealed partial class HomePanel : UserControl
             return;
 
         _authMethod = requested;
+        ClearFormStatus();
         if (_authMethod == SshAuthMethod.PublicKey &&
             string.IsNullOrWhiteSpace(KeyPathBox.Text) && _keyPathHistory.Count > 0)
         {
@@ -217,8 +229,26 @@ public sealed partial class HomePanel : UserControl
         RefreshProxyCommandPreview();
     }
 
+    /// <summary>Moves keyboard focus to the first Quick Connect field.</summary>
+    public void FocusHost() => HostBox.Focus(FocusState.Programmatic);
+
+    /// <summary>
+    /// Clears every transient authentication value before the cached Home surface is
+    /// hidden. Non-secret connection fields remain available for the user's draft.
+    /// </summary>
+    public void ClearTransientSecrets()
+    {
+        PasswordBox.Password = "";
+        PassphraseBox.Password = "";
+        ProxyPasswordBox.Password = "";
+        JumpPassphraseBox.Password = "";
+    }
+
     private void ProxyCommandInput_TextChanged(object sender, TextChangedEventArgs e)
-        => RefreshProxyCommandPreview();
+    {
+        ClearFormStatus();
+        RefreshProxyCommandPreview();
+    }
 
     private void RefreshProxyCommandPreview()
     {
@@ -396,7 +426,10 @@ public sealed partial class HomePanel : UserControl
     private void KeyPathBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+        {
+            ClearFormStatus();
             UpdateKeyPathSuggestions(sender.Text);
+        }
     }
 
     private void KeyPathBox_SuggestionChosen(
@@ -513,30 +546,67 @@ public sealed partial class HomePanel : UserControl
         PersistSettings();
     }
 
-    private void Connect_Click(object sender, RoutedEventArgs e)
+    private async void Connect_Click(object sender, RoutedEventArgs e)
+        => await SubmitConnectionAsync();
+
+    private async void QuickConnectInput_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (e.Key != Windows.System.VirtualKey.Enter || _connectInFlight)
+            return;
+
+        // The first Enter accepts an open private-key suggestion. A subsequent Enter
+        // submits, matching ordinary TextBox and PasswordBox behaviour without racing
+        // AutoSuggestBox's own selection handling.
+        if (sender is AutoSuggestBox { IsSuggestionListOpen: true })
+            return;
+
+        e.Handled = true;
+        await SubmitConnectionAsync();
+    }
+
+    private void SecretInput_PasswordChanged(object sender, RoutedEventArgs e)
+        => ClearFormStatus();
+
+    private async Task SubmitConnectionAsync()
+    {
+        if (_connectInFlight)
+            return;
+
+        ClearFormStatus();
         var host = HostBox.Text.Trim();
         if (host.Length == 0)
         {
-            HostBox.Focus(FocusState.Programmatic);
+            ShowFormError(
+                HostBox,
+                "서버 주소를 입력하세요.",
+                "Enter a server address.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(UsernameBox.Text))
         {
-            UsernameBox.Focus(FocusState.Programmatic);
+            ShowFormError(
+                UsernameBox,
+                "사용자 이름을 입력하세요.",
+                "Enter a user name.");
             return;
         }
 
         if (!int.TryParse(PortBox.Text, out var port) || port is < 1 or > 65535)
         {
-            PortBox.Focus(FocusState.Programmatic);
+            ShowFormError(
+                PortBox,
+                "SSH 포트는 1~65535 사이여야 합니다.",
+                "SSH port must be between 1 and 65535.");
             return;
         }
 
         if (_authMethod == SshAuthMethod.PublicKey && string.IsNullOrWhiteSpace(KeyPathBox.Text))
         {
-            KeyPathBox.Focus(FocusState.Programmatic);
+            ShowFormError(
+                KeyPathBox,
+                "개인 키 파일을 선택하세요.",
+                "Choose a private-key file.");
             return;
         }
 
@@ -679,7 +749,7 @@ public sealed partial class HomePanel : UserControl
 
         SettingsSaveStatusText.Visibility = Visibility.Collapsed;
 
-        ConnectRequested?.Invoke(this, new SshConnectionInfo
+        var info = new SshConnectionInfo
         {
             Host = host,
             Port = port,
@@ -729,7 +799,71 @@ public sealed partial class HomePanel : UserControl
             {
                 DisableDirect = strictRouteOnly,
             },
-        });
+        };
+
+        await InvokeConnectRequestedAsync(info);
+    }
+
+    private async Task InvokeConnectRequestedAsync(SshConnectionInfo info)
+    {
+        _connectInFlight = true;
+        ConnectButton.IsEnabled = false;
+        var idleContent = ConnectButton.Content;
+        ConnectButton.Content = Loc.T("연결 중…", "Connecting…");
+        Exception? callbackError = null;
+
+        try
+        {
+            if (ConnectRequested is { } callbacks)
+            {
+                foreach (HomeConnectRequestedEventHandler callback in callbacks.GetInvocationList())
+                    await callback(this, info);
+            }
+        }
+        catch (Exception error) when (error is not OutOfMemoryException and not AccessViolationException)
+        {
+            callbackError = error;
+            System.Diagnostics.Debug.WriteLine(
+                $"Quick Connect callback failed: {error.GetType().Name}");
+        }
+        finally
+        {
+            // The callback owns the connection attempt and may clear these values itself.
+            // Clear them again here so an absent or faulted callback cannot extend the
+            // lifetime of secrets held by the transient connection request.
+            info.ClearTransientSecrets();
+            ClearTransientSecrets();
+
+            ConnectButton.Content = idleContent;
+            ConnectButton.IsEnabled = true;
+            _connectInFlight = false;
+        }
+
+        // PasswordChanged clears stale validation text. Publish the callback error only
+        // after secret boxes have been cleared so that the actionable message remains.
+        if (callbackError is not null)
+        {
+            ShowFormError(
+                HostBox,
+                "연결을 시작하지 못했습니다. 입력을 확인하고 다시 시도하세요.",
+                "Could not start the connection. Review the inputs and try again.");
+        }
+    }
+
+    private void ShowFormError(Control target, string korean, string english)
+    {
+        SettingsSaveStatusText.Text = Loc.T(korean, english);
+        SettingsSaveStatusText.Visibility = Visibility.Visible;
+        target.Focus(FocusState.Programmatic);
+    }
+
+    private void ClearFormStatus()
+    {
+        if (SettingsSaveStatusText is null)
+            return;
+
+        SettingsSaveStatusText.Text = "";
+        SettingsSaveStatusText.Visibility = Visibility.Collapsed;
     }
 
     private void SelectEnvironment(string? environment)

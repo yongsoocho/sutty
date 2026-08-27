@@ -10,6 +10,7 @@ using sutty.Core.Sessions;
 using sutty.Core.Sftp;
 using sutty.Core.Terminal;
 using sutty.Setting;
+using sutty.UI.Controls;
 using sutty.UI.Helpers;
 using sutty.UI.ViewModels;
 using System;
@@ -42,6 +43,9 @@ namespace sutty.UI.Views
         /// </summary>
         public event EventHandler<string>? WorkingDirectoryChanged;
 
+        /// <summary>Raised when xterm consumes an application-level shortcut.</summary>
+        public event EventHandler<TerminalAppShortcutRequest>? AppShortcutRequested;
+
         /// <summary>
         /// True when a persistent PTY is already running. Callers must not inject shell
         /// commands into an existing terminal without an explicit user confirmation,
@@ -52,6 +56,7 @@ namespace sutty.UI.Views
         private readonly string _prompt;
         private const int MaxTerminalBacklogBytes = 4 * 1024 * 1024;
         private const int MaxTerminalDrainBytes = 256 * 1024;
+        private static readonly TimeSpan TerminalOpenWaitTimeout = TimeSpan.FromSeconds(30);
         private readonly object _terminalOutputGate = new();
         private readonly Queue<byte[]> _terminalOutputQueue = new();
         private readonly SemaphoreSlim _commandGate = new(1, 1);
@@ -108,6 +113,8 @@ namespace sutty.UI.Views
             Session.TerminalStateChanged += OnTerminalStateChanged;
             Session.TerminalDataReceived += OnTerminalDataReceived;
             TerminalSurface.InputReceived += (_, data) => _ = SendTerminalTextAsync(data);
+            TerminalSurface.AppShortcutRequested += (_, request) =>
+                AppShortcutRequested?.Invoke(this, request);
             TerminalSurface.TerminalSizeChanged += TerminalSurface_TerminalSizeChanged;
             TerminalSurface.RendererFailed += (_, message) =>
                 DispatcherQueue.TryEnqueue(() =>
@@ -160,12 +167,29 @@ namespace sutty.UI.Views
         private void ReplBtn_Click(object sender, RoutedEventArgs e) => SetViewMode(isTerminal: false);
         private void TerminalBtn_Click(object sender, RoutedEventArgs e) => SetViewMode(isTerminal: true);
 
-        private void SetViewMode(bool isTerminal)
+        /// <summary>
+        /// Hides the legacy in-session switcher when the app shell owns Terminal/Commands
+        /// navigation. The persisted setting remains compatible with existing installs.
+        /// </summary>
+        public void UseWorkspaceNavigation() => ViewModeSwitcher.Visibility = Visibility.Collapsed;
+
+        /// <summary>Shows the PTY without changing the user's persisted default.</summary>
+        public void ShowTerminalWorkspace() => SetViewMode(isTerminal: true, persist: false);
+
+        /// <summary>Shows structured command output without changing the persisted default.</summary>
+        public void ShowCommandsWorkspace() => SetViewMode(isTerminal: false, persist: false);
+
+        private void SetViewMode(bool isTerminal, bool persist = true)
         {
             if (_isTerminal == isTerminal) return;
             _isTerminal = isTerminal;
-            SettingsService.Current.TerminalMode = _isTerminal ? "Terminal" : "Repl";
-            SettingsService.Save(); // 다음 실행/다음 세션에도 유지
+            if (persist)
+            {
+                // "Repl" is an existing serialized value. Keep it stable while the
+                // visible product label becomes Commands.
+                SettingsService.Current.TerminalMode = _isTerminal ? "Terminal" : "Repl";
+                SettingsService.Save();
+            }
             ApplyViewMode();
             ScrollToBottom();
         }
@@ -566,7 +590,8 @@ namespace sutty.UI.Views
                 if (Session.TerminalState != TerminalState.Open)
                     return false;
 
-                SetViewMode(isTerminal: true);
+                // Files → Terminal is workspace navigation, not a preference change.
+                SetViewMode(isTerminal: true, persist: false);
                 await SendTerminalTextAsync($"cd {QuotePosix(resolved)}\r");
                 return true;
             }
@@ -919,8 +944,14 @@ namespace sutty.UI.Views
         private async Task EnsureTerminalStartedAsync()
         {
             if (Session.State != SessionState.Connected ||
-                Session.TerminalState is TerminalState.Open or TerminalState.Opening)
+                Session.TerminalState == TerminalState.Open)
                 return;
+
+            if (Session.TerminalState == TerminalState.Opening)
+            {
+                await WaitForTerminalOpeningAsync();
+                return;
+            }
 
             _requestedTerminalSize = TerminalSurface.ViewportSize;
             ClearTerminalBacklog();
@@ -938,6 +969,44 @@ namespace sutty.UI.Views
             {
                 Debug.WriteLine($"Terminal open failed: {ex}");
                 UpdateTerminalStatus(Session.TerminalState);
+            }
+        }
+
+        private async Task<bool> WaitForTerminalOpeningAsync()
+        {
+            if (Session.TerminalState == TerminalState.Open)
+                return true;
+            if (Session.TerminalState != TerminalState.Opening)
+                return false;
+
+            var completion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            void CompleteOnStableState(object? sender, TerminalState state)
+            {
+                if (state == TerminalState.Open)
+                    completion.TrySetResult(true);
+                else if (state is TerminalState.Closed or TerminalState.Failed)
+                    completion.TrySetResult(false);
+            }
+
+            Session.TerminalStateChanged += CompleteOnStableState;
+            try
+            {
+                // Close the subscribe/read race if the PTY completed just before the
+                // handler was attached.
+                var current = Session.TerminalState;
+                if (current != TerminalState.Opening)
+                    completion.TrySetResult(current == TerminalState.Open);
+
+                return await completion.Task.WaitAsync(TerminalOpenWaitTimeout);
+            }
+            catch (TimeoutException)
+            {
+                return false;
+            }
+            finally
+            {
+                Session.TerminalStateChanged -= CompleteOnStableState;
             }
         }
 

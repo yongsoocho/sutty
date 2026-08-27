@@ -17,6 +17,7 @@ namespace sutty.UI.Views
         public void RefreshLanguage() => Bindings.Update();
 
         private readonly System.Collections.Generic.List<CommandItemVm> _all = [];
+        private bool _subscribed;
         public ObservableCollection<CommandItemVm> Items { get; } = [];
 
         /// <summary>치환 완료된 최종 명령을 현재 세션에서 실행해 달라는 신호.</summary>
@@ -26,6 +27,34 @@ namespace sutty.UI.Views
         {
             InitializeComponent();
             Load();
+            Loaded += CommandPanel_Loaded;
+            Unloaded += CommandPanel_Unloaded;
+        }
+
+        private void CommandPanel_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (!_subscribed)
+            {
+                CommandStore.Changed += CommandStore_Changed;
+                _subscribed = true;
+            }
+            Load();
+        }
+
+        private void CommandPanel_Unloaded(object sender, RoutedEventArgs e)
+        {
+            if (!_subscribed)
+                return;
+            CommandStore.Changed -= CommandStore_Changed;
+            _subscribed = false;
+        }
+
+        private void CommandStore_Changed(object? sender, EventArgs e)
+        {
+            if (DispatcherQueue.HasThreadAccess)
+                Load();
+            else
+                DispatcherQueue.TryEnqueue(Load);
         }
 
         private void Load()
@@ -33,7 +62,7 @@ namespace sutty.UI.Views
             _all.Clear();
             foreach (var template in CommandStore.GetAll())
                 _all.Add(new CommandItemVm(template));
-            ApplyFilter("");
+            ApplyFilter(SearchBox?.Text ?? "");
         }
 
         // ── 검색 ──
@@ -68,9 +97,7 @@ namespace sutty.UI.Views
             var text = NewTextBox.Text.Trim();
             if (name.Length == 0 || text.Length == 0) return;
 
-            var template = CommandStore.Add(name, text);
-            _all.Insert(0, new CommandItemVm(template));
-            ApplyFilter(SearchBox.Text);
+            CommandStore.Add(name, text);
 
             NewNameBox.Text = "";
             NewTextBox.Text = "";
@@ -82,8 +109,6 @@ namespace sutty.UI.Views
             if ((sender as FrameworkElement)?.DataContext is not CommandItemVm vm) return;
 
             CommandStore.Delete(vm.Template.Id);
-            _all.Remove(vm);
-            ApplyFilter(SearchBox.Text);
         }
 
         private void Run_Click(object sender, RoutedEventArgs e)

@@ -37,6 +37,7 @@ public sealed partial class FileTreePanel : UserControl
     private CancellationTokenSource? _navigationCts;
     private readonly SemaphoreSlim _transferWorkerGate = new(1, 1);
     private readonly SftpTransferQueueStore _transferQueue = SftpTransferQueueStore.Default;
+    private readonly string _targetLeaseOwnerToken = Guid.NewGuid().ToString("N");
     private int _sessionVersion;
     private int _navigationVersion;
     private string _currentPath = "/";
@@ -605,22 +606,42 @@ public sealed partial class FileTreePanel : UserControl
             ShowOperationError(Loc.T("전송 큐를 저장할 수 없습니다", "Could not save the transfer queue"), ex);
             return;
         }
-        var transfer = TryAddTransfer(
-            item.Name,
-            item.Path,
-            destination,
-            size,
-            UiSftpTransferDirection.Upload,
-            queuedJob.Id);
+        if (!_transferQueue.TryAcquireTargetLease(
+                queuedJob.Id,
+                queuedJob.Targets[0].Id,
+                _targetLeaseOwnerToken,
+                out var targetLease))
+        {
+            ShowStatus(Loc.T("이 전송 작업을 시작할 수 없습니다.",
+                "This transfer job could not be started."));
+            return;
+        }
+        SftpTransferItemVm? transfer;
+        try
+        {
+            transfer = TryAddTransfer(
+                item.Name,
+                item.Path,
+                destination,
+                size,
+                UiSftpTransferDirection.Upload,
+                queuedJob.Id);
+        }
+        catch
+        {
+            targetLease!.Dispose();
+            throw;
+        }
         if (transfer is null)
         {
+            targetLease!.Dispose();
             _transferQueue.Delete(queuedJob.Id);
             return;
         }
-        var token = transfer.Token;
         var workerAcquired = false;
         try
         {
+            var token = transfer.Token;
             await _transferWorkerGate.WaitAsync(token);
             workerAcquired = true;
             token.ThrowIfCancellationRequested();
@@ -628,8 +649,8 @@ public sealed partial class FileTreePanel : UserControl
                 throw new OperationCanceledException(token);
             transfer.Start();
             UpdateQueuedTransfer(queuedJob, SftpQueueTargetState.Running);
-            var progress = new Progress<sutty.Core.Sftp.SftpTransferProgress>(itemProgress =>
-                transfer.Report(itemProgress.Fraction));
+            var durableProgress = new DurableProgressState();
+            var progress = CreateQueuedTransferProgress(queuedJob, transfer, durableProgress);
             await sftp.UploadPathAsync(
                 item.Path,
                 destination,
@@ -637,7 +658,11 @@ public sealed partial class FileTreePanel : UserControl
                 progress,
                 token);
             transfer.Complete();
-            UpdateQueuedTransfer(queuedJob, SftpQueueTargetState.Succeeded);
+            UpdateQueuedTransfer(
+                queuedJob,
+                SftpQueueTargetState.Succeeded,
+                bytesTransferred: durableProgress.BytesTransferred,
+                totalBytes: durableProgress.TotalBytes);
             if (ReferenceEquals(_sftp, sftp) && sessionVersion == _sessionVersion)
                 await NavigateToPathAsync(_currentPath);
         }
@@ -667,6 +692,7 @@ public sealed partial class FileTreePanel : UserControl
         }
         finally
         {
+            targetLease!.Dispose();
             if (workerAcquired) _transferWorkerGate.Release();
             if (transfer.State != SftpTransferState.Paused)
                 transfer.Dispose();
@@ -764,22 +790,42 @@ public sealed partial class FileTreePanel : UserControl
             ShowOperationError(Loc.T("전송 큐를 저장할 수 없습니다", "Could not save the transfer queue"), ex);
             return;
         }
-        var transfer = TryAddTransfer(
-            node.Name,
-            node.FullPath,
-            localPath,
-            node.Entry.Size,
-            UiSftpTransferDirection.Download,
-            queuedJob.Id);
+        if (!_transferQueue.TryAcquireTargetLease(
+                queuedJob.Id,
+                queuedJob.Targets[0].Id,
+                _targetLeaseOwnerToken,
+                out var targetLease))
+        {
+            ShowStatus(Loc.T("이 전송 작업을 시작할 수 없습니다.",
+                "This transfer job could not be started."));
+            return;
+        }
+        SftpTransferItemVm? transfer;
+        try
+        {
+            transfer = TryAddTransfer(
+                node.Name,
+                node.FullPath,
+                localPath,
+                node.Entry.Size,
+                UiSftpTransferDirection.Download,
+                queuedJob.Id);
+        }
+        catch
+        {
+            targetLease!.Dispose();
+            throw;
+        }
         if (transfer is null)
         {
+            targetLease!.Dispose();
             _transferQueue.Delete(queuedJob.Id);
             return;
         }
-        var token = transfer.Token;
         var workerAcquired = false;
         try
         {
+            var token = transfer.Token;
             await _transferWorkerGate.WaitAsync(token);
             workerAcquired = true;
             token.ThrowIfCancellationRequested();
@@ -787,8 +833,8 @@ public sealed partial class FileTreePanel : UserControl
                 throw new OperationCanceledException(token);
             transfer.Start();
             UpdateQueuedTransfer(queuedJob, SftpQueueTargetState.Running);
-            var progress = new Progress<sutty.Core.Sftp.SftpTransferProgress>(itemProgress =>
-                transfer.Report(itemProgress.Fraction));
+            var durableProgress = new DurableProgressState();
+            var progress = CreateQueuedTransferProgress(queuedJob, transfer, durableProgress);
             // The picker chooses the local path; the durable policy above controls collisions.
             await sftp.DownloadPathAsync(
                 node.FullPath,
@@ -797,7 +843,11 @@ public sealed partial class FileTreePanel : UserControl
                 progress,
                 token);
             transfer.Complete();
-            UpdateQueuedTransfer(queuedJob, SftpQueueTargetState.Succeeded);
+            UpdateQueuedTransfer(
+                queuedJob,
+                SftpQueueTargetState.Succeeded,
+                bytesTransferred: durableProgress.BytesTransferred,
+                totalBytes: durableProgress.TotalBytes);
         }
         catch (OperationCanceledException)
         {
@@ -825,6 +875,7 @@ public sealed partial class FileTreePanel : UserControl
         }
         finally
         {
+            targetLease!.Dispose();
             if (workerAcquired) _transferWorkerGate.Release();
             if (transfer.State != SftpTransferState.Paused)
                 transfer.Dispose();
@@ -1078,32 +1129,55 @@ public sealed partial class FileTreePanel : UserControl
             ShowOperationError(Loc.T("전송 큐를 읽을 수 없습니다", "Could not read the transfer queue"), error);
             return;
         }
+        var identity = CurrentSftpPersistenceId();
         if (job is null || job.Mode != SftpQueueMode.Single ||
-            !job.Targets.Any(target => target.Id == CurrentSftpPersistenceId()))
+            !job.Targets.Any(target => target.Id == identity))
         {
             ShowStatus(Loc.T("재개할 전송 정보를 찾을 수 없습니다.", "The paused transfer could not be found."));
             return;
         }
 
-        var sessionVersion = _sessionVersion;
-        Transfers.Remove(paused);
-        paused.Dispose();
-        var target = job.Targets.Single(item => item.Id == CurrentSftpPersistenceId());
-        var transfer = TryAddTransfer(
-            job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
-                ? Path.GetFileName(job.SourcePath.TrimEnd(
-                    Path.DirectorySeparatorChar,
-                    Path.AltDirectorySeparatorChar))
-                : RemotePath.GetName(job.SourcePath),
-            job.SourcePath,
-            job.DestinationPath,
-            target.TotalBytes,
-            job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
-                ? UiSftpTransferDirection.Upload
-                : UiSftpTransferDirection.Download,
-            job.Id);
-        if (transfer is not null)
-            _ = ResumeSingleQueuedJobAsync(job, transfer, sftp, sessionVersion);
+        var target = job.Targets.Single(item => item.Id == identity);
+        if (!_transferQueue.TryAcquireRetryTargetLease(
+                job.Id,
+                target.Id,
+                _targetLeaseOwnerToken,
+                out var targetLease))
+        {
+            ShowStatus(Loc.T("이 전송은 이미 실행 중이거나 완료되었습니다.",
+                "This transfer is already running or finished."));
+            return;
+        }
+
+        try
+        {
+            var sessionVersion = _sessionVersion;
+            Transfers.Remove(paused);
+            paused.Dispose();
+            var transfer = TryAddTransfer(
+                job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                    ? Path.GetFileName(job.SourcePath.TrimEnd(
+                        Path.DirectorySeparatorChar,
+                        Path.AltDirectorySeparatorChar))
+                    : RemotePath.GetName(job.SourcePath),
+                job.SourcePath,
+                job.DestinationPath,
+                target.TotalBytes,
+                job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                    ? UiSftpTransferDirection.Upload
+                    : UiSftpTransferDirection.Download,
+                job.Id);
+            if (transfer is null)
+                return;
+
+            _ = ResumeSingleQueuedJobAsync(
+                job, transfer, sftp, sessionVersion, targetLease!);
+            targetLease = null;
+        }
+        finally
+        {
+            targetLease?.Dispose();
+        }
     }
 
     public void CancelTransfersForSession(ISshSession session, bool userInitiated)
@@ -1164,9 +1238,7 @@ public sealed partial class FileTreePanel : UserControl
                 job.Id);
         }
 
-        ResumeRestoredButton.Visibility = jobs.Count > 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        ReconcileRestoredTransferRows(jobs);
         if (jobs.Count > 0)
             TransfersPanel.Visibility = Visibility.Visible;
     }
@@ -1177,49 +1249,109 @@ public sealed partial class FileTreePanel : UserControl
             return;
         var identity = CurrentSftpPersistenceId();
         var sessionVersion = _sessionVersion;
-        var jobs = _transferQueue.RecoverIncomplete()
-            .Where(job => job.Mode == SftpQueueMode.Single &&
-                          job.Targets.Any(target => target.Id == identity))
-            .ToArray();
+        IReadOnlyList<SftpQueuedJob> jobs;
+        try
+        {
+            jobs = _transferQueue.RecoverIncomplete()
+                .Where(job => job.Mode == SftpQueueMode.Single &&
+                              job.Targets.Any(target => target.Id == identity))
+                .ToArray();
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            ShowOperationError(
+                Loc.T("전송 큐를 복원할 수 없습니다", "Could not restore the transfer queue"),
+                error);
+            return;
+        }
+        ReconcileRestoredTransferRows(jobs);
+        var alreadyResuming = false;
         foreach (var job in jobs)
         {
             var transfer = Transfers.FirstOrDefault(item => item.QueueJobId == job.Id);
             if (transfer?.State is SftpTransferState.Running or SftpTransferState.Cancelling)
                 continue;
-            if (transfer is not null && transfer.State != SftpTransferState.Queued)
+
+            var target = job.Targets.Single(item => item.Id == identity);
+            if (!_transferQueue.TryAcquireRetryTargetLease(
+                    job.Id,
+                    target.Id,
+                    _targetLeaseOwnerToken,
+                    out var targetLease))
             {
-                Transfers.Remove(transfer);
-                transfer.Dispose();
-                transfer = null;
+                alreadyResuming = true;
+                continue;
             }
-            transfer ??= TryAddTransfer(
-                job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
-                    ? Path.GetFileName(job.SourcePath.TrimEnd(
-                        Path.DirectorySeparatorChar,
-                        Path.AltDirectorySeparatorChar))
-                    : RemotePath.GetName(job.SourcePath),
-                job.SourcePath,
-                job.DestinationPath,
-                job.Targets.Single(target => target.Id == identity).TotalBytes,
-                job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
-                    ? UiSftpTransferDirection.Upload
-                    : UiSftpTransferDirection.Download,
-                job.Id);
-            if (transfer is not null)
-                _ = ResumeSingleQueuedJobAsync(job, transfer, sftp, sessionVersion);
+
+            try
+            {
+                if (transfer is not null && transfer.State != SftpTransferState.Queued)
+                {
+                    Transfers.Remove(transfer);
+                    transfer.Dispose();
+                    transfer = null;
+                }
+                transfer ??= TryAddTransfer(
+                    job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                        ? Path.GetFileName(job.SourcePath.TrimEnd(
+                            Path.DirectorySeparatorChar,
+                            Path.AltDirectorySeparatorChar))
+                        : RemotePath.GetName(job.SourcePath),
+                    job.SourcePath,
+                    job.DestinationPath,
+                    target.TotalBytes,
+                    job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                        ? UiSftpTransferDirection.Upload
+                        : UiSftpTransferDirection.Download,
+                    job.Id);
+                if (transfer is null)
+                    continue;
+
+                _ = ResumeSingleQueuedJobAsync(
+                    job, transfer, sftp, sessionVersion, targetLease!);
+                targetLease = null;
+            }
+            finally
+            {
+                targetLease?.Dispose();
+            }
         }
+
+        if (alreadyResuming)
+            ShowStatus(Loc.T("일부 전송은 이미 실행 중이거나 완료되었습니다.",
+                "Some transfers are already running or finished."));
+    }
+
+    private void ReconcileRestoredTransferRows(IReadOnlyList<SftpQueuedJob> jobs)
+    {
+        var durableJobIds = jobs
+            .Select(job => job.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var stale in Transfers.Where(transfer =>
+                     transfer.State == SftpTransferState.Queued &&
+                     !string.IsNullOrWhiteSpace(transfer.QueueJobId) &&
+                     !durableJobIds.Contains(transfer.QueueJobId)).ToList())
+        {
+            Transfers.Remove(stale);
+            stale.Dispose();
+        }
+
+        ResumeRestoredButton.Visibility = jobs.Count > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private async Task ResumeSingleQueuedJobAsync(
         SftpQueuedJob job,
         SftpTransferItemVm transfer,
         ISftpService sftp,
-        int sessionVersion)
+        int sessionVersion,
+        IDisposable targetLease)
     {
-        var token = transfer.Token;
         var workerAcquired = false;
         try
         {
+            var token = transfer.Token;
             if (job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload &&
                 !File.Exists(job.SourcePath) && !Directory.Exists(job.SourcePath))
             {
@@ -1235,8 +1367,8 @@ public sealed partial class FileTreePanel : UserControl
                 throw new OperationCanceledException(token);
             transfer.Start();
             UpdateQueuedTransfer(job, SftpQueueTargetState.Running);
-            var progress = new Progress<sutty.Core.Sftp.SftpTransferProgress>(item =>
-                transfer.Report(item.Fraction));
+            var durableProgress = new DurableProgressState();
+            var progress = CreateQueuedTransferProgress(job, transfer, durableProgress);
             if (job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload)
             {
                 await sftp.UploadPathAsync(
@@ -1248,7 +1380,11 @@ public sealed partial class FileTreePanel : UserControl
                     job.SourcePath, job.DestinationPath, job.Options, progress, token);
             }
             transfer.Complete();
-            UpdateQueuedTransfer(job, SftpQueueTargetState.Succeeded);
+            UpdateQueuedTransfer(
+                job,
+                SftpQueueTargetState.Succeeded,
+                bytesTransferred: durableProgress.BytesTransferred,
+                totalBytes: durableProgress.TotalBytes);
             if (job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload &&
                 ReferenceEquals(_sftp, sftp) && sessionVersion == _sessionVersion)
             {
@@ -1281,6 +1417,7 @@ public sealed partial class FileTreePanel : UserControl
         }
         finally
         {
+            targetLease.Dispose();
             if (workerAcquired) _transferWorkerGate.Release();
             if (transfer.State != SftpTransferState.Paused)
                 transfer.Dispose();
@@ -1329,7 +1466,9 @@ public sealed partial class FileTreePanel : UserControl
     private void UpdateQueuedTransfer(
         SftpQueuedJob job,
         SftpQueueTargetState state,
-        string? error = null)
+        string? error = null,
+        long bytesTransferred = 0,
+        long totalBytes = 0)
     {
         try
         {
@@ -1337,6 +1476,8 @@ public sealed partial class FileTreePanel : UserControl
                 job.Id,
                 job.Targets[0].Id,
                 state,
+                bytesTransferred,
+                totalBytes,
                 error: error);
         }
         catch (Exception persistenceError) when (persistenceError is IOException or
@@ -1618,6 +1759,42 @@ public sealed partial class FileTreePanel : UserControl
         {
             return false;
         }
+    }
+
+    private IProgress<sutty.Core.Sftp.SftpTransferProgress> CreateQueuedTransferProgress(
+        SftpQueuedJob job,
+        SftpTransferItemVm transfer,
+        DurableProgressState state) =>
+        new Progress<sutty.Core.Sftp.SftpTransferProgress>(progress =>
+        {
+            transfer.Report(progress.Fraction);
+            state.BytesTransferred = Math.Max(state.BytesTransferred, progress.BytesTransferred);
+            state.TotalBytes = Math.Max(state.TotalBytes, progress.TotalBytes);
+
+            // Persist a coarse snapshot for the global Transfer Center without turning
+            // each SFTP buffer report into a synchronous disk write on the UI thread.
+            var now = DateTimeOffset.UtcNow;
+            if (transfer.State != SftpTransferState.Running ||
+                now - state.LastPersistedAtUtc < TimeSpan.FromSeconds(1))
+            {
+                return;
+            }
+
+            state.LastPersistedAtUtc = now;
+            UpdateQueuedTransfer(
+                job,
+                SftpQueueTargetState.Running,
+                bytesTransferred: state.BytesTransferred,
+                totalBytes: state.TotalBytes);
+        });
+
+    private sealed class DurableProgressState
+    {
+        public long BytesTransferred { get; set; }
+
+        public long TotalBytes { get; set; }
+
+        public DateTimeOffset LastPersistedAtUtc { get; set; } = DateTimeOffset.MinValue;
     }
 
     private static string FormatBytes(long bytes) => bytes switch

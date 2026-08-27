@@ -51,6 +51,7 @@ public sealed class TerminalRendererControl : UserControl
     public event EventHandler<string>? InputReceived;
     public event EventHandler<TerminalSize>? TerminalSizeChanged;
     public event EventHandler<string>? TitleChanged;
+    public event EventHandler<TerminalAppShortcutRequest>? AppShortcutRequested;
     public event EventHandler? RendererReady;
     public event EventHandler<string>? RendererFailed;
 
@@ -262,6 +263,27 @@ public sealed class TerminalRendererControl : UserControl
                     var text = await ClipboardHelper.GetTextAsync();
                     if (!string.IsNullOrEmpty(text) && text.Length <= 4 * 1024 * 1024)
                         Post(new TerminalBridgeMessage { Type = "paste", Text = text });
+                    break;
+
+                case "appShortcut":
+                    var shortcut = message.Action switch
+                    {
+                        "navigate" when message.Number is >= 1 and <= 7 =>
+                            new TerminalAppShortcutRequest(
+                                TerminalAppShortcutAction.Navigate,
+                                message.Number),
+                        "selectTab" when message.Number is >= 1 and <= 9 =>
+                            new TerminalAppShortcutRequest(
+                                TerminalAppShortcutAction.SelectTab,
+                                message.Number),
+                        "newTab" => new TerminalAppShortcutRequest(
+                            TerminalAppShortcutAction.NewTab),
+                        "settings" => new TerminalAppShortcutRequest(
+                            TerminalAppShortcutAction.Settings),
+                        _ => (TerminalAppShortcutRequest?)null,
+                    };
+                    if (shortcut is { } request)
+                        AppShortcutRequested?.Invoke(this, request);
                     break;
 
                 case "title":

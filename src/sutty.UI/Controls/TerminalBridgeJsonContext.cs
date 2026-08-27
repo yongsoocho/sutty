@@ -13,6 +13,8 @@ internal sealed class TerminalBridgeMessage
     public int Rows { get; set; }
     public int PixelWidth { get; set; }
     public int PixelHeight { get; set; }
+    public int Number { get; set; }
+    public string? Action { get; set; }
     public string? FontFamily { get; set; }
     public int FontSize { get; set; }
     public string? CursorStyle { get; set; }

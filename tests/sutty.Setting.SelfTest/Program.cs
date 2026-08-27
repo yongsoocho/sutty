@@ -8,6 +8,10 @@ WorkspaceStateStore.PathOverride = Path.Combine(scratch, "workspace.json");
 
 try
 {
+    Assert(new AppSettings().TerminalMode == "Terminal", "fresh terminal default");
+    Assert(new AppSettings { TerminalMode = "Repl" }.TerminalMode == "Repl",
+        "legacy Repl preference preserved");
+
     File.WriteAllText(SettingsService.SettingsPath, """
         {
           "Theme": "Dark",
@@ -136,6 +140,8 @@ try
         "workspace schema excludes credential fields");
     Assert(WorkspaceStateStore.Clear().Succeeded && !File.Exists(WorkspaceStateStore.WorkspacePath),
         "workspace clear");
+
+    ShellStateSelfTests.Run();
 
     File.WriteAllText(SettingsService.SettingsPath, "{broken");
     SettingsService.ResetForTests();

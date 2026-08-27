@@ -63,6 +63,27 @@ Assert(!sanitizedLog.Detail!.Contains(logProxySecret, StringComparison.Ordinal),
     "connection log redacts URI user info");
 ConnectionLogStore.Clear();
 
+var transientConnection = new SshConnectionInfo
+{
+    Password = CreateTestSecret("transient-password"),
+    Passphrase = CreateTestSecret("transient-passphrase"),
+    Route = new ConnectionRoute
+    {
+        Password = CreateTestSecret("transient-route-password"),
+        Passphrase = CreateTestSecret("transient-route-passphrase"),
+    },
+};
+transientConnection.ClearTransientSecrets();
+Assert(transientConnection.Password.Length == 0 &&
+       transientConnection.Passphrase.Length == 0 &&
+       transientConnection.Route.Password.Length == 0 &&
+       transientConnection.Route.Passphrase.Length == 0,
+    "transient connection and route secrets are cleared together");
+transientConnection.ClearTransientSecrets();
+Assert(transientConnection.Password.Length == 0 &&
+       transientConnection.Route.Password.Length == 0,
+    "transient secret clearing is idempotent");
+
 var failedConnectionPassword = CreateTestSecret("failed-connection");
 var failedSession = new SshNetSession(new SshConnectionInfo
 {

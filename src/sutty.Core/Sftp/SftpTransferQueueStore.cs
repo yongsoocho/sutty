@@ -76,8 +76,11 @@ public sealed class SftpTransferQueueStore
     private const int MaximumJobs = 256;
     private const int MaximumTargets = 16;
     private static readonly string ProcessRuntimeOwnerId = Guid.NewGuid().ToString("N");
+    private static readonly object TargetLeaseGate = new();
+    private static readonly Dictionary<TargetLeaseKey, TargetLeaseClaim> TargetLeases = [];
     private readonly object _gate = new();
     private readonly string _path;
+    private readonly string _targetLeaseScope;
     private readonly string _runtimeOwnerId = ProcessRuntimeOwnerId;
 
     public static SftpTransferQueueStore Default { get; } = new();
@@ -88,6 +91,7 @@ public sealed class SftpTransferQueueStore
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "sutty",
             "sftp-transfer-queue.json");
+        _targetLeaseScope = NormalizeTargetLeaseScope(_path);
     }
 
     public IReadOnlyList<SftpQueuedJob> GetAll()
@@ -180,6 +184,97 @@ public sealed class SftpTransferQueueStore
             return ReadDocument().Jobs.FirstOrDefault(job => job.Id == id);
     }
 
+    /// <summary>
+    /// Atomically acquires an in-process lease for one durable queue target. Leases are
+    /// shared by store instances that address the same queue file, but are intentionally
+    /// not persisted so restart recovery continues to use <see cref="SftpQueuedJob.RuntimeOwnerId"/>.
+    /// Dispose the returned lease after every success, cancellation, or failure path.
+    /// </summary>
+    public bool TryAcquireTargetLease(
+        string jobId,
+        string targetId,
+        string ownerToken,
+        out IDisposable? lease)
+    {
+        jobId = NormalizeId(jobId);
+        targetId = NormalizeTargetId(targetId);
+        ownerToken = NormalizeTargetLeaseOwner(ownerToken);
+        return TryAcquireTargetLeaseCore(jobId, targetId, ownerToken, out lease);
+    }
+
+    /// <summary>
+    /// Acquires a target lease only while the durable job and target are still eligible
+    /// for an explicit retry. The state check and claim are serialized with all in-process
+    /// leases for the queue file, preventing a stale Files view from re-running a target
+    /// completed by another view.
+    /// </summary>
+    public bool TryAcquireRetryTargetLease(
+        string jobId,
+        string targetId,
+        string ownerToken,
+        out IDisposable? lease)
+    {
+        jobId = NormalizeId(jobId);
+        targetId = NormalizeTargetId(targetId);
+        ownerToken = NormalizeTargetLeaseOwner(ownerToken);
+        var key = new TargetLeaseKey(_targetLeaseScope, jobId, targetId);
+        var claim = new TargetLeaseClaim(ownerToken);
+        var acquiredLease = new TargetLease(() => ReleaseTargetLease(key, claim));
+        lock (TargetLeaseGate)
+        {
+            if (TargetLeases.ContainsKey(key))
+            {
+                lease = null;
+                return false;
+            }
+
+            lock (_gate)
+            {
+                var job = ReadDocument().Jobs.FirstOrDefault(item => item.Id == jobId);
+                var target = job?.Targets.FirstOrDefault(item => item.Id == targetId);
+                if (job is null || target is null ||
+                    job.State == SftpQueueJobState.Completed ||
+                    target.State is not (SftpQueueTargetState.Pending or
+                        SftpQueueTargetState.Running or
+                        SftpQueueTargetState.Paused or
+                        SftpQueueTargetState.Interrupted or
+                        SftpQueueTargetState.Failed or
+                        SftpQueueTargetState.Cancelled))
+                {
+                    lease = null;
+                    return false;
+                }
+            }
+
+            TargetLeases.Add(key, claim);
+        }
+
+        lease = acquiredLease;
+        return true;
+    }
+
+    private bool TryAcquireTargetLeaseCore(
+        string jobId,
+        string targetId,
+        string ownerToken,
+        out IDisposable? lease)
+    {
+        lease = null;
+
+        var key = new TargetLeaseKey(_targetLeaseScope, jobId, targetId);
+        var claim = new TargetLeaseClaim(ownerToken);
+        var acquiredLease = new TargetLease(() => ReleaseTargetLease(key, claim));
+        lock (TargetLeaseGate)
+        {
+            if (TargetLeases.ContainsKey(key))
+                return false;
+            TargetLeases.Add(key, claim);
+        }
+
+        lease = acquiredLease;
+        return true;
+    }
+
     public void UpdateTarget(
         string jobId,
         string targetId,
@@ -250,6 +345,23 @@ public sealed class SftpTransferQueueStore
         .Select(target => target.Id)
         .ToHashSet(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Projects durable byte counters to a user-facing percentage. A completed job is
+    /// authoritative even when an older producer did not persist its final byte counter.
+    /// </summary>
+    public static double GetProgressPercentage(SftpQueuedJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        if (job.State == SftpQueueJobState.Completed)
+            return 100;
+
+        var transferred = job.Targets.Sum(target => Math.Max(0, target.BytesTransferred));
+        var total = job.Targets.Sum(target => Math.Max(0, target.TotalBytes));
+        return total > 0
+            ? Math.Clamp(transferred * 100d / total, 0, 100)
+            : 0;
+    }
+
     private static SftpQueueJobState ComputeJobState(IReadOnlyCollection<SftpQueuedTarget> targets)
     {
         if (targets.Count > 0 && targets.All(target => target.State == SftpQueueTargetState.Succeeded))
@@ -316,6 +428,29 @@ public sealed class SftpTransferQueueStore
         return value;
     }
 
+    private static string NormalizeTargetLeaseOwner(string value)
+    {
+        value = value?.Trim() ?? "";
+        if (value.Length is < 1 or > 256 || value.Any(char.IsControl))
+            throw new ArgumentException("The transfer target lease owner is invalid.", nameof(value));
+        return value;
+    }
+
+    private static string NormalizeTargetLeaseScope(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        return OperatingSystem.IsWindows() ? fullPath.ToUpperInvariant() : fullPath;
+    }
+
+    private static void ReleaseTargetLease(TargetLeaseKey key, TargetLeaseClaim claim)
+    {
+        lock (TargetLeaseGate)
+        {
+            if (TargetLeases.TryGetValue(key, out var current) && ReferenceEquals(current, claim))
+                TargetLeases.Remove(key);
+        }
+    }
+
     private SftpTransferQueueDocument ReadDocument()
     {
         try
@@ -374,6 +509,19 @@ public sealed class SftpTransferQueueStore
 
     private static string Limit(string value, int maximum) =>
         value.Length <= maximum ? value : value[..maximum];
+
+    private readonly record struct TargetLeaseKey(string Scope, string JobId, string TargetId);
+
+    private sealed record TargetLeaseClaim(string OwnerToken);
+
+    private sealed class TargetLease : IDisposable
+    {
+        private Action? _release;
+
+        public TargetLease(Action release) => _release = release;
+
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    }
 }
 
 public sealed class SftpTransferQueueDocument

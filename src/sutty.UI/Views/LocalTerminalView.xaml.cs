@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Media;
 using sutty.Core.Commands;
 using sutty.Core.Terminal;
 using sutty.Setting;
+using sutty.UI.Controls;
 using sutty.UI.Helpers;
 using System;
 using System.Collections.Generic;
@@ -39,6 +40,9 @@ public sealed partial class LocalTerminalView : UserControl
     private int _closed;
     private TerminalSize _requestedTerminalSize = new(120, 40, 0, 0);
 
+    /// <summary>Raised when xterm consumes an application-level shortcut.</summary>
+    public event EventHandler<TerminalAppShortcutRequest>? AppShortcutRequested;
+
     public LocalTerminalView()
         : this(new WindowsConPtyTerminal(
             loadProfile: SettingsService.Current.LoadLocalShellProfile))
@@ -53,6 +57,8 @@ public sealed partial class LocalTerminalView : UserControl
         Terminal.TerminalStateChanged += OnTerminalStateChanged;
         Terminal.TerminalDataReceived += OnTerminalDataReceived;
         TerminalSurface.InputReceived += (_, data) => _ = SendTerminalTextAsync(data);
+        TerminalSurface.AppShortcutRequested += (_, request) =>
+            AppShortcutRequested?.Invoke(this, request);
         TerminalSurface.TerminalSizeChanged += TerminalSurface_TerminalSizeChanged;
         TerminalSurface.RendererFailed += (_, message) =>
         {
