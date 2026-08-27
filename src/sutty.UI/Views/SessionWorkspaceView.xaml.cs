@@ -54,6 +54,9 @@ public sealed partial class SessionWorkspaceView : UserControl
         foreach (var rule in info.PortForwardings ?? [])
             Tunnels.Add(DescribeTunnel(rule));
         NoTunnelsState.Visibility = Tunnels.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        // This page is informational until runtime tunnel controls exist. Hiding an empty
+        // peer tab avoids implying that Sutty already provides a Tunnel Manager.
+        TunnelsButton.Visibility = Tunnels.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
 
         NavigateTo(ViewModel.CurrentSection);
         ActualThemeChanged += (_, _) => UpdateNavigationVisuals();

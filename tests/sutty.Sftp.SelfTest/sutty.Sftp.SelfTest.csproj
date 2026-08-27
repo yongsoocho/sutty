@@ -9,4 +9,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\sutty.Core\sutty.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\sutty.UI\Services\TransferCenterService.cs"
+             Link="TransferCenter\TransferCenterService.cs" />
+  </ItemGroup>
 </Project>

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -31,6 +33,30 @@ public enum SftpQueueTargetState
     Failed,
     Succeeded,
     Cancelled,
+}
+
+public enum SftpTransferQueueChangeKind
+{
+    Recovered,
+    Upserted,
+    TargetUpdated,
+    Removed,
+    CompletedRemoved,
+}
+
+public sealed class SftpTransferQueueChangedEventArgs : EventArgs
+{
+    public SftpTransferQueueChangedEventArgs(
+        SftpTransferQueueChangeKind kind,
+        string? jobId = null)
+    {
+        Kind = kind;
+        JobId = jobId;
+    }
+
+    public SftpTransferQueueChangeKind Kind { get; }
+
+    public string? JobId { get; }
 }
 
 /// <summary>A credential-free, restart-safe transfer target.</summary>
@@ -81,53 +107,68 @@ public sealed class SftpTransferQueueStore
     private readonly object _gate = new();
     private readonly string _path;
     private readonly string _targetLeaseScope;
+    private readonly string _lockDirectory;
+    private readonly string _documentLockPath;
     private readonly string _runtimeOwnerId = ProcessRuntimeOwnerId;
 
     public static SftpTransferQueueStore Default { get; } = new();
 
     public SftpTransferQueueStore(string? path = null)
     {
-        _path = path ?? Path.Combine(
+        _path = Path.GetFullPath(path ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "sutty",
-            "sftp-transfer-queue.json");
+            "sftp-transfer-queue.json"));
         _targetLeaseScope = NormalizeTargetLeaseScope(_path);
+        _lockDirectory = Path.Combine(Path.GetDirectoryName(_path)!, ".sutty-transfer-locks");
+        _documentLockPath = Path.Combine(
+            _lockDirectory,
+            $"queue-{HashLockIdentity(_targetLeaseScope)}.lock");
     }
+
+    public event EventHandler<SftpTransferQueueChangedEventArgs>? Changed;
+
+    public string StoragePath => _path;
 
     public IReadOnlyList<SftpQueuedJob> GetAll()
     {
         lock (_gate)
-            return ReadDocument().Jobs.OrderBy(job => job.CreatedAtUtc).ToArray();
+        {
+            using var documentLock = AcquireDocumentMutationLock();
+            return ReadDocument(tolerateInvalid: false).Jobs
+                .OrderBy(job => job.CreatedAtUtc)
+                .ToArray();
+        }
     }
 
     public IReadOnlyList<SftpQueuedJob> RecoverIncomplete()
     {
+        IReadOnlyList<SftpQueuedJob> recovered;
+        var changed = false;
         lock (_gate)
         {
-            var document = ReadDocument();
-            var changed = false;
+            using var documentLock = AcquireDocumentMutationLock();
+            var document = ReadDocument(tolerateInvalid: false);
             for (var index = 0; index < document.Jobs.Count; index++)
             {
                 var job = document.Jobs[index];
                 if (job.State is SftpQueueJobState.Completed or SftpQueueJobState.Cancelled)
                     continue;
 
-                // Re-reading the queue inside the same running app must not make active
-                // transfers look crashed. A different owner means the prior process ended.
-                if (string.Equals(job.RuntimeOwnerId, _runtimeOwnerId, StringComparison.Ordinal))
-                    continue;
-
+                // Runtime owner ids distinguish restarts for diagnostics, but are not proof
+                // that a worker is still alive. A Running target must hold its OS execution
+                // lease even in this process; otherwise a failed final queue write could
+                // leave an unmanageable orphan until the whole application restarts.
                 var targets = job.Targets.Select(target =>
-                    target.State == SftpQueueTargetState.Running
+                    target.State == SftpQueueTargetState.Running &&
+                    !IsTargetExecutionLeaseActive(job.Id, target.Id)
                         ? target with
                         {
                             State = SftpQueueTargetState.Interrupted,
                             UpdatedAtUtc = DateTimeOffset.UtcNow,
                         }
                         : target).ToList();
-                var state = job.State == SftpQueueJobState.Running
-                    ? SftpQueueJobState.Interrupted
-                    : job.State;
+                var state = ComputeJobState(targets);
                 if (state != job.State || !targets.SequenceEqual(job.Targets))
                 {
                     document.Jobs[index] = job with
@@ -143,12 +184,16 @@ public sealed class SftpTransferQueueStore
 
             if (changed)
                 WriteDocument(document);
-            return document.Jobs
+            recovered = document.Jobs
                 .Where(job => job.State is not SftpQueueJobState.Completed and
-                              not SftpQueueJobState.Cancelled)
+                               not SftpQueueJobState.Cancelled)
                 .OrderBy(job => job.CreatedAtUtc)
                 .ToArray();
         }
+
+        if (changed)
+            PublishChange(SftpTransferQueueChangeKind.Recovered);
+        return recovered;
     }
 
     public void Upsert(SftpQueuedJob job)
@@ -157,7 +202,8 @@ public sealed class SftpTransferQueueStore
         var normalized = Normalize(job) with { RuntimeOwnerId = _runtimeOwnerId };
         lock (_gate)
         {
-            var document = ReadDocument();
+            using var documentLock = AcquireDocumentMutationLock();
+            var document = ReadDocument(tolerateInvalid: false);
             var index = document.Jobs.FindIndex(item => item.Id == normalized.Id);
             if (index >= 0)
             {
@@ -175,20 +221,25 @@ public sealed class SftpTransferQueueStore
             }
             WriteDocument(document);
         }
+
+        PublishChange(SftpTransferQueueChangeKind.Upserted, normalized.Id);
     }
 
     public SftpQueuedJob? Get(string id)
     {
         id = NormalizeId(id);
         lock (_gate)
-            return ReadDocument().Jobs.FirstOrDefault(job => job.Id == id);
+        {
+            using var documentLock = AcquireDocumentMutationLock();
+            return ReadDocument(tolerateInvalid: false).Jobs.FirstOrDefault(job => job.Id == id);
+        }
     }
 
     /// <summary>
-    /// Atomically acquires an in-process lease for one durable queue target. Leases are
-    /// shared by store instances that address the same queue file, but are intentionally
-    /// not persisted so restart recovery continues to use <see cref="SftpQueuedJob.RuntimeOwnerId"/>.
-    /// Dispose the returned lease after every success, cancellation, or failure path.
+    /// Atomically acquires a process-local claim plus an operating-system file lease for one
+    /// durable queue target. Store instances and Sutty processes addressing the same queue
+    /// cannot execute that target concurrently. The owner token is intentionally never
+    /// persisted. Dispose the returned lease after every success, cancellation, or failure path.
     /// </summary>
     public bool TryAcquireTargetLease(
         string jobId,
@@ -206,7 +257,7 @@ public sealed class SftpTransferQueueStore
     /// Acquires a target lease only while the durable job and target are still eligible
     /// for an explicit retry. The state check and claim are serialized with all in-process
     /// leases for the queue file, preventing a stale Files view from re-running a target
-    /// completed by another view.
+    /// completed by another view. The execution claim is also exclusive across processes.
     /// </summary>
     public bool TryAcquireRetryTargetLease(
         string jobId,
@@ -218,8 +269,6 @@ public sealed class SftpTransferQueueStore
         targetId = NormalizeTargetId(targetId);
         ownerToken = NormalizeTargetLeaseOwner(ownerToken);
         var key = new TargetLeaseKey(_targetLeaseScope, jobId, targetId);
-        var claim = new TargetLeaseClaim(ownerToken);
-        var acquiredLease = new TargetLease(() => ReleaseTargetLease(key, claim));
         lock (TargetLeaseGate)
         {
             if (TargetLeases.ContainsKey(key))
@@ -228,9 +277,18 @@ public sealed class SftpTransferQueueStore
                 return false;
             }
 
+            if (!TryOpenTargetExecutionLock(jobId, targetId, out var executionLock))
+            {
+                lease = null;
+                return false;
+            }
+
+            var claim = new TargetLeaseClaim(ownerToken, executionLock!);
             lock (_gate)
             {
-                var job = ReadDocument().Jobs.FirstOrDefault(item => item.Id == jobId);
+                using var documentLock = AcquireDocumentMutationLock();
+                var job = ReadDocument(tolerateInvalid: false).Jobs
+                    .FirstOrDefault(item => item.Id == jobId);
                 var target = job?.Targets.FirstOrDefault(item => item.Id == targetId);
                 if (job is null || target is null ||
                     job.State == SftpQueueJobState.Completed ||
@@ -241,15 +299,16 @@ public sealed class SftpTransferQueueStore
                         SftpQueueTargetState.Failed or
                         SftpQueueTargetState.Cancelled))
                 {
+                    claim.Dispose();
                     lease = null;
                     return false;
                 }
             }
 
             TargetLeases.Add(key, claim);
+            lease = new TargetLease(() => ReleaseTargetLease(key, claim));
         }
 
-        lease = acquiredLease;
         return true;
     }
 
@@ -262,16 +321,19 @@ public sealed class SftpTransferQueueStore
         lease = null;
 
         var key = new TargetLeaseKey(_targetLeaseScope, jobId, targetId);
-        var claim = new TargetLeaseClaim(ownerToken);
-        var acquiredLease = new TargetLease(() => ReleaseTargetLease(key, claim));
         lock (TargetLeaseGate)
         {
             if (TargetLeases.ContainsKey(key))
                 return false;
+
+            if (!TryOpenTargetExecutionLock(jobId, targetId, out var executionLock))
+                return false;
+
+            var claim = new TargetLeaseClaim(ownerToken, executionLock!);
             TargetLeases.Add(key, claim);
+            lease = new TargetLease(() => ReleaseTargetLease(key, claim));
         }
 
-        lease = acquiredLease;
         return true;
     }
 
@@ -285,9 +347,11 @@ public sealed class SftpTransferQueueStore
     {
         jobId = NormalizeId(jobId);
         targetId = NormalizeTargetId(targetId);
+        var changed = false;
         lock (_gate)
         {
-            var document = ReadDocument();
+            using var documentLock = AcquireDocumentMutationLock();
+            var document = ReadDocument(tolerateInvalid: false);
             var jobIndex = document.Jobs.FindIndex(job => job.Id == jobId);
             if (jobIndex < 0)
                 return;
@@ -319,20 +383,68 @@ public sealed class SftpTransferQueueStore
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
             };
             WriteDocument(document);
+            changed = true;
         }
+
+        if (changed)
+            PublishChange(SftpTransferQueueChangeKind.TargetUpdated, jobId);
     }
 
     public bool Delete(string id)
     {
         id = NormalizeId(id);
+        var removed = false;
         lock (_gate)
         {
-            var document = ReadDocument();
+            using var documentLock = AcquireDocumentMutationLock();
+            var document = ReadDocument(tolerateInvalid: false);
             if (document.Jobs.RemoveAll(job => job.Id == id) == 0)
                 return false;
             WriteDocument(document);
-            return true;
+            removed = true;
         }
+
+        if (removed)
+            PublishChange(SftpTransferQueueChangeKind.Removed, id);
+        return removed;
+    }
+
+    public bool DeleteCompleted(string id)
+    {
+        id = NormalizeId(id);
+        var removed = false;
+        lock (_gate)
+        {
+            using var documentLock = AcquireDocumentMutationLock();
+            var document = ReadDocument(tolerateInvalid: false);
+            var index = document.Jobs.FindIndex(job => job.Id == id);
+            if (index < 0 || document.Jobs[index].State != SftpQueueJobState.Completed)
+                return false;
+            document.Jobs.RemoveAt(index);
+            WriteDocument(document);
+            removed = true;
+        }
+
+        if (removed)
+            PublishChange(SftpTransferQueueChangeKind.CompletedRemoved, id);
+        return removed;
+    }
+
+    public int DeleteAllCompleted()
+    {
+        var removed = 0;
+        lock (_gate)
+        {
+            using var documentLock = AcquireDocumentMutationLock();
+            var document = ReadDocument(tolerateInvalid: false);
+            removed = document.Jobs.RemoveAll(job => job.State == SftpQueueJobState.Completed);
+            if (removed > 0)
+                WriteDocument(document);
+        }
+
+        if (removed > 0)
+            PublishChange(SftpTransferQueueChangeKind.CompletedRemoved);
+        return removed;
     }
 
     public static IReadOnlySet<string> GetRetryTargetIds(SftpQueuedJob job) => job.Targets
@@ -344,6 +456,15 @@ public sealed class SftpTransferQueueStore
                                       SftpQueueTargetState.Cancelled)
         .Select(target => target.Id)
         .ToHashSet(StringComparer.Ordinal);
+
+    public static IReadOnlySet<string> GetFailedTargetIds(SftpQueuedJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        return job.Targets
+            .Where(target => target.State == SftpQueueTargetState.Failed)
+            .Select(target => target.Id)
+            .ToHashSet(StringComparer.Ordinal);
+    }
 
     /// <summary>
     /// Projects durable byte counters to a user-facing percentage. A completed job is
@@ -442,16 +563,91 @@ public sealed class SftpTransferQueueStore
         return OperatingSystem.IsWindows() ? fullPath.ToUpperInvariant() : fullPath;
     }
 
-    private static void ReleaseTargetLease(TargetLeaseKey key, TargetLeaseClaim claim)
+    private static string HashLockIdentity(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private FileStream AcquireDocumentMutationLock()
     {
-        lock (TargetLeaseGate)
+        Directory.CreateDirectory(_lockDirectory);
+        var wait = Stopwatch.StartNew();
+        Exception? lastError = null;
+        while (wait.Elapsed < TimeSpan.FromSeconds(5))
         {
-            if (TargetLeases.TryGetValue(key, out var current) && ReferenceEquals(current, claim))
-                TargetLeases.Remove(key);
+            try
+            {
+                return new FileStream(
+                    _documentLockPath,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    bufferSize: 1,
+                    FileOptions.None);
+            }
+            catch (IOException error)
+            {
+                lastError = error;
+                Thread.Sleep(20);
+            }
+        }
+
+        throw new IOException("The transfer queue is busy in another process.", lastError);
+    }
+
+    private bool TryOpenTargetExecutionLock(
+        string jobId,
+        string targetId,
+        out FileStream? executionLock)
+    {
+        executionLock = null;
+        try
+        {
+            Directory.CreateDirectory(_lockDirectory);
+            var identity = $"{_targetLeaseScope}\0{jobId}\0{targetId}";
+            var lockPath = Path.Combine(
+                _lockDirectory,
+                $"target-{HashLockIdentity(identity)}.lock");
+            executionLock = new FileStream(
+                lockPath,
+                FileMode.OpenOrCreate,
+                FileAccess.ReadWrite,
+                FileShare.None,
+                bufferSize: 1,
+                FileOptions.None);
+            return true;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            executionLock?.Dispose();
+            executionLock = null;
+            return false;
         }
     }
 
-    private SftpTransferQueueDocument ReadDocument()
+    private bool IsTargetExecutionLeaseActive(string jobId, string targetId)
+    {
+        if (!TryOpenTargetExecutionLock(jobId, targetId, out var probe))
+            return true;
+        probe!.Dispose();
+        return false;
+    }
+
+    private static void ReleaseTargetLease(TargetLeaseKey key, TargetLeaseClaim claim)
+    {
+        var removed = false;
+        lock (TargetLeaseGate)
+        {
+            if (TargetLeases.TryGetValue(key, out var current) && ReferenceEquals(current, claim))
+            {
+                TargetLeases.Remove(key);
+                removed = true;
+            }
+        }
+
+        if (removed)
+            claim.Dispose();
+    }
+
+    private SftpTransferQueueDocument ReadDocument(bool tolerateInvalid = true)
     {
         try
         {
@@ -466,7 +662,12 @@ public sealed class SftpTransferQueueStore
                 throw new JsonException("The transfer queue contains too many jobs.");
             return document;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        catch (JsonException error) when (!tolerateInvalid)
+        {
+            throw new InvalidDataException("The transfer queue document is invalid.", error);
+        }
+        catch (Exception error) when (tolerateInvalid &&
+            error is IOException or UnauthorizedAccessException or JsonException)
         {
             return new SftpTransferQueueDocument();
         }
@@ -510,9 +711,42 @@ public sealed class SftpTransferQueueStore
     private static string Limit(string value, int maximum) =>
         value.Length <= maximum ? value : value[..maximum];
 
+    private void PublishChange(SftpTransferQueueChangeKind kind, string? jobId = null)
+    {
+        var handlers = Changed;
+        if (handlers is null)
+            return;
+
+        var args = new SftpTransferQueueChangedEventArgs(kind, jobId);
+        foreach (EventHandler<SftpTransferQueueChangedEventArgs> handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(this, args);
+            }
+            catch
+            {
+                // Queue persistence must never fail because a live UI observer was closed.
+            }
+        }
+    }
+
     private readonly record struct TargetLeaseKey(string Scope, string JobId, string TargetId);
 
-    private sealed record TargetLeaseClaim(string OwnerToken);
+    private sealed class TargetLeaseClaim : IDisposable
+    {
+        private FileStream? _executionLock;
+
+        public TargetLeaseClaim(string ownerToken, FileStream executionLock)
+        {
+            OwnerToken = ownerToken;
+            _executionLock = executionLock;
+        }
+
+        public string OwnerToken { get; }
+
+        public void Dispose() => Interlocked.Exchange(ref _executionLock, null)?.Dispose();
+    }
 
     private sealed class TargetLease : IDisposable
     {

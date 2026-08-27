@@ -47,6 +47,13 @@ namespace sutty.UI.Views
         public event EventHandler<TerminalAppShortcutRequest>? AppShortcutRequested;
 
         /// <summary>
+        /// Raised only after the user explicitly requests a new connection attempt for a
+        /// failed or disconnected session. The owning window creates a new session rather
+        /// than replaying commands inside this one.
+        /// </summary>
+        public event EventHandler? ReconnectRequested;
+
+        /// <summary>
         /// True when a persistent PTY is already running. Callers must not inject shell
         /// commands into an existing terminal without an explicit user confirmation,
         /// because the foreground program may be vim, top, a database console, or TUI.
@@ -72,6 +79,7 @@ namespace sutty.UI.Views
         private bool _isTerminal;
         private int _terminalDrainQueued;
         private bool _terminalResizeInProgress;
+        private bool _reconnectPending;
         private long _workingDirectoryRequestVersion;
         private TerminalSize _requestedTerminalSize = new(120, 40, 0, 0);
 
@@ -160,6 +168,7 @@ namespace sutty.UI.Views
             UpdateSftpPill(Session.SftpState);
             UpdateTerminalStatus(Session.TerminalState);
             UpdateConnectionInfo(Session.State);
+            SetReconnectPending(_reconnectPending);
         }
 
         // ── TERMINAL ↔ REPL 세그먼트 토글 ──
@@ -493,6 +502,7 @@ namespace sutty.UI.Views
             UpdateStatusPill(state);
             UpdateSftpPill(Session.SftpState);
             UpdateConnectionInfo(state);
+            UpdateReconnectAction(state);
 
             var connected = state == SessionState.Connected;
             CommandBox.IsEnabled = connected;
@@ -525,6 +535,35 @@ namespace sutty.UI.Views
                     AddSystemCell($"Connection failed: {Session.LastError ?? "unknown error"}");
                     break;
             }
+        }
+
+        public void SetReconnectPending(bool pending)
+        {
+            _reconnectPending = pending;
+            ReconnectButton.Content = pending
+                ? Loc.T("재연결 중…", "Reconnecting…")
+                : Loc.T("재연결", "Reconnect");
+            UpdateReconnectAction(Session.State);
+        }
+
+        private void UpdateReconnectAction(SessionState state)
+        {
+            var available = ReconnectPolicy.GetDisposition(state, Session.Info) !=
+                            ReconnectDisposition.Unavailable;
+            ReconnectButton.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+            ReconnectButton.IsEnabled = available && !_reconnectPending;
+        }
+
+        private void ReconnectButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_reconnectPending ||
+                ReconnectPolicy.GetDisposition(Session.State, Session.Info) ==
+                ReconnectDisposition.Unavailable)
+            {
+                return;
+            }
+
+            ReconnectRequested?.Invoke(this, EventArgs.Empty);
         }
 
         // ── 셀 실행 ──

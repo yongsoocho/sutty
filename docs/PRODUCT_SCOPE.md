@@ -34,7 +34,7 @@ capability classification, not the visual navigation hierarchy.
 | Local | Tabbed Windows shell sessions through ConPTY. |
 | Terminal | Persistent interactive SSH PTY with resize, keyboard, mouse, Unicode/IME, search, and clipboard handling. |
 | Commands runner | Structured non-interactive commands with distinct input/output blocks, status, timing, and cancellation. The legacy persisted value `Repl` remains internal for compatibility. |
-| Files | Session-bound SFTP tree and safe upload/download workflows with explicit collision handling. |
+| Files | Session-bound Local ↔ Remote panes and safe multi-selection upload/download workflows with explicit collision handling. |
 | Multi | Structured commands and SFTP operations sent only to explicitly selected sessions; default selection is zero. |
 
 ### Two common capabilities
@@ -106,7 +106,7 @@ Multi는 주 이동 목적지가 아니라 Commands 아래의 고급 작업입�
 | Local | ConPTY 기반 탭형 Windows shell 세션 |
 | Terminal | 크기 변경, 키보드, 마우스, Unicode/IME, 검색, clipboard를 처리하는 지속형 SSH PTY |
 | Commands runner | 입력·출력 블록, 상태, 실행 시간, 취소를 구분하는 구조화 비대화형 명령. 호환성을 위해 기존 저장값 `Repl`은 내부에만 유지 |
-| Files | 세션에 연결된 SFTP tree와 명시적 충돌 정책을 사용하는 안전한 업로드·다운로드 |
+| Files | 세션에 연결된 Local ↔ Remote pane과 명시적 충돌 정책을 사용하는 안전한 다중 선택 업로드·다운로드 |
 | Multi | 사용자가 명시적으로 선택한 세션에만 보내는 구조화 명령·SFTP 작업. 기본 선택은 0개 |
 
 ### 공통 기능 2개

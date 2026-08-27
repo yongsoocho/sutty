@@ -6,6 +6,7 @@ using sutty.Core.Sessions;
 using sutty.Core.Sftp;
 using sutty.Setting;
 using sutty.UI.Helpers;
+using sutty.UI.Services;
 using sutty.UI.ViewModels;
 using System;
 using System.Collections.Generic;
@@ -22,14 +23,17 @@ using UiSftpTransferDirection = sutty.UI.ViewModels.SftpTransferDirection;
 
 namespace sutty.UI.Views;
 
-/// <summary>Remote SFTP browser and compact transfer surface for the active SSH session.</summary>
+/// <summary>Dual-pane local/SFTP browser and compact transfer surface for one SSH session.</summary>
 public sealed partial class FileTreePanel : UserControl
 {
     public IntPtr OwnerWindowHandle { get; set; }
     public event EventHandler<string>? OpenTerminalHereRequested;
 
     public ObservableCollection<FileNode> RootNodes { get; } = [];
+    public ObservableCollection<FileNode> RemoteItems { get; } = [];
     public ObservableCollection<SftpTransferItemVm> Transfers { get; } = [];
+    public LocalFileBrowserViewModel LocalBrowser { get; } =
+        new(new LocalFileBrowserService());
 
     private ISftpService? _sftp;
     private ISshSession? _session;
@@ -38,17 +42,24 @@ public sealed partial class FileTreePanel : UserControl
     private readonly SemaphoreSlim _transferWorkerGate = new(1, 1);
     private readonly SftpTransferQueueStore _transferQueue = SftpTransferQueueStore.Default;
     private readonly string _targetLeaseOwnerToken = Guid.NewGuid().ToString("N");
+    private readonly FileTreeTransferCenterExecutor _transferCenterExecutor;
+    private readonly HashSet<string> _liveWorkerJobIds = new(StringComparer.Ordinal);
+    private IDisposable? _transferCenterRegistration;
+    private string? _registeredTransferTargetId;
     private int _sessionVersion;
     private int _navigationVersion;
     private string _currentPath = "/";
     private bool _isAvailable = true;
+    private bool _localInitialized;
 
     public FileTreePanel()
     {
         InitializeComponent();
+        _transferCenterExecutor = new FileTreeTransferCenterExecutor(this);
         Loaded += (_, _) =>
         {
             _isAvailable = true;
+            _ = EnsureLocalBrowserAsync();
             _ = LoadAsync(_session);
         };
         Unloaded += (_, _) =>
@@ -67,6 +78,7 @@ public sealed partial class FileTreePanel : UserControl
         Bindings.Update();
         foreach (var transfer in Transfers)
             transfer.RefreshLanguage();
+        UpdateTransferButtons();
         if (_sftp is not null)
             _ = NavigateToPathAsync(_currentPath); // recreate localized data-template flyouts
 
@@ -101,6 +113,7 @@ public sealed partial class FileTreePanel : UserControl
         {
             InvalidateSessionOperations(clearTransfers: true);
             RootNodes.Clear();
+            RemoteItems.Clear();
             PathBox.Text = "";
             FileTree.IsEnabled = false;
         }
@@ -110,6 +123,7 @@ public sealed partial class FileTreePanel : UserControl
         {
             _sftp = null;
             RootNodes.Clear();
+            RemoteItems.Clear();
             PathBox.Text = "";
             FileTree.IsEnabled = false;
             ShowStatus(null);
@@ -130,6 +144,7 @@ public sealed partial class FileTreePanel : UserControl
             _sftp = null;
             InvalidateSessionOperations(clearTransfers: true);
             RootNodes.Clear();
+            RemoteItems.Clear();
             FileTree.IsEnabled = false;
             LoadingRing.IsActive = session.State == SessionState.Connecting;
             ShowStatus(session.State == SessionState.Failed
@@ -142,6 +157,7 @@ public sealed partial class FileTreePanel : UserControl
         {
             case SftpConnectionState.Ready:
                 _sftp = session.Sftp;
+                RegisterTransferCenterExecutor();
                 if (_isAvailable)
                     await NavigateToPathAsync("/");
                 RefreshRestoredTransfers();
@@ -150,6 +166,7 @@ public sealed partial class FileTreePanel : UserControl
                 _sftp = null;
                 InvalidateSessionOperations(clearTransfers: true);
                 RootNodes.Clear();
+                RemoteItems.Clear();
                 FileTree.IsEnabled = false;
                 LoadingRing.IsActive = false;
                 SftpUnavailableState.Visibility = Visibility.Visible;
@@ -161,6 +178,7 @@ public sealed partial class FileTreePanel : UserControl
             default:
                 _sftp = null;
                 RootNodes.Clear();
+                RemoteItems.Clear();
                 FileTree.IsEnabled = false;
                 LoadingRing.IsActive = true;
                 ShowStatus(Loc.T("SFTP에 연결하는 중입니다…", "Connecting to SFTP…"));
@@ -201,7 +219,11 @@ public sealed partial class FileTreePanel : UserControl
             PathBox.Text = normalized;
             RootNodes.Clear();
             RootNodes.Add(root);
+            RemoteItems.Clear();
+            foreach (var child in root.Children)
+                RemoteItems.Add(child);
             FileTree.IsEnabled = true;
+            UpdateTransferButtons();
         }
         catch (OperationCanceledException)
         {
@@ -236,9 +258,43 @@ public sealed partial class FileTreePanel : UserControl
 
     private void DetachSession()
     {
+        DisposeTransferCenterRegistration();
         if (_session is null) return;
         _session.StateChanged -= OnSessionStateChanged;
         _session.SftpStateChanged -= OnSftpStateChanged;
+    }
+
+    private void RegisterTransferCenterExecutor()
+    {
+        if (_session is not
+            {
+                State: SessionState.Connected,
+                SftpState: SftpConnectionState.Ready,
+            } || _sftp is null)
+        {
+            DisposeTransferCenterRegistration();
+            return;
+        }
+
+        var targetId = CurrentSftpPersistenceId();
+        if (_transferCenterRegistration is not null &&
+            string.Equals(_registeredTransferTargetId, targetId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        DisposeTransferCenterRegistration();
+        _transferCenterRegistration = TransferCenterService.Default.RegisterExecutor(
+            targetId,
+            _transferCenterExecutor);
+        _registeredTransferTargetId = targetId;
+    }
+
+    private void DisposeTransferCenterRegistration()
+    {
+        _transferCenterRegistration?.Dispose();
+        _transferCenterRegistration = null;
+        _registeredTransferTargetId = null;
     }
 
     private void InvalidateSessionOperations(bool clearTransfers)
@@ -489,6 +545,350 @@ public sealed partial class FileTreePanel : UserControl
         await NavigateToPathAsync(PathBox.Text);
     }
 
+    private async Task EnsureLocalBrowserAsync()
+    {
+        if (_localInitialized)
+        {
+            ApplyLocalBrowserState();
+            return;
+        }
+
+        LocalLoadingRing.IsActive = true;
+        var loaded = await LocalBrowser.InitializeAsync();
+        _localInitialized = loaded;
+        ApplyLocalBrowserState();
+    }
+
+    private async Task NavigateLocalAsync(string path)
+    {
+        LocalLoadingRing.IsActive = true;
+        await LocalBrowser.NavigateAsync(path);
+        if (!string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
+            _localInitialized = true;
+        ApplyLocalBrowserState();
+    }
+
+    private async Task RefreshLocalBrowserAsync()
+    {
+        LocalLoadingRing.IsActive = true;
+        await LocalBrowser.RefreshAsync();
+        if (!string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
+            _localInitialized = true;
+        ApplyLocalBrowserState();
+    }
+
+    private void ApplyLocalBrowserState()
+    {
+        LocalLoadingRing.IsActive = LocalBrowser.IsLoading;
+        if (!string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
+            LocalPathBox.Text = LocalBrowser.CurrentPath;
+        LocalParentButton.IsEnabled = LocalBrowser.CanNavigateParent;
+        LocalEmptyState.Visibility = !LocalBrowser.IsLoading &&
+            LocalBrowser.Items.Count == 0 && string.IsNullOrWhiteSpace(LocalBrowser.ErrorMessage)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        LocalStatusText.Text = LocalBrowser.ErrorMessage ?? "";
+        LocalStatusText.Visibility = string.IsNullOrWhiteSpace(LocalBrowser.ErrorMessage)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        UpdateTransferButtons();
+    }
+
+    private async void LocalParent_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
+        {
+            await EnsureLocalBrowserAsync();
+            return;
+        }
+
+        LocalLoadingRing.IsActive = true;
+        await LocalBrowser.NavigateParentAsync();
+        ApplyLocalBrowserState();
+    }
+
+    private async void LocalGoPath_Click(object sender, RoutedEventArgs e) =>
+        await NavigateLocalAsync(LocalPathBox.Text);
+
+    private async void LocalRefresh_Click(object sender, RoutedEventArgs e) =>
+        await RefreshLocalBrowserAsync();
+
+    private async void LocalPathBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Enter) return;
+        e.Handled = true;
+        await NavigateLocalAsync(LocalPathBox.Text);
+    }
+
+    private async void ChooseLocalFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (OwnerWindowHandle == IntPtr.Zero)
+        {
+            ShowLocalStatus(Loc.T("폴더 선택 창을 열 수 없습니다.",
+                "The folder picker is not available."));
+            return;
+        }
+
+        try
+        {
+            var picker = new FolderPicker
+            {
+                SuggestedStartLocation = PickerLocationId.Downloads,
+            };
+            picker.FileTypeFilter.Add("*");
+            InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder is not null && !string.IsNullOrWhiteSpace(folder.Path))
+                await NavigateLocalAsync(folder.Path);
+        }
+        catch (Exception error)
+        {
+            ShowLocalStatus(Loc.T("폴더 선택 창을 열 수 없습니다", "Could not open the folder picker") +
+                $": {error.Message}");
+        }
+    }
+
+    private async void LocalItem_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (LocalList.SelectedItem is not LocalFileItemViewModel { IsDirectory: true } item)
+            return;
+        e.Handled = true;
+        await NavigateLocalAsync(item.FullPath);
+    }
+
+    private async void LocalList_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Enter ||
+            LocalList.SelectedItem is not LocalFileItemViewModel { IsDirectory: true } item)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        await NavigateLocalAsync(item.FullPath);
+    }
+
+    private async void RemoteList_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Enter ||
+            FileTree.SelectedItem is not FileNode { IsDirectory: true } node ||
+            !IsNodeCurrent(node))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        await NavigateToPathAsync(node.FullPath);
+    }
+
+    private void BrowserSelection_Changed(object sender, SelectionChangedEventArgs e) =>
+        UpdateTransferButtons();
+
+    private void UpdateTransferButtons()
+    {
+        if (LocalList is null || FileTree is null || UploadSelectedButton is null ||
+            DownloadSelectedButton is null)
+        {
+            return;
+        }
+
+        var localCount = LocalList.SelectedItems.Count;
+        var remoteCount = FileTree.SelectedItems.Count;
+        LocalSelectionText.Text = localCount == 0
+            ? Loc.T("선택 없음", "No selection")
+            : Loc.T($"{localCount}개 선택", $"{localCount} selected");
+        RemoteSelectionText.Text = remoteCount == 0
+            ? Loc.T("선택 없음", "No selection")
+            : Loc.T($"{remoteCount}개 선택", $"{remoteCount} selected");
+
+        var remoteReady = _isAvailable && _sftp is not null && RootNodes.Count > 0;
+        UploadSelectedButton.IsEnabled = remoteReady && localCount > 0;
+        DownloadSelectedButton.IsEnabled = remoteReady && remoteCount > 0 &&
+            !string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath);
+    }
+
+    private async void UploadSelected_Click(object sender, RoutedEventArgs e) =>
+        await QueueLocalUploadsAsync(LocalList.SelectedItems.OfType<LocalFileItemViewModel>().ToArray());
+
+    private async void UploadLocalItem_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is LocalFileItemViewModel item)
+            await QueueLocalUploadsAsync([item]);
+    }
+
+    private async Task QueueLocalUploadsAsync(IReadOnlyList<LocalFileItemViewModel> selected)
+    {
+        var sftp = _sftp;
+        var sessionVersion = _sessionVersion;
+        if (!_isAvailable || sftp is null || RootNodes.Count == 0 || selected.Count == 0)
+            return;
+
+        var activeCount = Transfers.Count(transfer => transfer.IsActive);
+        var capacity = Math.Max(0, 8 - activeCount);
+        if (capacity == 0)
+        {
+            ShowStatus(Loc.T("실행 중인 전송이 8개입니다. 완료 후 다시 시도하세요.",
+                "Eight transfers are active. Try again after one finishes."));
+            return;
+        }
+
+        var candidates = selected
+            .GroupBy(item => item.FullPath, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .Take(capacity)
+            .ToArray();
+        if (selected.Count > candidates.Length)
+        {
+            ShowStatus(Loc.T(
+                $"현재 큐 공간에 맞춰 {candidates.Length}개 항목만 추가합니다.",
+                $"Only {candidates.Length} item(s) fit in the current transfer queue."));
+        }
+
+        foreach (var item in candidates)
+        {
+            if (!_isAvailable || !ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion)
+                return;
+            if (item.IsDirectory && item.IsReparsePoint)
+            {
+                ShowStatus(Loc.T(
+                    $"'{item.Name}'은(는) 연결된 폴더이므로 직접 업로드하지 않습니다.",
+                    $"'{item.Name}' is a linked folder and was not uploaded directly."));
+                continue;
+            }
+            if (!File.Exists(item.FullPath) && !Directory.Exists(item.FullPath))
+            {
+                ShowStatus(Loc.T($"'{item.Name}'을(를) 찾을 수 없습니다.",
+                    $"'{item.Name}' no longer exists."));
+                continue;
+            }
+
+            var destination = RemotePath.Combine(_currentPath, item.Name);
+            var collision = RemoteItems.Any(remote =>
+                    remote.Name.Equals(item.Name, StringComparison.Ordinal)) ||
+                Transfers.Any(transfer => transfer.CanCancel &&
+                    transfer.DestinationPath.Equals(destination, StringComparison.Ordinal));
+            var conflictPolicy = await ResolveConflictPolicyAsync(item.Name, collision);
+            if (conflictPolicy is null || !_isAvailable || !ReferenceEquals(_sftp, sftp) ||
+                sessionVersion != _sessionVersion)
+            {
+                continue;
+            }
+
+            _ = UploadPathAsync(
+                item.FullPath,
+                item.Name,
+                item.Size,
+                _currentPath,
+                conflictPolicy.Value,
+                sftp,
+                sessionVersion);
+        }
+    }
+
+    private async void DownloadSelected_Click(object sender, RoutedEventArgs e) =>
+        await QueueRemoteDownloadsAsync(FileTree.SelectedItems.OfType<FileNode>().ToArray());
+
+    private async void DownloadRemoteItemToLocal_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is FileNode node)
+            await QueueRemoteDownloadsAsync([node]);
+    }
+
+    private async Task QueueRemoteDownloadsAsync(IReadOnlyList<FileNode> selected)
+    {
+        var sftp = _sftp;
+        var sessionVersion = _sessionVersion;
+        if (!_isAvailable || sftp is null || selected.Count == 0 ||
+            string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
+        {
+            return;
+        }
+
+        var activeCount = Transfers.Count(transfer => transfer.IsActive);
+        var capacity = Math.Max(0, 8 - activeCount);
+        if (capacity == 0)
+        {
+            ShowStatus(Loc.T("실행 중인 전송이 8개입니다. 완료 후 다시 시도하세요.",
+                "Eight transfers are active. Try again after one finishes."));
+            return;
+        }
+
+        var candidates = selected
+            .Where(IsNodeCurrent)
+            .GroupBy(node => node.FullPath, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .Take(capacity)
+            .ToArray();
+        if (selected.Count > candidates.Length)
+        {
+            ShowStatus(Loc.T(
+                $"현재 큐 공간에 맞춰 {candidates.Length}개 항목만 추가합니다.",
+                $"Only {candidates.Length} item(s) fit in the current transfer queue."));
+        }
+
+        foreach (var node in candidates)
+        {
+            if (!_isAvailable || !ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion)
+                return;
+            if (!LocalFilePathRules.TryResolveDirectChild(
+                    LocalBrowser.CurrentPath,
+                    node.Name,
+                    out var localPath))
+            {
+                ShowStatus(Loc.T(
+                    $"'{node.Name}'은(는) Windows 파일명으로 안전하게 저장할 수 없습니다.",
+                    $"'{node.Name}' cannot be stored safely as a Windows filename."));
+                continue;
+            }
+
+            var collision = File.Exists(localPath) || Directory.Exists(localPath) ||
+                Transfers.Any(transfer => transfer.CanCancel &&
+                    transfer.DestinationPath.Equals(localPath, StringComparison.OrdinalIgnoreCase));
+            var conflictPolicy = await ResolveConflictPolicyAsync(node.Name, collision);
+            if (conflictPolicy is null || !_isAvailable || !ReferenceEquals(_sftp, sftp) ||
+                sessionVersion != _sessionVersion)
+            {
+                continue;
+            }
+
+            _ = DownloadAsync(node, localPath, conflictPolicy.Value, sftp, sessionVersion);
+        }
+    }
+
+    private static bool IsDirectChildPath(string directory, string path)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(path))
+            return false;
+        try
+        {
+            return string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)),
+                Path.GetDirectoryName(Path.GetFullPath(path)),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception error) when (error is IOException or ArgumentException or
+                                      NotSupportedException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private void CopyLocalPath_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not LocalFileItemViewModel item) return;
+        var package = new DataPackage();
+        package.SetText(item.FullPath);
+        Clipboard.SetContent(package);
+    }
+
+    private void ShowLocalStatus(string? message)
+    {
+        LocalStatusText.Text = message ?? "";
+        LocalStatusText.Visibility = string.IsNullOrWhiteSpace(message)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
     private void Node_DragOver(object sender, DragEventArgs e)
     {
         if (!e.DataView.Contains(StandardDataFormats.StorageItems)) return;
@@ -590,13 +990,33 @@ public sealed partial class FileTreePanel : UserControl
         }
         if (!ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion) return;
 
-        var destination = RemotePath.Combine(remoteDirectory, item.Name);
+        await UploadPathAsync(
+            item.Path,
+            item.Name,
+            size,
+            remoteDirectory,
+            conflictPolicy,
+            sftp,
+            sessionVersion);
+    }
+
+    private async Task UploadPathAsync(
+        string localPath,
+        string name,
+        long size,
+        string remoteDirectory,
+        SftpConflictPolicy conflictPolicy,
+        ISftpService sftp,
+        int sessionVersion)
+    {
+        if (!ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion) return;
+        var destination = RemotePath.Combine(remoteDirectory, name);
         var options = CreateTransferOptions(conflictPolicy);
         var queuedJob = CreateSingleQueuedJob(
             sutty.Core.Sftp.SftpTransferDirection.Upload,
-            item.Path,
+            localPath,
             destination,
-            item.Name,
+            name,
             size,
             options);
         try { _transferQueue.Upsert(queuedJob); }
@@ -620,8 +1040,8 @@ public sealed partial class FileTreePanel : UserControl
         try
         {
             transfer = TryAddTransfer(
-                item.Name,
-                item.Path,
+                name,
+                localPath,
                 destination,
                 size,
                 UiSftpTransferDirection.Upload,
@@ -639,6 +1059,7 @@ public sealed partial class FileTreePanel : UserControl
             return;
         }
         var workerAcquired = false;
+        _liveWorkerJobIds.Add(queuedJob.Id);
         try
         {
             var token = transfer.Token;
@@ -652,7 +1073,7 @@ public sealed partial class FileTreePanel : UserControl
             var durableProgress = new DurableProgressState();
             var progress = CreateQueuedTransferProgress(queuedJob, transfer, durableProgress);
             await sftp.UploadPathAsync(
-                item.Path,
+                localPath,
                 destination,
                 options,
                 progress,
@@ -692,6 +1113,7 @@ public sealed partial class FileTreePanel : UserControl
         }
         finally
         {
+            _liveWorkerJobIds.Remove(queuedJob.Id);
             targetLease!.Dispose();
             if (workerAcquired) _transferWorkerGate.Release();
             if (transfer.State != SftpTransferState.Paused)
@@ -823,6 +1245,7 @@ public sealed partial class FileTreePanel : UserControl
             return;
         }
         var workerAcquired = false;
+        _liveWorkerJobIds.Add(queuedJob.Id);
         try
         {
             var token = transfer.Token;
@@ -848,6 +1271,8 @@ public sealed partial class FileTreePanel : UserControl
                 SftpQueueTargetState.Succeeded,
                 bytesTransferred: durableProgress.BytesTransferred,
                 totalBytes: durableProgress.TotalBytes);
+            if (_localInitialized && IsDirectChildPath(LocalBrowser.CurrentPath, localPath))
+                await RefreshLocalBrowserAsync();
         }
         catch (OperationCanceledException)
         {
@@ -875,6 +1300,7 @@ public sealed partial class FileTreePanel : UserControl
         }
         finally
         {
+            _liveWorkerJobIds.Remove(queuedJob.Id);
             targetLease!.Dispose();
             if (workerAcquired) _transferWorkerGate.Release();
             if (transfer.State != SftpTransferState.Paused)
@@ -886,7 +1312,22 @@ public sealed partial class FileTreePanel : UserControl
     private async void NewFolder_Click(object sender, RoutedEventArgs e)
     {
         if (NodeFrom(sender) is not { IsDirectory: true } node || !IsNodeCurrent(node) ||
-            _sftp is not { } sftp) return;
+            _sftp is null)
+        {
+            return;
+        }
+
+        await CreateRemoteFolderAsync(node.FullPath);
+    }
+
+    private async void NewFolderInCurrentPath_Click(object sender, RoutedEventArgs e) =>
+        await CreateRemoteFolderAsync(_currentPath);
+
+    private async Task CreateRemoteFolderAsync(string parentPath)
+    {
+        if (!_isAvailable || _sftp is not { } sftp || RootNodes.Count == 0)
+            return;
+
         var version = _sessionVersion;
         var token = _sessionCts.Token;
         var name = await PromptForNameAsync(
@@ -895,7 +1336,7 @@ public sealed partial class FileTreePanel : UserControl
             !ReferenceEquals(_sftp, sftp) || version != _sessionVersion) return;
         try
         {
-            await sftp.CreateDirectoryAsync(RemotePath.Combine(node.FullPath, name), token);
+            await sftp.CreateDirectoryAsync(RemotePath.Combine(parentPath, name), token);
             if (ReferenceEquals(_sftp, sftp) && version == _sessionVersion)
                 await NavigateToPathAsync(_currentPath);
         }
@@ -1349,6 +1790,7 @@ public sealed partial class FileTreePanel : UserControl
         IDisposable targetLease)
     {
         var workerAcquired = false;
+        _liveWorkerJobIds.Add(job.Id);
         try
         {
             var token = transfer.Token;
@@ -1390,6 +1832,12 @@ public sealed partial class FileTreePanel : UserControl
             {
                 await NavigateToPathAsync(_currentPath);
             }
+            else if (job.Direction == sutty.Core.Sftp.SftpTransferDirection.Download &&
+                     _localInitialized &&
+                     IsDirectChildPath(LocalBrowser.CurrentPath, job.DestinationPath))
+            {
+                await RefreshLocalBrowserAsync();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -1417,6 +1865,7 @@ public sealed partial class FileTreePanel : UserControl
         }
         finally
         {
+            _liveWorkerJobIds.Remove(job.Id);
             targetLease.Dispose();
             if (workerAcquired) _transferWorkerGate.Release();
             if (transfer.State != SftpTransferState.Paused)
@@ -1787,6 +2236,245 @@ public sealed partial class FileTreePanel : UserControl
                 bytesTransferred: state.BytesTransferred,
                 totalBytes: state.TotalBytes);
         });
+
+    private bool CanExecuteFromTransferCenter(
+        SftpQueuedJob job,
+        SftpQueuedTarget target,
+        TransferCenterAction action)
+    {
+        if (!DispatcherQueue.HasThreadAccess ||
+            _session is not
+            {
+                State: SessionState.Connected,
+                SftpState: SftpConnectionState.Ready,
+            } currentSession || _sftp is null ||
+            !ReferenceEquals(_sftp, currentSession.Sftp) ||
+            string.IsNullOrWhiteSpace(_registeredTransferTargetId) ||
+            !string.Equals(target.Id, _registeredTransferTargetId, StringComparison.Ordinal) ||
+            job.Mode != SftpQueueMode.Single || job.Targets.Count != 1 ||
+            !string.Equals(job.Targets[0].Id, target.Id, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var transfer = Transfers.FirstOrDefault(item =>
+            string.Equals(item.QueueJobId, job.Id, StringComparison.Ordinal));
+        var hasWorker = _liveWorkerJobIds.Contains(job.Id);
+        return action switch
+        {
+            TransferCenterAction.Pause => hasWorker && transfer?.CanPause == true &&
+                target.State is SftpQueueTargetState.Pending or SftpQueueTargetState.Running,
+            TransferCenterAction.Cancel => hasWorker
+                ? transfer?.CanCancel == true &&
+                    target.State is SftpQueueTargetState.Pending or SftpQueueTargetState.Running
+                : target.State is SftpQueueTargetState.Pending or SftpQueueTargetState.Paused or
+                    SftpQueueTargetState.Interrupted,
+            TransferCenterAction.Resume => !hasWorker &&
+                target.State is SftpQueueTargetState.Paused or SftpQueueTargetState.Interrupted,
+            TransferCenterAction.RetryFailed => !hasWorker &&
+                target.State == SftpQueueTargetState.Failed,
+            _ => false,
+        };
+    }
+
+    private async Task<TransferCenterExecutorResult> ExecuteFromTransferCenterAsync(
+        SftpQueuedJob snapshotJob,
+        SftpQueuedTarget snapshotTarget,
+        TransferCenterAction action,
+        CancellationToken cancellationToken)
+    {
+        if (!DispatcherQueue.HasThreadAccess)
+        {
+            var completion = new TaskCompletionSource<TransferCenterExecutorResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!DispatcherQueue.TryEnqueue(async () =>
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        completion.TrySetCanceled(cancellationToken);
+                        return;
+                    }
+                    try
+                    {
+                        completion.TrySetResult(await ExecuteFromTransferCenterAsync(
+                            snapshotJob,
+                            snapshotTarget,
+                            action,
+                            cancellationToken));
+                    }
+                    catch (Exception error)
+                    {
+                        completion.TrySetException(error);
+                    }
+                }))
+            {
+                return TransferCenterExecutorResult.Rejected(
+                    Loc.T("세션 화면에 명령을 전달할 수 없습니다.",
+                        "The command could not be dispatched to the session."));
+            }
+            return await completion.Task.WaitAsync(cancellationToken);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_sftp is not { } sftp)
+            return TransferCenterExecutorResult.Rejected(Loc.T(
+                "SFTP 연결이 준비되지 않았습니다.", "The SFTP connection is not ready."));
+
+        SftpQueuedJob? job;
+        try
+        {
+            job = _transferQueue.Get(snapshotJob.Id);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return TransferCenterExecutorResult.Rejected(error.Message);
+        }
+
+        var target = job?.Targets.FirstOrDefault(item =>
+            string.Equals(item.Id, snapshotTarget.Id, StringComparison.Ordinal));
+        if (job is null || target is null || !CanExecuteFromTransferCenter(job, target, action))
+        {
+            return TransferCenterExecutorResult.Rejected(Loc.T(
+                "전송 상태가 변경되어 이 작업을 실행하지 않았습니다.",
+                "The transfer changed state, so the action was not executed."));
+        }
+
+        var live = Transfers.FirstOrDefault(item =>
+            string.Equals(item.QueueJobId, job.Id, StringComparison.Ordinal));
+        if (action == TransferCenterAction.Pause)
+        {
+            live!.Pause();
+            return live.State == SftpTransferState.Pausing
+                ? TransferCenterExecutorResult.Success()
+                : TransferCenterExecutorResult.Rejected();
+        }
+
+        if (action == TransferCenterAction.Cancel && _liveWorkerJobIds.Contains(job.Id))
+        {
+            live!.Cancel(userInitiated: true);
+            return live.State == SftpTransferState.Cancelling
+                ? TransferCenterExecutorResult.Success()
+                : TransferCenterExecutorResult.Rejected();
+        }
+
+        if (!_transferQueue.TryAcquireRetryTargetLease(
+                job.Id,
+                target.Id,
+                _targetLeaseOwnerToken,
+                out var targetLease))
+        {
+            return TransferCenterExecutorResult.Rejected(Loc.T(
+                "이 전송은 다른 실행자가 처리 중입니다.",
+                "Another worker is already handling this transfer."));
+        }
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var latestJob = _transferQueue.Get(job.Id);
+            var latestTarget = latestJob?.Targets.FirstOrDefault(item =>
+                string.Equals(item.Id, target.Id, StringComparison.Ordinal));
+            if (latestJob is null || latestTarget is null ||
+                !CanExecuteFromTransferCenter(latestJob, latestTarget, action))
+            {
+                return TransferCenterExecutorResult.Rejected(Loc.T(
+                    "전송 상태가 변경되어 이 작업을 실행하지 않았습니다.",
+                    "The transfer changed state, so the action was not executed."));
+            }
+
+            if (action == TransferCenterAction.Cancel)
+            {
+                _transferQueue.UpdateTarget(
+                    latestJob.Id,
+                    latestTarget.Id,
+                    SftpQueueTargetState.Cancelled,
+                    latestTarget.BytesTransferred,
+                    latestTarget.TotalBytes);
+                if (live is not null && !_liveWorkerJobIds.Contains(latestJob.Id))
+                {
+                    Transfers.Remove(live);
+                    live.Dispose();
+                }
+                RefreshRestoredTransfers();
+                return TransferCenterExecutorResult.Success();
+            }
+
+            if (!string.Equals(latestJob.SourcePath, latestTarget.SourcePath,
+                    StringComparison.Ordinal) ||
+                !string.Equals(latestJob.DestinationPath, latestTarget.DestinationPath,
+                    StringComparison.Ordinal))
+            {
+                return TransferCenterExecutorResult.Rejected(Loc.T(
+                    "저장된 단일 전송 경로가 일치하지 않습니다.",
+                    "The saved single-transfer paths do not match."));
+            }
+
+            if (live is not null)
+            {
+                Transfers.Remove(live);
+                live.Dispose();
+            }
+            var transfer = TryAddTransfer(
+                ResolveQueuedTransferName(latestJob),
+                latestJob.SourcePath,
+                latestJob.DestinationPath,
+                latestTarget.TotalBytes,
+                latestJob.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+                    ? UiSftpTransferDirection.Upload
+                    : UiSftpTransferDirection.Download,
+                latestJob.Id);
+            if (transfer is null)
+                return TransferCenterExecutorResult.Rejected();
+
+            var sessionVersion = _sessionVersion;
+            _ = ResumeSingleQueuedJobAsync(
+                latestJob,
+                transfer,
+                sftp,
+                sessionVersion,
+                targetLease!);
+            targetLease = null;
+            return TransferCenterExecutorResult.Success();
+        }
+        finally
+        {
+            targetLease?.Dispose();
+        }
+    }
+
+    private static string ResolveQueuedTransferName(SftpQueuedJob job)
+    {
+        var name = job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
+            ? Path.GetFileName(job.SourcePath.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar))
+            : RemotePath.GetName(job.SourcePath);
+        return string.IsNullOrWhiteSpace(name) ? "Transfer" : name;
+    }
+
+    private sealed class FileTreeTransferCenterExecutor : ITransferCenterExecutor
+    {
+        private readonly FileTreePanel _owner;
+
+        public FileTreeTransferCenterExecutor(FileTreePanel owner) => _owner = owner;
+
+        public bool CanExecute(
+            SftpQueuedJob job,
+            SftpQueuedTarget target,
+            TransferCenterAction action) =>
+            _owner.CanExecuteFromTransferCenter(job, target, action);
+
+        public Task<TransferCenterExecutorResult> ExecuteAsync(
+            SftpQueuedJob job,
+            SftpQueuedTarget target,
+            TransferCenterAction action,
+            CancellationToken cancellationToken) =>
+            _owner.ExecuteFromTransferCenterAsync(
+                job,
+                target,
+                action,
+                cancellationToken);
+    }
 
     private sealed class DurableProgressState
     {
