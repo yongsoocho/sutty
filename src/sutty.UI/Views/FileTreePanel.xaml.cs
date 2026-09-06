@@ -55,6 +55,7 @@ public sealed partial class FileTreePanel : UserControl
     public FileTreePanel()
     {
         InitializeComponent();
+        InitializeRemoteEditing();
         _transferCenterExecutor = new FileTreeTransferCenterExecutor(this);
         Loaded += (_, _) =>
         {
@@ -76,6 +77,7 @@ public sealed partial class FileTreePanel : UserControl
     public void RefreshLanguage()
     {
         Bindings.Update();
+        RefreshRemoteEditingLanguage();
         foreach (var transfer in Transfers)
             transfer.RefreshLanguage();
         UpdateTransferButtons();
@@ -112,12 +114,15 @@ public sealed partial class FileTreePanel : UserControl
         if (sessionChanged)
         {
             InvalidateSessionOperations(clearTransfers: true);
+            _remoteHistory.Clear();
+            _browserDrag = null;
             RootNodes.Clear();
             RemoteItems.Clear();
             PathBox.Text = "";
             FileTree.IsEnabled = false;
         }
         _session = session;
+        ApplyBrowserNavigationState();
 
         if (session is null)
         {
@@ -187,7 +192,9 @@ public sealed partial class FileTreePanel : UserControl
     }
 
     /// <summary>Navigate the active SFTP browser to an absolute remote path.</summary>
-    public async Task NavigateToPathAsync(string path)
+    public Task NavigateToPathAsync(string path) => NavigateRemoteCoreAsync(path, 0);
+
+    private async Task NavigateRemoteCoreAsync(string path, int historyOffset)
     {
         var sftp = _sftp;
         if (sftp is null || !_isAvailable) return;
@@ -219,10 +226,10 @@ public sealed partial class FileTreePanel : UserControl
             PathBox.Text = normalized;
             RootNodes.Clear();
             RootNodes.Add(root);
-            RemoteItems.Clear();
-            foreach (var child in root.Children)
-                RemoteItems.Add(child);
+            _remoteHistory.Record(normalized, historyOffset);
+            ApplyRemoteBrowserView();
             FileTree.IsEnabled = true;
+            ApplyBrowserNavigationState();
             UpdateTransferButtons();
         }
         catch (OperationCanceledException)
@@ -583,6 +590,7 @@ public sealed partial class FileTreePanel : UserControl
         if (!string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
             LocalPathBox.Text = LocalBrowser.CurrentPath;
         LocalParentButton.IsEnabled = LocalBrowser.CanNavigateParent;
+        ApplyBrowserNavigationState();
         LocalEmptyState.Visibility = !LocalBrowser.IsLoading &&
             LocalBrowser.Items.Count == 0 && string.IsNullOrWhiteSpace(LocalBrowser.ErrorMessage)
                 ? Visibility.Visible
@@ -705,6 +713,7 @@ public sealed partial class FileTreePanel : UserControl
         UploadSelectedButton.IsEnabled = remoteReady && localCount > 0;
         DownloadSelectedButton.IsEnabled = remoteReady && remoteCount > 0 &&
             !string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath);
+        ApplyBrowserNavigationState();
     }
 
     private async void UploadSelected_Click(object sender, RoutedEventArgs e) =>
@@ -716,12 +725,28 @@ public sealed partial class FileTreePanel : UserControl
             await QueueLocalUploadsAsync([item]);
     }
 
-    private async Task QueueLocalUploadsAsync(IReadOnlyList<LocalFileItemViewModel> selected)
+    private async Task QueueLocalUploadsAsync(IReadOnlyList<LocalFileItemViewModel> selected, string? targetDirectory = null)
     {
         var sftp = _sftp;
         var sessionVersion = _sessionVersion;
         if (!_isAvailable || sftp is null || RootNodes.Count == 0 || selected.Count == 0)
             return;
+
+        // A navigation or collision dialog must never redirect an already requested batch.
+        var remoteDirectory = targetDirectory ?? _currentPath;
+        IReadOnlyList<RemoteFileEntry> destinationEntries;
+        try
+        {
+            destinationEntries = await sftp.ListDirectoryAsync(remoteDirectory, _sessionCts.Token);
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception error)
+        {
+            if (ReferenceEquals(sftp, _sftp) && sessionVersion == _sessionVersion)
+                ShowOperationError(Loc.T("대상 폴더를 열 수 없습니다", "Could not open target folder"), error);
+            return;
+        }
+        if (!_isAvailable || !ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion) return;
 
         var activeCount = Transfers.Count(transfer => transfer.IsActive);
         var capacity = Math.Max(0, 8 - activeCount);
@@ -762,8 +787,8 @@ public sealed partial class FileTreePanel : UserControl
                 continue;
             }
 
-            var destination = RemotePath.Combine(_currentPath, item.Name);
-            var collision = RemoteItems.Any(remote =>
+            var destination = RemotePath.Combine(remoteDirectory, item.Name);
+            var collision = destinationEntries.Any(remote =>
                     remote.Name.Equals(item.Name, StringComparison.Ordinal)) ||
                 Transfers.Any(transfer => transfer.CanCancel &&
                     transfer.DestinationPath.Equals(destination, StringComparison.Ordinal));
@@ -778,7 +803,7 @@ public sealed partial class FileTreePanel : UserControl
                 item.FullPath,
                 item.Name,
                 item.Size,
-                _currentPath,
+                remoteDirectory,
                 conflictPolicy.Value,
                 sftp,
                 sessionVersion);
@@ -794,12 +819,13 @@ public sealed partial class FileTreePanel : UserControl
             await QueueRemoteDownloadsAsync([node]);
     }
 
-    private async Task QueueRemoteDownloadsAsync(IReadOnlyList<FileNode> selected)
+    private async Task QueueRemoteDownloadsAsync(IReadOnlyList<FileNode> selected, string? targetDirectory = null)
     {
         var sftp = _sftp;
         var sessionVersion = _sessionVersion;
+        var localDirectory = targetDirectory ?? LocalBrowser.CurrentPath;
         if (!_isAvailable || sftp is null || selected.Count == 0 ||
-            string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
+            string.IsNullOrWhiteSpace(localDirectory))
         {
             return;
         }
@@ -831,7 +857,7 @@ public sealed partial class FileTreePanel : UserControl
             if (!_isAvailable || !ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion)
                 return;
             if (!LocalFilePathRules.TryResolveDirectChild(
-                    LocalBrowser.CurrentPath,
+                    localDirectory,
                     node.Name,
                     out var localPath))
             {
@@ -891,8 +917,9 @@ public sealed partial class FileTreePanel : UserControl
 
     private void Node_DragOver(object sender, DragEventArgs e)
     {
-        if (!e.DataView.Contains(StandardDataFormats.StorageItems)) return;
-        if ((sender as FrameworkElement)?.DataContext is FileNode candidate && !IsNodeCurrent(candidate)) return;
+        if (!CanAcceptLocalUpload(e.DataView)) return;
+        if ((sender as FrameworkElement)?.DataContext is FileNode candidate &&
+            (!IsNodeCurrent(candidate) || candidate.Entry.IsSymbolicLink)) return;
         e.AcceptedOperation = DataPackageOperation.Copy;
         if ((sender as FrameworkElement)?.DataContext is FileNode node)
             e.DragUIOverride.Caption = Loc.T($"{node.DirectoryPath}에 업로드", $"Upload to {node.DirectoryPath}");
@@ -901,21 +928,22 @@ public sealed partial class FileTreePanel : UserControl
 
     private async void Node_Drop(object sender, DragEventArgs e)
     {
-        if (!e.DataView.Contains(StandardDataFormats.StorageItems)) return;
+        if (!CanAcceptLocalUpload(e.DataView)) return;
         e.Handled = true;
         await HandleDropAsync(e, (sender as FrameworkElement)?.DataContext as FileNode);
     }
 
     private void Tree_DragOver(object sender, DragEventArgs e)
     {
-        if (!e.DataView.Contains(StandardDataFormats.StorageItems)) return;
+        if (e.Handled || !CanAcceptLocalUpload(e.DataView)) return;
         e.AcceptedOperation = DataPackageOperation.Copy;
         e.DragUIOverride.Caption = Loc.T($"{_currentPath}에 업로드", $"Upload to {_currentPath}");
     }
 
     private async void Tree_Drop(object sender, DragEventArgs e)
     {
-        if (e.Handled || !e.DataView.Contains(StandardDataFormats.StorageItems)) return;
+        if (e.Handled || !CanAcceptLocalUpload(e.DataView)) return;
+        e.Handled = true;
         await HandleDropAsync(e, null);
     }
 
@@ -924,80 +952,44 @@ public sealed partial class FileTreePanel : UserControl
         var sftp = _sftp;
         var sessionVersion = _sessionVersion;
         if (sftp is null || RootNodes.Count == 0) return;
-        if (targetNode is not null && !IsNodeCurrent(targetNode)) return;
-
-        IReadOnlyList<IStorageItem> items;
-        try { items = await e.DataView.GetStorageItemsAsync(); }
-        catch (Exception ex)
+        if (targetNode is not null && (!IsNodeCurrent(targetNode) || targetNode.Entry.IsSymbolicLink)) return;
+        var directory = targetNode?.DirectoryPath ?? _currentPath;
+        var deferral = e.GetDeferral();
+        try
         {
-            ShowOperationError(Loc.T("파일을 읽을 수 없습니다", "Could not read dropped files"), ex);
-            return;
-        }
-        if (!ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion) return;
-
-        var directory = targetNode is null ? RootNodes[0]
-            : targetNode.IsDirectory ? targetNode
-            : targetNode.Parent ?? RootNodes[0];
-        if (directory.HasUnrealizedChildren)
-        {
-            directory.HasUnrealizedChildren = false;
-            try { await LoadChildrenAsync(directory); }
-            catch (OperationCanceledException)
+            if (e.DataView.Contains(LocalDragFormat))
             {
-                if (_isAvailable && directory.SessionVersion == _sessionVersion &&
-                    ReferenceEquals(_sftp, sftp))
-                    directory.HasUnrealizedChildren = true;
+                var payload = await ReadBrowserDragAsync(e.DataView, LocalDragFormat);
+                if (payload is not null) await QueueLocalUploadsAsync(payload.LocalItems, directory);
                 return;
             }
-            catch (Exception ex)
+
+            var items = await e.DataView.GetStorageItemsAsync();
+            if (!_isAvailable || !ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion) return;
+            var localItems = new List<LocalFileItemViewModel>();
+            foreach (var item in items.Where(item => item is StorageFile or StorageFolder && !string.IsNullOrWhiteSpace(item.Path)))
             {
-                directory.HasUnrealizedChildren = true;
-                if (_isAvailable && directory.SessionVersion == _sessionVersion &&
-                    ReferenceEquals(_sftp, sftp))
-                    ShowOperationError(Loc.T("대상 폴더를 열 수 없습니다", "Could not open target folder"), ex);
-                return;
+                try
+                {
+                    FileSystemInfo info = item is StorageFolder ? new DirectoryInfo(item.Path) : new FileInfo(item.Path);
+                    var attributes = info.Attributes;
+                    localItems.Add(new LocalFileItemViewModel(new LocalFileEntry(info.Name, info.FullName,
+                        item is StorageFolder, info is FileInfo file ? file.Length : 0, info.LastWriteTime,
+                        (attributes & System.IO.FileAttributes.ReparsePoint) != 0, (attributes & System.IO.FileAttributes.Hidden) != 0)));
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    ShowOperationError(Loc.T($"'{item.Name}'을(를) 읽을 수 없습니다", $"Could not read '{item.Name}'"), error);
+                }
             }
+            await QueueLocalUploadsAsync(localItems, directory);
         }
-
-        foreach (var item in items.Where(item =>
-                     item is StorageFile or StorageFolder &&
-                     !string.IsNullOrWhiteSpace(item.Path)))
+        catch (Exception error)
         {
-            var collision = directory.Children.Any(child => child.Name.Equals(item.Name, StringComparison.Ordinal)) ||
-                Transfers.Any(transferItem => transferItem.CanCancel &&
-                    transferItem.DestinationPath.Equals(
-                        RemotePath.Combine(directory.FullPath, item.Name),
-                        StringComparison.Ordinal));
-            var conflictPolicy = await ResolveConflictPolicyAsync(item.Name, collision);
-            if (!_isAvailable || !ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion)
-                return;
-            if (conflictPolicy is null) continue;
-            _ = UploadAsync(item, directory.FullPath, conflictPolicy.Value, sftp, sessionVersion);
+            if (ReferenceEquals(_sftp, sftp) && sessionVersion == _sessionVersion)
+                ShowOperationError(Loc.T("드롭한 파일을 읽을 수 없습니다", "Could not read dropped files"), error);
         }
-    }
-
-    private async Task UploadAsync(
-        IStorageItem item,
-        string remoteDirectory,
-        SftpConflictPolicy conflictPolicy,
-        ISftpService sftp,
-        int sessionVersion)
-    {
-        long size = 0;
-        if (item is StorageFile file)
-        {
-            try { size = (long)(await file.GetBasicPropertiesAsync()).Size; } catch { }
-        }
-        if (!ReferenceEquals(_sftp, sftp) || sessionVersion != _sessionVersion) return;
-
-        await UploadPathAsync(
-            item.Path,
-            item.Name,
-            size,
-            remoteDirectory,
-            conflictPolicy,
-            sftp,
-            sessionVersion);
+        finally { deferral.Complete(); }
     }
 
     private async Task UploadPathAsync(
@@ -1670,13 +1662,19 @@ public sealed partial class FileTreePanel : UserControl
             var name = job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
                 ? Path.GetFileName(job.SourcePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
                 : RemotePath.GetName(job.SourcePath);
-            TryAddTransfer(
+            var restoredTransfer = TryAddTransfer(
                 string.IsNullOrWhiteSpace(name) ? Loc.T("복원된 전송", "Restored transfer") : name,
                 job.SourcePath,
                 job.DestinationPath,
                 target.TotalBytes,
                 direction,
                 job.Id);
+            if (job.RequiresEditReview && restoredTransfer is not null)
+            {
+                restoredTransfer.AllowsPause = false;
+                restoredTransfer.Fail(Loc.T("편집본과 현재 원격 파일을 확인하고 다시 반영하세요. 보관 폴더에서 편집본을 복구할 수 있습니다.",
+                    "Review the working copy and current remote file before uploading again. Copies are available in the recovery folder."));
+            }
         }
 
         ReconcileRestoredTransferRows(jobs);
@@ -1709,6 +1707,7 @@ public sealed partial class FileTreePanel : UserControl
         var alreadyResuming = false;
         foreach (var job in jobs)
         {
+            if (job.RequiresEditReview) continue;
             var transfer = Transfers.FirstOrDefault(item => item.QueueJobId == job.Id);
             if (transfer?.State is SftpTransferState.Running or SftpTransferState.Cancelling)
                 continue;
@@ -1777,7 +1776,7 @@ public sealed partial class FileTreePanel : UserControl
             stale.Dispose();
         }
 
-        ResumeRestoredButton.Visibility = jobs.Count > 0
+        ResumeRestoredButton.Visibility = jobs.Any(job => !job.RequiresEditReview)
             ? Visibility.Visible
             : Visibility.Collapsed;
     }
@@ -2357,11 +2356,12 @@ public sealed partial class FileTreePanel : UserControl
                 : TransferCenterExecutorResult.Rejected();
         }
 
-        if (!_transferQueue.TryAcquireRetryTargetLease(
-                job.Id,
-                target.Id,
-                _targetLeaseOwnerToken,
-                out var targetLease))
+        // Cancelling a recovered editor job never executes its source. It needs the same
+        // exclusive target claim, but must not request the deliberately blocked retry lease.
+        var acquired = action == TransferCenterAction.Cancel
+            ? _transferQueue.TryAcquireTargetLease(job.Id, target.Id, _targetLeaseOwnerToken, out var targetLease)
+            : _transferQueue.TryAcquireRetryTargetLease(job.Id, target.Id, _targetLeaseOwnerToken, out targetLease);
+        if (!acquired)
         {
             return TransferCenterExecutorResult.Rejected(Loc.T(
                 "이 전송은 다른 실행자가 처리 중입니다.",

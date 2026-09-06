@@ -17,6 +17,7 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid ColumnSpacing="8">
@@ -34,7 +35,7 @@
             </Border>
             <TextBlock Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center"
                        FontSize="10.5" Foreground="{ThemeResource TextFaint}"
-                       Text="{x:Bind h:Loc.T('여러 항목을 선택한 뒤 가운데 전송 버튼을 사용하세요', 'Select multiple items, then use the transfer buttons')}" />
+                       Text="{x:Bind h:Loc.T('반대 패널로 끌어 복사하거나 전송 버튼을 사용하세요', 'Drag to the other pane to copy, or use the transfer buttons')}" />
         </Grid>
 
         <ScrollViewer Grid.Row="1"
@@ -45,17 +46,18 @@
                       VerticalScrollBarVisibility="Disabled"
                       VerticalScrollMode="Disabled"
                       ZoomMode="Disabled">
-        <Grid MinWidth="684" ColumnSpacing="10">
+        <Grid MinWidth="884" ColumnSpacing="10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="280" />
+                <ColumnDefinition Width="*" MinWidth="380" />
                 <ColumnDefinition Width="104" />
-                <ColumnDefinition Width="*" MinWidth="280" />
+                <ColumnDefinition Width="*" MinWidth="380" />
             </Grid.ColumnDefinitions>
 
             <Border Padding="8" Background="{ThemeResource CardBg}"
                     BorderBrush="{ThemeResource CardBorder}" BorderThickness="1" CornerRadius="8">
                 <Grid RowSpacing="6">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -121,7 +123,27 @@
                         </Button>
                     </Grid>
 
-                    <Grid Grid.Row="2" Padding="29,0,8,2" ColumnSpacing="8">
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="3">
+                        <Button x:Name="LocalBackButton" Width="28" Padding="0" IsEnabled="False" Click="LocalBack_Click"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('로컬 뒤로', 'Local back')}"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('뒤로', 'Back')}"><FontIcon FontSize="11" Glyph="&#xE72B;" /></Button>
+                        <Button x:Name="LocalForwardButton" Width="28" Padding="0" IsEnabled="False" Click="LocalForward_Click"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('로컬 앞으로', 'Local forward')}"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('앞으로', 'Forward')}"><FontIcon FontSize="11" Glyph="&#xE72A;" /></Button>
+                        <ComboBox x:Name="LocalSortBox" Width="96" MinHeight="28" Padding="7,3" FontSize="10" SelectedIndex="0"
+                                  SelectionChanged="LocalSort_Changed" AutomationProperties.Name="{x:Bind h:Loc.T('로컬 정렬 기준', 'Local sort by')}">
+                            <ComboBoxItem Content="{x:Bind h:Loc.T('이름', 'Name')}" />
+                            <ComboBoxItem Content="{x:Bind h:Loc.T('크기', 'Size')}" />
+                            <ComboBoxItem Content="{x:Bind h:Loc.T('수정일', 'Modified')}" />
+                        </ComboBox>
+                        <ToggleButton x:Name="LocalDescendingToggle" Width="28" Padding="0" Click="LocalViewOptions_Changed"
+                                      AutomationProperties.Name="{x:Bind h:Loc.T('로컬 내림차순', 'Local descending order')}"
+                                      ToolTipService.ToolTip="{x:Bind h:Loc.T('내림차순 켜기/끄기', 'Toggle descending order')}"><FontIcon FontSize="11" Glyph="&#xE74B;" /></ToggleButton>
+                        <CheckBox x:Name="LocalHiddenToggle" MinWidth="0" FontSize="10" Click="LocalViewOptions_Changed"
+                                  Content="{x:Bind h:Loc.T('숨김', 'Hidden')}" AutomationProperties.Name="{x:Bind h:Loc.T('로컬 숨김 파일 표시', 'Show local hidden files')}" />
+                    </StackPanel>
+
+                    <Grid Grid.Row="3" Padding="29,0,8,2" ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="50" />
@@ -134,8 +156,10 @@
                         <TextBlock Grid.Column="3" FontSize="9.5" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('수정됨', 'Modified')}" TextAlignment="Right" />
                     </Grid>
 
-                    <Grid Grid.Row="3">
-                        <ListView x:Name="LocalList"
+                    <Grid Grid.Row="4">
+                        <ListView x:Name="LocalList" AllowDrop="True" CanDragItems="True" CanReorderItems="False"
+                                  DragItemsStarting="LocalDragItems_Starting" DragItemsCompleted="BrowserDragItems_Completed"
+                                  DragOver="LocalList_DragOver" Drop="LocalList_Drop"
                                   AutomationProperties.Name="{x:Bind h:Loc.T('로컬 파일 목록', 'Local file list')}"
                                   DoubleTapped="LocalItem_DoubleTapped"
                                   ItemsSource="{x:Bind LocalBrowser.Items}"
@@ -151,7 +175,7 @@
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="vm:LocalFileItemViewModel">
-                                    <Grid ColumnSpacing="8">
+                                    <Grid ColumnSpacing="8" AllowDrop="True" DragOver="LocalList_DragOver" Drop="LocalList_Drop">
                                         <Grid.ContextFlyout>
                                             <MenuFlyout>
                                                 <MenuFlyoutItem Click="UploadLocalItem_Click" Icon="Upload" Tag="{x:Bind}"
@@ -200,7 +224,7 @@
                                    Text="{x:Bind h:Loc.T('이 폴더가 비어 있습니다', 'This folder is empty')}"
                                    Visibility="Collapsed" />
                     </Grid>
-                    <TextBlock x:Name="LocalStatusText" Grid.Row="4" FontSize="10"
+                    <TextBlock x:Name="LocalStatusText" Grid.Row="5" FontSize="10"
                                AutomationProperties.LiveSetting="Polite"
                                Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap" Visibility="Collapsed" />
                 </Grid>
@@ -217,6 +241,9 @@
                         Click="DownloadSelected_Click" Content="{x:Bind h:Loc.T('←  다운로드', '←  Download')}"
                         IsEnabled="False"
                         ToolTipService.ToolTip="{x:Bind h:Loc.T('로컬 현재 폴더로 전송', 'Transfer to the current local folder')}" />
+                <Button x:Name="RemoteEditsButton" HorizontalAlignment="Stretch" Click="ShowRemoteEdits_Click"
+                        Content="{x:Bind h:Loc.T('편집본', 'Edits')}"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('원격 파일 편집본 관리', 'Manage remote file edits')}" />
                 <TextBlock Margin="4,4" FontSize="9.5" Foreground="{ThemeResource TextFaint}"
                            Text="{x:Bind h:Loc.T('충돌 정책은 전송 전에 확인됩니다.', 'Conflict policy is reviewed before transfer.')}"
                            TextAlignment="Center" TextWrapping="Wrap" />
@@ -226,6 +253,7 @@
                     BorderBrush="{ThemeResource CardBorder}" BorderThickness="1" CornerRadius="8">
                 <Grid RowSpacing="6">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -296,20 +324,47 @@
                         </Button>
                     </Grid>
 
-                    <Grid Grid.Row="2" Padding="29,0,8,2" ColumnSpacing="8">
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="3">
+                        <Button x:Name="RemoteBackButton" Width="28" Padding="0" IsEnabled="False" Click="RemoteBack_Click"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('원격 뒤로', 'Remote back')}"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('뒤로', 'Back')}"><FontIcon FontSize="11" Glyph="&#xE72B;" /></Button>
+                        <Button x:Name="RemoteForwardButton" Width="28" Padding="0" IsEnabled="False" Click="RemoteForward_Click"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('원격 앞으로', 'Remote forward')}"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('앞으로', 'Forward')}"><FontIcon FontSize="11" Glyph="&#xE72A;" /></Button>
+                        <ComboBox x:Name="RemoteSortBox" Width="96" MinHeight="28" Padding="7,3" FontSize="10" SelectedIndex="0"
+                                  SelectionChanged="RemoteSort_Changed" AutomationProperties.Name="{x:Bind h:Loc.T('원격 정렬 기준', 'Remote sort by')}">
+                            <ComboBoxItem Content="{x:Bind h:Loc.T('이름', 'Name')}" />
+                            <ComboBoxItem Content="{x:Bind h:Loc.T('크기', 'Size')}" />
+                            <ComboBoxItem Content="{x:Bind h:Loc.T('수정일', 'Modified')}" />
+                        </ComboBox>
+                        <ToggleButton x:Name="RemoteDescendingToggle" Width="28" Padding="0" Click="RemoteViewOptions_Changed"
+                                      AutomationProperties.Name="{x:Bind h:Loc.T('원격 내림차순', 'Remote descending order')}"
+                                      ToolTipService.ToolTip="{x:Bind h:Loc.T('내림차순 켜기/끄기', 'Toggle descending order')}"><FontIcon FontSize="11" Glyph="&#xE74B;" /></ToggleButton>
+                        <CheckBox x:Name="RemoteHiddenToggle" MinWidth="0" FontSize="10" Click="RemoteViewOptions_Changed"
+                                  Content="{x:Bind h:Loc.T('숨김', 'Hidden')}" AutomationProperties.Name="{x:Bind h:Loc.T('원격 숨김 파일 표시', 'Show remote hidden files')}" />
+                        <Button x:Name="RemoteFavoritesButton" Width="28" Padding="0" IsEnabled="False" Click="RemoteFavorites_Click"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('이 호스트의 즐겨찾는 폴더', 'Favorite folders for this host')}"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('즐겨찾는 폴더', 'Favorite folders')}"><FontIcon FontSize="12" Glyph="&#xE734;" /></Button>
+                    </StackPanel>
+
+                    <Grid Grid.Row="3" Padding="29,0,8,2" ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="76" />
+                            <ColumnDefinition Width="112" />
                         </Grid.ColumnDefinitions>
                         <TextBlock FontSize="9.5" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('이름', 'Name')}" />
                         <TextBlock Grid.Column="1" FontSize="9.5" Foreground="{ThemeResource TextFaint}"
                                    Text="{x:Bind h:Loc.T('크기', 'Size')}" TextAlignment="Right" />
+                        <TextBlock Grid.Column="2" FontSize="9.5" Foreground="{ThemeResource TextFaint}"
+                                   Text="{x:Bind h:Loc.T('수정됨', 'Modified')}" TextAlignment="Right" />
                     </Grid>
 
-                    <Grid Grid.Row="3">
+                    <Grid Grid.Row="4">
                         <ListView x:Name="FileTree" AllowDrop="True"
                                   AutomationProperties.Name="{x:Bind h:Loc.T('원격 파일 목록', 'Remote file list')}"
-                                  CanDragItems="False" CanReorderItems="False"
+                                  CanDragItems="True" CanReorderItems="False"
+                                  DragItemsStarting="RemoteDragItems_Starting" DragItemsCompleted="BrowserDragItems_Completed"
                                   DragOver="Tree_DragOver" Drop="Tree_Drop"
                                   ItemsSource="{x:Bind RemoteItems}"
                                   KeyDown="RemoteList_KeyDown"
@@ -333,6 +388,9 @@
                                                 <MenuFlyoutItem Click="Download_Click" Icon="Save" Tag="{x:Bind}"
                                                     Text="{x:Bind h:Loc.T('다른 이름으로 다운로드…', 'Download / Save as…')}"
                                                     Visibility="{x:Bind CanDownload}" />
+                                                <MenuFlyoutItem Click="EditRemoteFile_Click" Icon="Edit" Tag="{x:Bind}"
+                                                    Text="{x:Bind h:Loc.T('외부 편집기로 열기', 'Edit with external editor')}"
+                                                    Visibility="{x:Bind CanEdit}" />
                                                 <MenuFlyoutItem Click="NewFolder_Click" Icon="NewFolder" Tag="{x:Bind}"
                                                     Text="{x:Bind h:Loc.T('새 폴더…', 'New folder…')}" Visibility="{x:Bind IsDirectory}" />
                                                 <MenuFlyoutItem Click="Rename_Click" Icon="Rename" Tag="{x:Bind}"
@@ -354,6 +412,7 @@
                                             <ColumnDefinition Width="20" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="76" />
+                                            <ColumnDefinition Width="112" />
                                         </Grid.ColumnDefinitions>
                                         <Grid>
                                             <FontIcon FontSize="13" Foreground="{ThemeResource AccentBlue}"
@@ -368,6 +427,10 @@
                                         <TextBlock Grid.Column="2" VerticalAlignment="Center"
                                                    FontFamily="Cascadia Mono, Consolas" FontSize="9.5"
                                                    Foreground="{ThemeResource TextFaint}" Text="{x:Bind SizeText}"
+                                                   TextAlignment="Right" />
+                                        <TextBlock Grid.Column="3" VerticalAlignment="Center"
+                                                   FontFamily="Cascadia Mono, Consolas" FontSize="9.5"
+                                                   Foreground="{ThemeResource TextFaint}" Text="{x:Bind ModifiedText}"
                                                    TextAlignment="Right" />
                                     </Grid>
                                 </DataTemplate>
@@ -406,7 +469,9 @@
         </Grid>
         </ScrollViewer>
 
-        <Border x:Name="TransfersPanel" Grid.Row="2" MaxHeight="150" Padding="8"
+        <ContentControl x:Name="RemoteEditsHost" Grid.Row="2" Visibility="Collapsed" HorizontalContentAlignment="Stretch" />
+
+        <Border x:Name="TransfersPanel" Grid.Row="3" MaxHeight="150" Padding="8"
                 Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
                 BorderThickness="1" CornerRadius="7" Visibility="Collapsed">
             <StackPanel Spacing="5">
@@ -490,7 +555,7 @@
             </StackPanel>
         </Border>
 
-        <TextBlock x:Name="StatusText" Grid.Row="3" Margin="4,0" FontSize="10.5"
+        <TextBlock x:Name="StatusText" Grid.Row="4" Margin="4,0" FontSize="10.5"
                    AutomationProperties.LiveSetting="Polite"
                    Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap" Visibility="Collapsed" />
     </Grid>

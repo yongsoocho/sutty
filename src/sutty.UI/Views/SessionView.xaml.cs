@@ -54,9 +54,8 @@ namespace sutty.UI.Views
         public event EventHandler? ReconnectRequested;
 
         /// <summary>
-        /// True when a persistent PTY is already running. Callers must not inject shell
-        /// commands into an existing terminal without an explicit user confirmation,
-        /// because the foreground program may be vim, top, a database console, or TUI.
+        /// True when a persistent PTY is already running. Files navigation never injects
+        /// input because the foreground program may be vim, top, a database console, or TUI.
         /// </summary>
         public bool HasOpenInteractiveTerminal => Session.TerminalState == TerminalState.Open;
 
@@ -599,46 +598,12 @@ namespace sutty.UI.Views
             => await ResolveWorkingDirectoryAsync(remotePath) is not null;
 
         /// <summary>
-        /// Explicit Files → Terminal integration point: validate the directory through an
-        /// exec channel, switch to TERMINAL, then send one safely quoted cd command to PTY.
+        /// Prepares a safely quoted POSIX cd command without opening a shell, probing a
+        /// directory, writing terminal input, changing Commands cwd, or running a command.
+        /// The workspace shows/copies this text; the user chooses when to paste and execute.
         /// </summary>
-        public Task<bool> OpenDirectoryInTerminalAsync(string remotePath)
-            => OpenDirectoryInTerminalAsync(remotePath, allowInputToExistingTerminal: false);
-
-        /// <summary>
-        /// Opens a new PTY at the requested directory. Sending <c>cd</c> to a PTY that
-        /// was already open is fail-closed unless the caller has obtained explicit user
-        /// confirmation and passes <paramref name="allowInputToExistingTerminal"/>.
-        /// </summary>
-        public async Task<bool> OpenDirectoryInTerminalAsync(
-            string remotePath,
-            bool allowInputToExistingTerminal)
-        {
-            await _commandGate.WaitAsync();
-            try
-            {
-                var resolved = await ResolveWorkingDirectoryCoreAsync(remotePath);
-                if (resolved is null)
-                    return false;
-
-                if (Session.TerminalState == TerminalState.Open && !allowInputToExistingTerminal)
-                    return false;
-
-                if (Session.TerminalState != TerminalState.Open)
-                    await EnsureTerminalStartedAsync();
-                if (Session.TerminalState != TerminalState.Open)
-                    return false;
-
-                // Files → Terminal is workspace navigation, not a preference change.
-                SetViewMode(isTerminal: true, persist: false);
-                await SendTerminalTextAsync($"cd {QuotePosix(resolved)}\r");
-                return true;
-            }
-            finally
-            {
-                _commandGate.Release();
-            }
-        }
+        public string PrepareDirectoryCommand(string remotePath)
+            => TerminalDirectoryCommand.Prepare(remotePath);
 
         private async Task<string?> ResolveWorkingDirectoryAsync(
             string remotePath,

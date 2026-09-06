@@ -23,6 +23,8 @@
              Link="ShellState\ConnectionPersistencePolicy.cs" />
     <Compile Include="..\..\src\sutty.UI\Services\LocalFileBrowserService.cs"
              Link="Files\LocalFileBrowserService.cs" />
+    <Compile Include="..\..\src\sutty.UI\Services\FileBrowserNavigationHistory.cs"
+             Link="Files\FileBrowserNavigationHistory.cs" />
     <Compile Include="..\..\src\sutty.UI\ViewModels\LocalFileBrowserViewModel.cs"
              Link="Files\LocalFileBrowserViewModel.cs" />
   </ItemGroup>

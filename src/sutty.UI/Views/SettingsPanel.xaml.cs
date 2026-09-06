@@ -124,6 +124,8 @@ namespace sutty.UI.Views
             DefaultPortBox.Value = settings.DefaultSshPort;
             KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
             SftpRetryToggle.IsOn = settings.SftpRetryEnabled;
+            EditorExecutableBox.Text = settings.ExternalEditorExecutable;
+            EditorArgumentsBox.Text = settings.ExternalEditorArguments;
             SftpRetryCountBox.Value = settings.SftpRetryCount;
             SftpRetryCountBox.IsEnabled = settings.SftpRetryEnabled;
             SftpVerificationCombo.SelectedItem = SftpVerificationCombo.Items
@@ -415,7 +417,7 @@ namespace sutty.UI.Views
                 InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
                 var file = await picker.PickSingleFileAsync();
                 if (file is null || string.IsNullOrWhiteSpace(file.Path)) return;
-                ImportProfiles(HostProfileImportService.ImportOpenSshFile(file.Path));
+                await ImportProfilesAsync(HostProfileImportService.ImportOpenSshFile(file.Path));
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
             {
@@ -426,11 +428,11 @@ namespace sutty.UI.Views
             }
         }
 
-        private void ImportWindowsSessions_Click(object sender, RoutedEventArgs e)
+        private async void ImportWindowsSessions_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                ImportProfiles(HostProfileImportService.ImportPuttyRegistry());
+                await ImportProfilesAsync(HostProfileImportService.ImportPuttyRegistry());
             }
             catch (Exception error) when (error is UnauthorizedAccessException or
                                               System.Security.SecurityException or IOException)
@@ -456,7 +458,7 @@ namespace sutty.UI.Views
                 InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
                 var folder = await picker.PickSingleFolderAsync();
                 if (folder is null || string.IsNullOrWhiteSpace(folder.Path)) return;
-                ImportProfiles(HostProfileImportService.ImportSecureCrtDirectory(folder.Path));
+                await ImportProfilesAsync(HostProfileImportService.ImportSecureCrtDirectory(folder.Path));
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
             {
@@ -481,7 +483,7 @@ namespace sutty.UI.Views
                 InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
                 var file = await picker.PickSingleFileAsync();
                 if (file is null || string.IsNullOrWhiteSpace(file.Path)) return;
-                ImportProfiles(HostProfileImportService.ImportSftpSiteManagerXml(file.Path));
+                await ImportProfilesAsync(HostProfileImportService.ImportSftpSiteManagerXml(file.Path));
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or
                                               ArgumentException or System.Xml.XmlException)
@@ -493,13 +495,14 @@ namespace sutty.UI.Views
             }
         }
 
-        private void ImportProfiles(HostProfileImportBatch batch)
+        private async Task ImportProfilesAsync(HostProfileImportBatch batch)
         {
-            var result = HostProfileImportService.SaveUnique(batch);
+            var result = await HostImportPreviewDialog.ShowAsync(XamlRoot, batch);
+            if (result is null) return;
             var warningCount = batch.Warnings.Count;
             ShowImportStatus(
-                $"가져오기 완료 · 추가 {result.Imported} · 중복 {result.Skipped} · 실패 {result.Failed} · 검토 {warningCount}",
-                $"Import complete · {result.Imported} added · {result.Skipped} duplicates · {result.Failed} failed · {warningCount} warning(s)",
+                $"가져오기 완료 · 추가 {result.Added} · 갱신 {result.Updated} · 건너뜀 {result.Skipped} · 실패 {result.Failed} · 검토 {warningCount}",
+                $"Import complete · {result.Added} added · {result.Updated} updated · {result.Skipped} skipped · {result.Failed} failed · {warningCount} warning(s)",
                 result.Failed == 0);
             SettingsChanged?.Invoke(this, new SettingsChangedEventArgs(SettingChangeKind.HostProfiles));
         }

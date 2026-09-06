@@ -393,6 +393,20 @@
                             </StackPanel>
                         </Border>
 
+                        <Border Style="{StaticResource SettingsCard}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Style="{StaticResource SettingsHeading}" Text="{x:Bind h:Loc.T('원격 파일 편집기', 'Remote file editor')}" />
+                                <TextBox x:Name="EditorExecutableBox" Header="{x:Bind h:Loc.T('편집기 .exe 절대 경로 (비워 두면 메모장)', 'Editor .exe absolute path (empty uses Notepad)')}"
+                                         TextChanged="EditorSettings_TextChanged" AutomationProperties.Name="{x:Bind h:Loc.T('외부 편집기 실행 파일', 'External editor executable')}" />
+                                <Button Content="{x:Bind h:Loc.T('편집기 선택', 'Choose editor')}" Click="SelectExternalEditor_Click" />
+                                <TextBox x:Name="EditorArgumentsBox" Header="{x:Bind h:Loc.T('인수 · {file}은 편집본 경로로 바뀝니다', 'Arguments · {file} is replaced with the working-copy path')}"
+                                         TextChanged="EditorSettings_TextChanged" AutomationProperties.Name="{x:Bind h:Loc.T('편집기 인수', 'Editor arguments')}" />
+                                <TextBlock Text="{x:Bind h:Loc.T('텍스트 파일은 8 MiB까지 편집합니다. 저장 후 서버 반영은 기본적으로 직접 확인합니다. 편집본과 복구용 사본은 이 PC에 남으므로 작업이 끝나면 보관 폴더에서 삭제하세요.', 'Edit text files up to 8 MiB. Uploading changes requires confirmation by default. Working and recovery copies stay on this PC; remove them from the recovery folder when finished.')}"
+                                           TextWrapping="Wrap" FontSize="12" />
+                                <Button Content="{x:Bind h:Loc.T('편집본 보관 폴더 열기', 'Open working-copy recovery folder')}" Click="OpenEditRecovery_Click" />
+                            </StackPanel>
+                        </Border>
+
                         <!--  접속 히스토리 (append-only 로그) 설정  -->
                         <Border Style="{StaticResource SettingsCard}">
                             <StackPanel Spacing="10">

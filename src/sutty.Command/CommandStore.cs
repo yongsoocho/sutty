@@ -87,6 +87,19 @@ public static class CommandStore
         return template;
     }
 
+    public static void Update(long id, string name, string commandText)
+    {
+        EnsureInitialized();
+        using var conn = Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE commands SET name = $name, command_text = $text WHERE id = $id";
+        cmd.Parameters.AddWithValue("$name", name);
+        cmd.Parameters.AddWithValue("$text", commandText);
+        cmd.Parameters.AddWithValue("$id", id);
+        if (cmd.ExecuteNonQuery() != 1) throw new InvalidOperationException("The command no longer exists.");
+        NotifyChanged();
+    }
+
     public static void Delete(long id)
     {
         EnsureInitialized();

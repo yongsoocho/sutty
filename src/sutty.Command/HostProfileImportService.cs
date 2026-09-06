@@ -29,6 +29,12 @@ public sealed record HostProfileImportSaveResult(int Imported, int Skipped, int 
 /// </summary>
 public static class HostProfileImportService
 {
+    private static readonly HashSet<string> SupportedOpenSshOptions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "HostName", "User", "Port", "IdentityFile", "ProxyJump", "ProxyCommand",
+        "LocalForward", "RemoteForward", "DynamicForward", "PreferredAuthentications",
+    };
+
     public static HostProfileImportBatch ImportOpenSshFile(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -71,6 +77,8 @@ public static class HostProfileImportService
                 warnings.Add($"Include was not expanded: {value}");
                 continue;
             }
+            if (!SupportedOpenSshOptions.Contains(key))
+                warnings.Add($"미지원 OpenSSH 옵션 / Unsupported OpenSSH option: {key}");
             current?.Add(key, value);
         }
 
@@ -174,10 +182,11 @@ public static class HostProfileImportService
                 Type = "ExternalProxyCommand",
                 Command = StringValue(values, "ProxyTelnetCommand").Trim(),
             },
-            _ => new HostRouteProfile(),
+            0 => new HostRouteProfile(),
+            _ => new HostRouteProfile { Type = "Unsupported", State = SavedRouteState.Unsupported, DisableDirect = true },
         };
-        if (proxyMethod is 4 or > 5)
-            warnings?.Add($"{displayName}: unsupported proxy method {proxyMethod} was ignored.");
+        if (proxyMethod is < 0 or 4 or > 5)
+            warnings?.Add($"{displayName}: unsupported proxy method {proxyMethod}; import is blocked to prevent direct fallback.");
 
         return new HostProfileDraft
         {
@@ -249,6 +258,10 @@ public static class HostProfileImportService
         var port = ParseSecureCrtInteger(portRaw, 22);
         if (values.Keys.Any(key => key.Contains("Port Forward", StringComparison.OrdinalIgnoreCase)))
             warnings?.Add($"{displayName}: encoded forwarding table requires manual review.");
+        var firewall = FirstValue(values, "Firewall Name", "Firewall Session").Trim();
+        var usesFirewall = firewall.Length > 0 && !firewall.Equals("None", StringComparison.OrdinalIgnoreCase);
+        if (usesFirewall)
+            warnings?.Add($"{displayName}: INI firewall/jump settings require manual configuration; direct fallback is blocked.");
 
         return new HostProfileDraft
         {
@@ -260,6 +273,9 @@ public static class HostProfileImportService
             PrivateKeyPath = keyPath,
             GroupName = groupName,
             Tags = ["imported"],
+            Route = usesFirewall
+                ? new HostRouteProfile { Type = "Unsupported", State = SavedRouteState.Unsupported, DisableDirect = true }
+                : new HostRouteProfile(),
         };
     }
 
@@ -386,33 +402,12 @@ public static class HostProfileImportService
 
     public static HostProfileImportSaveResult SaveUnique(HostProfileImportBatch batch)
     {
-        ArgumentNullException.ThrowIfNull(batch);
-        var existing = HostProfileStore.GetAll(limit: 10_000)
-            .Select(profile => ConnectionKey(profile.Host, profile.Port, profile.Username))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var imported = 0;
-        var skipped = 0;
-        var failed = 0;
-        foreach (var draft in batch.Profiles)
-        {
-            var key = ConnectionKey(draft.Host, draft.Port, draft.Username);
-            if (!existing.Add(key))
-            {
-                skipped++;
-                continue;
-            }
-            try
-            {
-                HostProfileStore.Save(draft);
-                imported++;
-            }
-            catch (Exception error) when (error is ArgumentException or InvalidOperationException or
-                                          Microsoft.Data.Sqlite.SqliteException)
-            {
-                failed++;
-            }
-        }
-        return new HostProfileImportSaveResult(imported, skipped, failed);
+        var preview = DefinitionSharingService.Preview(batch);
+        foreach (var row in preview.Hosts.Where(row => row.Kind == ImportChangeKind.Add))
+            row.Choice = ImportChoice.Add;
+        var result = DefinitionSharingService.Apply(preview);
+        var invalid = preview.Hosts.Count(row => row.Kind == ImportChangeKind.Invalid);
+        return new HostProfileImportSaveResult(result.Added, result.Skipped - invalid, result.Failed + invalid);
     }
 
     private static HostProfileDraft BuildOpenSshProfile(
@@ -443,7 +438,11 @@ public static class HostProfileImportService
                 ProxyDns = true,
             };
             if (proxyJump.Contains(','))
-                warnings.Add($"Host {alias}: only the first ProxyJump hop was imported.");
+            {
+                route.State = SavedRouteState.Unsupported;
+                route.DisableDirect = true;
+                warnings.Add($"Host {alias}: multiple ProxyJump hops require manual configuration; import is blocked.");
+            }
         }
         else if (!string.IsNullOrWhiteSpace(proxyCommand) &&
                  !proxyCommand.Equals("none", StringComparison.OrdinalIgnoreCase))
@@ -779,9 +778,10 @@ public static class HostProfileImportService
     }
 
     private static int ParseInteger(string? value, int fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback :
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result)
             ? result
-            : fallback;
+            : 0;
 
     private static int ParseSecureCrtInteger(string? value, int fallback)
     {
@@ -796,10 +796,11 @@ public static class HostProfileImportService
             return decimalValue;
         return int.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hexValue)
             ? hexValue
-            : fallback;
+            : 0;
     }
 
-    private static int NormalizePort(int value) => value is >= 1 and <= 65_535 ? value : 22;
+    // Keep malformed source ports invalid so preview can show them instead of guessing port 22.
+    private static int NormalizePort(int value) => value is >= 1 and <= 65_535 ? value : 0;
 
     private static string StringValue(IReadOnlyDictionary<string, object?> values, string key) =>
         values.TryGetValue(key, out var value) ? Convert.ToString(value, CultureInfo.InvariantCulture) ?? "" : "";
@@ -815,9 +816,6 @@ public static class HostProfileImportService
             if (values.TryGetValue(key, out var value)) return value;
         return "";
     }
-
-    private static string ConnectionKey(string host, int port, string username) =>
-        $"{host.Trim().ToLowerInvariant()}\u001f{port}\u001f{username.Trim().ToLowerInvariant()}";
 
     private sealed class OptionSet
     {

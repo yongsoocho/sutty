@@ -31,6 +31,7 @@ if (args.Length == 3 &&
 }
 
 AssertSshNet2026PublicApi();
+await TunnelAndDirectoryTests.RunAsync();
 AssertNegotiatedConnectionInfoContract();
 AssertReconnectPolicy();
 AssertSshAgentAdapterLoads();

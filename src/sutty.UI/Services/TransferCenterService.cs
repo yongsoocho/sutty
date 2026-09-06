@@ -146,6 +146,7 @@ public sealed class TransferCenterService : IDisposable
     public bool CanExecute(SftpQueuedJob job, TransferCenterAction action)
     {
         ArgumentNullException.ThrowIfNull(job);
+        if (job.RequiresEditReview && action != TransferCenterAction.Cancel) return false;
         lock (_gate)
         {
             if (_disposed)
@@ -320,7 +321,8 @@ public sealed class TransferCenterService : IDisposable
 
     private static IEnumerable<SftpQueuedTarget> EligibleTargets(
         SftpQueuedJob job,
-        TransferCenterAction action) => job.Targets.Where(target => action switch
+        TransferCenterAction action) => job.Targets.Where(target =>
+        (!job.RequiresEditReview || action == TransferCenterAction.Cancel) && (action switch
         {
             TransferCenterAction.Pause => target.State is SftpQueueTargetState.Pending or
                 SftpQueueTargetState.Running,
@@ -331,7 +333,7 @@ public sealed class TransferCenterService : IDisposable
                 SftpQueueTargetState.Running or SftpQueueTargetState.Paused or
                 SftpQueueTargetState.Interrupted,
             _ => false,
-        });
+        }));
 
     private ITransferCenterExecutor? FindExecutor(
         SftpQueuedJob job,

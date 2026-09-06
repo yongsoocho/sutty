@@ -81,6 +81,8 @@ public sealed record SftpQueuedJob
 {
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
     public string RuntimeOwnerId { get; init; } = "";
+    /// <summary>Editor uploads must recheck the remote file through the edit workflow, including after restart.</summary>
+    public bool RequiresEditReview { get; init; }
     public SftpQueueMode Mode { get; init; }
     public SftpTransferDirection Direction { get; init; }
     public string SourcePath { get; init; } = "";
@@ -290,7 +292,7 @@ public sealed class SftpTransferQueueStore
                 var job = ReadDocument(tolerateInvalid: false).Jobs
                     .FirstOrDefault(item => item.Id == jobId);
                 var target = job?.Targets.FirstOrDefault(item => item.Id == targetId);
-                if (job is null || target is null ||
+                if (job is null || target is null || job.RequiresEditReview ||
                     job.State == SftpQueueJobState.Completed ||
                     target.State is not (SftpQueueTargetState.Pending or
                         SftpQueueTargetState.Running or
@@ -448,7 +450,7 @@ public sealed class SftpTransferQueueStore
     }
 
     public static IReadOnlySet<string> GetRetryTargetIds(SftpQueuedJob job) => job.Targets
-        .Where(target => target.State is SftpQueueTargetState.Pending or
+        .Where(target => !job.RequiresEditReview && target.State is SftpQueueTargetState.Pending or
                                       SftpQueueTargetState.Running or
                                       SftpQueueTargetState.Paused or
                                       SftpQueueTargetState.Interrupted or

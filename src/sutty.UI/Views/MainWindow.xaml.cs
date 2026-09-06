@@ -102,6 +102,7 @@ namespace sutty.UI.Views
             _appIconPath = System.IO.Path.Combine(
                 System.AppContext.BaseDirectory, "Assets", "sutty.ico");
             appWindow.SetIcon(_appIconPath);
+            appWindow.Closing += AppWindow_Closing;
 
             // sutty를 닫으면 설정 창도 같이 닫고, 저장 안 된 패널 폭이 있으면 마저 저장
             Closed += (_, _) =>
@@ -687,7 +688,7 @@ namespace sutty.UI.Views
 
         private HostListPanel CreateHostListPanel()
         {
-            var panel = new HostListPanel();
+            var panel = new HostListPanel { OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this) };
             panel.ConnectRequested += async (_, host) => await OpenHistoryDraftAsync(host);
             _hostPanels.Add(panel);
             return panel;
@@ -2317,7 +2318,10 @@ namespace sutty.UI.Views
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
             });
-            content.Children.Add(new TextBlock
+            content.Children.Add(CreateConnectionStageSummary(correlationId));
+
+            var identity = new StackPanel { Spacing = 3 };
+            identity.Children.Add(new TextBlock
             {
                 Text = Helpers.Loc.T(diagnosis.UserActionKo, diagnosis.UserActionEn),
                 Foreground = Helpers.ThemeResources.Brush(Root, "TextPrimary"),
@@ -3386,11 +3390,15 @@ namespace sutty.UI.Views
             return views;
         }
 
-        // X 클릭 → SSH·SFTP 채널을 모두 끊고 탭을 닫는다 (확인 없이 즉시)
+        // Confirm active transfers and editor copies before ending their owning session.
         private async void TitleTabs_TabCloseRequested(
             TabView sender,
             TabViewTabCloseRequestedEventArgs args)
         {
+            if (_closePromptOpen || _windowClosing) return;
+            if (args.Tab.DataContext is SessionView pendingSession &&
+                _sessionWorkspaces.TryGetValue(pendingSession, out var pendingWorkspace) &&
+                !await ConfirmWorkspacesCloseAsync([pendingWorkspace])) return;
             if (args.Tab.DataContext is SessionView closingSession)
             {
                 RememberFailedSupportContext(
@@ -3451,14 +3459,16 @@ namespace sutty.UI.Views
                 if (_sessionWorkspaces.Remove(view, out var workspace))
                 {
                     _navigation.ForgetWorkspace(workspace.ViewModel);
-                    await workspace.DetachAsync(userInitiated: true);
+                    try { await DetachAndCloseSessionAsync(workspace).WaitAsync(TimeSpan.FromSeconds(10)); }
+                    catch (TimeoutException) { Debug.WriteLine("Session cleanup is continuing after tab close."); }
                 }
-                await _sessions.CloseAsync(view.Session);
+                else
+                    await ObserveCloseOperationAsync(_sessions.CloseAsync(view.Session));
             }
             else if (args.Tab.DataContext is LocalTerminalView localView)
             {
                 localView.AppShortcutRequested -= TerminalView_AppShortcutRequested;
-                await localView.CloseAsync();
+                await ObserveCloseOperationAsync(localView.CloseAsync());
             }
         }
 

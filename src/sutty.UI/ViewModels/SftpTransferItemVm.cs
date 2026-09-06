@@ -58,6 +58,7 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     public string? QueueJobId { get; }
     public bool UserCancellationRequested => _userCancellationRequested;
     public bool PauseRequested { get; private set; }
+    public bool AllowsPause { get; set; } = true;
     public CancellationToken Token => _cancellation.Token;
     public string DirectionGlyph => Direction == SftpTransferDirection.Upload ? "\uE898" : "\uE896";
     public string DirectionText => Direction == SftpTransferDirection.Upload
@@ -92,7 +93,7 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     }
 
     public bool CanCancel => State is SftpTransferState.Queued or SftpTransferState.Running;
-    public bool CanPause => State is SftpTransferState.Queued or SftpTransferState.Running;
+    public bool CanPause => AllowsPause && State is SftpTransferState.Queued or SftpTransferState.Running;
     public bool CanResume => State == SftpTransferState.Paused;
     public bool IsActive => State is SftpTransferState.Queued or SftpTransferState.Running or
         SftpTransferState.Pausing or SftpTransferState.Cancelling;

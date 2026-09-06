@@ -59,6 +59,11 @@ public sealed class AppSettings
     /// </summary>
     public string SftpConflictPolicy { get; set; } = "Ask";
 
+    /// <summary>Local executable only; an empty value uses Windows Notepad.</summary>
+    public string ExternalEditorExecutable { get; set; } = "";
+    /// <summary>User-authored command-line template; {file} is a quoted local working-copy path.</summary>
+    public string ExternalEditorArguments { get; set; } = "{file}";
+
     /// <summary>Home 화면에서 마지막으로 선택한 SSH 인증 방식.</summary>
     public string LastAuthMethod { get; set; } = "Password";
 

@@ -68,22 +68,27 @@
                         x:Name="TunnelsButton"
                         MinHeight="34"
                         Padding="12,5"
-                        AutomationProperties.Name="{x:Bind h:Loc.T('구성된 터널 정보', 'Configured tunnel information')}"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('세션 터널 관리', 'Manage session tunnels')}"
                         Click="TunnelsButton_Click"
-                        Content="{x:Bind h:Loc.T('터널 정보', 'Tunnel info')}"
-                        ToolTipService.ToolTip="{x:Bind h:Loc.T('연결할 때 구성한 포트 포워딩 보기', 'View port forwarding configured at connection time')}" />
+                        Content="{x:Bind h:Loc.T('터널', 'Tunnels')}"
+                        ToolTipService.ToolTip="{x:Bind h:Loc.T('포트 포워딩 목록, 시작, 중지와 오류', 'Port forwarding list, start, stop and errors')}" />
                 </StackPanel>
             </Grid>
         </Border>
 
         <Grid Grid.Row="1">
             <Grid x:Name="InteractivePane">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="CommandLibraryColumn" Width="0" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Border
                     x:Name="CommandLibraryHost"
+                    Grid.RowSpan="2"
                     Grid.Column="0"
                     Padding="14"
                     Background="{ThemeResource SidePanelBg}"
@@ -92,8 +97,17 @@
                     Visibility="Collapsed">
                     <local:CommandPanel x:Name="CommandLibrary" />
                 </Border>
+                <Button
+                    Grid.Column="1"
+                    Margin="12,5"
+                    HorizontalAlignment="Right"
+                    AutomationProperties.Name="{x:Bind h:Loc.T('같은 서버의 원격 경로를 Files에서 열기', 'Open a remote path in Files on this server')}"
+                    Content="{x:Bind h:Loc.T('Files에서 경로 열기…', 'Open path in Files…')}"
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('절대 경로를 직접 입력하거나 붙여넣어 이동', 'Enter or paste an absolute remote path')}"
+                    Click="OpenFilesPath_Click" />
                 <ContentControl
                     x:Name="SessionContent"
+                    Grid.Row="1"
                     Grid.Column="1"
                     HorizontalContentAlignment="Stretch"
                     VerticalContentAlignment="Stretch" />
@@ -106,43 +120,45 @@
 
             <ScrollViewer x:Name="TunnelsPane" Visibility="Collapsed">
                 <StackPanel MaxWidth="840" Padding="28" Spacing="14">
-                    <StackPanel Spacing="3">
-                        <TextBlock
-                            FontSize="18"
-                            FontWeight="SemiBold"
-                            Text="{x:Bind h:Loc.T('구성된 터널', 'Configured tunnels')}" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextMuted}"
-                            Text="{x:Bind h:Loc.T('이 연결에 구성된 포트 포워딩 규칙입니다.', 'Port forwarding rules configured for this connection.')}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                    <TextBlock FontSize="18" FontWeight="SemiBold"
+                        Text="{x:Bind h:Loc.T('세션 터널', 'Session tunnels')}" />
+                    <TextBlock Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                        Text="{x:Bind h:Loc.T('Local / SOCKS는 이 PC에서, Remote는 SSH 서버에서 수신합니다. 세션 종료 시 모두 해제됩니다. 여기서 추가한 터널은 이번 세션에만 유지됩니다.', 'Local / SOCKS listen on this PC; Remote listens on the SSH server. All close with the session. Tunnels added here last only for this session.')}" />
+                    <Button x:Name="AddTunnelButton" Click="AddTunnel_Click"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('이번 세션에 터널 추가', 'Add a tunnel to this session')}"
+                        Content="{x:Bind h:Loc.T('터널 추가…', 'Add tunnel…')}" />
+                    <TextBlock x:Name="TunnelOperationMessage" TextWrapping="Wrap"
+                        AutomationProperties.LiveSetting="Polite" />
                     <ItemsControl x:Name="TunnelsList" ItemsSource="{x:Bind Tunnels}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border
-                                    Margin="0,0,0,8"
-                                    Padding="14,11"
-                                    Background="{ThemeResource CardBg}"
-                                    BorderBrush="{ThemeResource CardBorder}"
-                                    BorderThickness="1"
-                                    CornerRadius="8">
-                                    <TextBlock
-                                        FontFamily="Cascadia Mono, Consolas"
-                                        FontSize="12"
-                                        IsTextSelectionEnabled="True"
-                                        Text="{Binding}"
-                                        TextWrapping="Wrap" />
+                                <Border Margin="0,0,0,8" Padding="14,11"
+                                    Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
+                                    BorderThickness="1" CornerRadius="8">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                                            IsTextSelectionEnabled="True" Text="{Binding Description}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Status}" AutomationProperties.LiveSetting="Polite" />
+                                        <TextBlock Text="{Binding Error}" Visibility="{Binding ErrorVisibility}"
+                                            Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button Click="TunnelStart_Click" Tag="{Binding Id}"
+                                                IsEnabled="{Binding CanStart}"
+                                                AutomationProperties.Name="{Binding StartName}"
+                                                Content="{x:Bind h:Loc.T('시작 / 다시 시도', 'Start / retry')}" />
+                                            <Button Click="TunnelStop_Click" Tag="{Binding Id}"
+                                                IsEnabled="{Binding CanStop}"
+                                                AutomationProperties.Name="{Binding StopName}"
+                                                Content="{x:Bind h:Loc.T('중지', 'Stop')}" />
+                                        </StackPanel>
+                                    </StackPanel>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock
-                        x:Name="NoTunnelsState"
-                        Margin="0,24,0,0"
-                        HorizontalAlignment="Center"
-                        AutomationProperties.LiveSetting="Polite"
-                        Foreground="{ThemeResource TextMuted}"
-                        Text="{x:Bind h:Loc.T('이 세션에는 구성된 터널이 없습니다.', 'This session has no configured tunnels.')}" />
+                    <TextBlock x:Name="NoTunnelsState" Margin="0,24,0,0" HorizontalAlignment="Center"
+                        Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                        Text="{x:Bind h:Loc.T('터널이 없습니다. 로컬 서비스, 데이터베이스 또는 SOCKS 연결을 추가하세요.', 'No tunnels. Add a local service, database, or SOCKS connection.')}" />
                 </StackPanel>
             </ScrollViewer>
         </Grid>

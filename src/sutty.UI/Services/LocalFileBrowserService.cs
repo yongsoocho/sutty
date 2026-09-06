@@ -29,7 +29,8 @@ public sealed record LocalFileEntry(
     bool IsDirectory,
     long Size,
     DateTime Modified,
-    bool IsReparsePoint);
+    bool IsReparsePoint,
+    bool IsHidden = false);
 
 /// <summary>Fail-closed Windows path planning for Remote → Local transfers.</summary>
 public static class LocalFilePathRules
@@ -167,7 +168,8 @@ public sealed class LocalFileBrowserService : ILocalFileBrowserService
                         isDirectory,
                         size,
                         item.LastWriteTime,
-                        (item.Attributes & FileAttributes.ReparsePoint) != 0));
+                        (item.Attributes & FileAttributes.ReparsePoint) != 0,
+                        (item.Attributes & FileAttributes.Hidden) != 0 || item.Name.StartsWith('.')));
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                 {

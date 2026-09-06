@@ -24,6 +24,7 @@ public sealed partial class HostListPanel : UserControl
     private readonly List<HostInfoModel> _allRecent = [];
     private string _currentQuery = "";
     private bool _storeUnavailable;
+    public IntPtr OwnerWindowHandle { get; set; }
 
     public ObservableCollection<HostInfoModel> SavedHosts { get; } = [];
     public ObservableCollection<HostInfoModel> TopHosts { get; } = [];
@@ -52,6 +53,10 @@ public sealed partial class HostListPanel : UserControl
         card.PrimaryActionRequested += OnPrimaryActionRequested;
         card.DeleteRequested -= OnDeleteRequested;
         card.DeleteRequested += OnDeleteRequested;
+        card.DuplicateRequested -= OnDuplicateRequested;
+        card.DuplicateRequested += OnDuplicateRequested;
+        card.AuthenticationAliasRequested -= OnAuthenticationAliasRequested;
+        card.AuthenticationAliasRequested += OnAuthenticationAliasRequested;
     }
 
     private void OnCardClicked(object? sender, HostInfoModel host)
@@ -148,6 +153,54 @@ public sealed partial class HostListPanel : UserControl
             System.Diagnostics.Debug.WriteLine($"Saved-host delete failed: {error.GetType().Name}");
             await ShowStorageActionErrorAsync();
         }
+    }
+
+    private async void ShareDefinitions_Click(object sender, RoutedEventArgs e)
+    {
+        await SharedDefinitionsDialog.ShowAsync(XamlRoot, OwnerWindowHandle);
+        RefreshFromStore();
+    }
+
+    private async void OnDuplicateRequested(object? sender, HostInfoModel host)
+    {
+        if (!host.IsSavedProfile || string.IsNullOrWhiteSpace(host.ProfileId)) return;
+        var name = new TextBox { Header = Helpers.Loc.T("새 호스트 이름", "New host name"), MaxLength = 128,
+            Text = $"{host.Alias[..Math.Min(host.Alias.Length, 120)]} (copy)" };
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(name);
+        content.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Text = Helpers.Loc.T(
+            "연결 설정과 로컬 키 경로를 복제합니다. 저장된 비밀번호 연결은 복제하지 않습니다.",
+            "Copies connection settings and local key paths. Saved password bindings are not copied.") });
+        var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = Helpers.Loc.T("호스트 복제", "Duplicate host"), Content = content,
+            PrimaryButtonText = Helpers.Loc.T("복제", "Duplicate"), CloseButtonText = Helpers.Loc.T("취소", "Cancel"), DefaultButton = ContentDialogButton.Close };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        try { HostProfileStore.Duplicate(host.ProfileId, name.Text); RefreshFromStore(); }
+        catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        { await ShowStorageActionErrorAsync(); }
+    }
+
+    private async void OnAuthenticationAliasRequested(object? sender, HostInfoModel host)
+    {
+        if (!host.IsSavedProfile || string.IsNullOrWhiteSpace(host.ProfileId)) return;
+        try
+        {
+            var profile = HostProfileStore.GetById(host.ProfileId);
+            if (profile is null) return;
+            var alias = new TextBox { Header = Helpers.Loc.T("인증 별칭 (예: team-dev)", "Authentication alias (e.g. team-dev)"),
+                Text = profile.AuthenticationAlias, MaxLength = 64 };
+            var content = new StackPanel { Spacing = 10 };
+            content.Children.Add(alias);
+            content.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Text = Helpers.Loc.T(
+                "공유할 논리적 이름입니다. 팀원은 가져온 호스트를 열어 이 이름에 맞는 자신의 키·계정을 설정합니다. 별칭은 비밀번호나 다른 PC의 자격증명 ID가 아닙니다.",
+                "A logical name to share. Team members open the imported host and configure their own key/account for this name. The alias is not a password or another PC's credential ID.") });
+            var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = Helpers.Loc.T("호스트 인증 별칭", "Host authentication alias"), Content = content,
+                PrimaryButtonText = Helpers.Loc.T("저장", "Save"), CloseButtonText = Helpers.Loc.T("취소", "Cancel"), DefaultButton = ContentDialogButton.Close };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            HostProfileStore.SetAuthenticationAlias(profile.Id, alias.Text);
+            RefreshFromStore();
+        }
+        catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        { await ShowStorageActionErrorAsync(); }
     }
 
     private async Task ShowStorageActionErrorAsync()

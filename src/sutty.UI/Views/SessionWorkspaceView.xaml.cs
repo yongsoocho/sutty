@@ -3,6 +3,9 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Models;
+using sutty.Core.Routing;
+using sutty.Core.Terminal;
+using Windows.ApplicationModel.DataTransfer;
 using sutty.Setting;
 using sutty.UI.Helpers;
 using sutty.UI.ViewModels;
@@ -19,13 +22,15 @@ public sealed partial class SessionWorkspaceView : UserControl
     private bool _filesBound;
     private bool _detached;
     private int _openTerminalHereInFlight;
+    private Task? _filesBindingTask;
+    private readonly CancellationTokenSource _lifetime = new();
     public SessionWorkspaceViewModel ViewModel { get; }
 
     public SessionView SessionView { get; }
 
     public FileTreePanel FileTree => FilesPanel;
 
-    public ObservableCollection<string> Tunnels { get; } = [];
+    public ObservableCollection<TunnelRow> Tunnels { get; } = [];
 
     public SessionWorkspaceSection CurrentSection => ViewModel.CurrentSection;
 
@@ -51,12 +56,10 @@ public sealed partial class SessionWorkspaceView : UserControl
         FilesPanel.OpenTerminalHereRequested += FilesPanel_OpenTerminalHereRequested;
         CommandLibrary.RunRequested += CommandLibrary_RunRequested;
 
-        foreach (var rule in info.PortForwardings ?? [])
-            Tunnels.Add(DescribeTunnel(rule));
-        NoTunnelsState.Visibility = Tunnels.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        // This page is informational until runtime tunnel controls exist. Hiding an empty
-        // peer tab avoids implying that Sutty already provides a Tunnel Manager.
-        TunnelsButton.Visibility = Tunnels.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (sessionView.Session is IPortForwardingSession tunnels)
+            tunnels.TunnelsChanged += Tunnels_Changed;
+        sessionView.Session.StateChanged += Tunnels_SessionStateChanged;
+        RefreshTunnels();
 
         NavigateTo(ViewModel.CurrentSection);
         ActualThemeChanged += (_, _) => UpdateNavigationVisuals();
@@ -86,7 +89,7 @@ public sealed partial class SessionWorkspaceView : UserControl
         else if (section == SessionWorkspaceSection.Files && !_filesBound)
         {
             _filesBound = true;
-            _ = BindFilesAsync();
+            _filesBindingTask = BindFilesAsync();
         }
 
         UpdateNavigationVisuals();
@@ -104,6 +107,7 @@ public sealed partial class SessionWorkspaceView : UserControl
         SessionView.RefreshLanguage();
         FilesPanel.RefreshLanguage();
         CommandLibrary.RefreshLanguage();
+        RefreshTunnels();
     }
 
     public void CancelTransfers(bool userInitiated) =>
@@ -111,13 +115,34 @@ public sealed partial class SessionWorkspaceView : UserControl
 
     public async Task DetachAsync(bool userInitiated)
     {
+        if (_detached) return;
         _detached = true;
+        FilesPanel.StopRemoteEditing();
+        _lifetime.Cancel();
+        if (SessionView.Session is IPortForwardingSession tunnels)
+            tunnels.TunnelsChanged -= Tunnels_Changed;
+        SessionView.Session.StateChanged -= Tunnels_SessionStateChanged;
         CancelTransfers(userInitiated);
         SessionView.WorkingDirectoryChanged -= SessionView_WorkingDirectoryChanged;
         FilesPanel.OpenTerminalHereRequested -= FilesPanel_OpenTerminalHereRequested;
         CommandLibrary.RunRequested -= CommandLibrary_RunRequested;
-        if (_filesBound)
-            await FilesPanel.LoadAsync(null);
+        if (_activeTunnelOperation is { } operation)
+        {
+            try { await operation; }
+            catch { /* The operation UI owns its failure; detach must still release Files. */ }
+        }
+        _lifetime.Dispose();
+        try
+        {
+            if (_filesBindingTask is { } binding)
+            {
+                try { await binding; }
+                catch { /* A failed/cancelled initial bind must still release panel subscriptions. */ }
+            }
+            if (_filesBound)
+                await FilesPanel.LoadAsync(null);
+        }
+        finally { FilesPanel.LocalBrowser.Dispose(); }
     }
 
     private async Task BindFilesAsync()
@@ -182,86 +207,115 @@ public sealed partial class SessionWorkspaceView : UserControl
 
     private async Task OpenTerminalHereCoreAsync(string remotePath)
     {
-        if (_detached)
-            return;
-
-        var allowExistingInput = false;
-        if (SessionView.HasOpenInteractiveTerminal)
+        if (_detached || XamlRoot is not { } root) return;
+        string command;
+        try { command = SessionView.PrepareDirectoryCommand(remotePath); }
+        catch (ArgumentException)
         {
-            allowExistingInput = await ConfirmTerminalInputAsync(remotePath);
-            if (_detached || !allowExistingInput)
-                return;
-        }
-
-        var opened = await SessionView.OpenDirectoryInTerminalAsync(
-            remotePath,
-            allowExistingInput);
-        if (_detached)
-            return;
-        if (opened)
-        {
-            NavigateTo(SessionWorkspaceSection.Terminal);
+            await ShowWorkspaceMessageAsync(Loc.T("경로 확인", "Check path"),
+                Loc.T("제어 문자가 없는 원격 절대 경로를 선택하세요.",
+                    "Choose an absolute remote path without control characters."));
             return;
         }
 
-        // A PTY can finish opening while the remote path is being validated. Re-check
-        // and obtain a fresh confirmation before injecting into that now-existing PTY.
-        if (!allowExistingInput && SessionView.HasOpenInteractiveTerminal)
+        var content = new StackPanel { Spacing = 12 };
+        content.Children.Add(new TextBlock
         {
-            if (!await ConfirmTerminalInputAsync(remotePath) || _detached)
-                return;
-            opened = await SessionView.OpenDirectoryInTerminalAsync(remotePath, true);
-            if (_detached)
-                return;
-            if (opened)
-            {
-                NavigateTo(SessionWorkspaceSection.Terminal);
-                return;
-            }
-        }
-
-        if (XamlRoot is not { } root)
-            return;
-        var failure = new ContentDialog
-        {
-            XamlRoot = root,
-            Title = Loc.T("터미널에서 열 수 없음", "Could not open in terminal"),
-            Content = Loc.T("연결 상태와 원격 경로를 확인하세요.", "Check the connection and remote path."),
-            CloseButtonText = "OK",
-        };
-        await failure.ShowAsync();
-    }
-
-    private async Task<bool> ConfirmTerminalInputAsync(string remotePath)
-    {
-        if (_detached || XamlRoot is not { } root)
-            return false;
-
-        var content = new StackPanel { Spacing = 8 };
+            Text = ViewModel.ConnectionIdentity,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
         content.Children.Add(new TextBlock
         {
             Text = Loc.T(
-                "현재 터미널에서 프로그램이 실행 중일 수 있습니다. 이 경로로 이동하는 명령을 보내시겠습니까?",
-                "A program may be running in the terminal. Send the command that changes to this path?"),
+                "아래 POSIX 셸 명령을 복사해 사용할 수 있습니다. vim·top 등에서 나온 뒤 셸 프롬프트에 직접 붙여넣고 Enter로 실행하세요. 다른 셸에서는 경로 이동 구문을 확인하세요.",
+                "Copy this POSIX shell command. Leave vim, top, or other programs, paste it at a shell prompt, then press Enter yourself. Check directory syntax if using a different shell."),
             TextWrapping = TextWrapping.Wrap,
         });
-        content.Children.Add(new TextBlock
+        var prepared = new TextBox
         {
-            Text = $"cd {remotePath}",
-            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
-            IsTextSelectionEnabled = true,
+            Text = command,
+            IsReadOnly = true,
             TextWrapping = TextWrapping.Wrap,
-        });
-        var confirmation = new ContentDialog
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(prepared,
+            Loc.T("준비된 경로 이동 명령", "Prepared directory command"));
+        content.Children.Add(prepared);
+        var dialog = new ContentDialog
         {
             XamlRoot = root,
-            Title = Loc.T("터미널 입력 확인", "Confirm terminal input"),
+            Title = Loc.T("터미널에서 열기", "Open in terminal"),
             Content = content,
-            PrimaryButtonText = Loc.T("명령 보내기", "Send command"),
-            CloseButtonText = Loc.T("취소", "Cancel"),
+            PrimaryButtonText = Loc.T("복사 후 터미널 보기", "Copy and show terminal"),
+            CloseButtonText = Loc.T("닫기", "Close"),
             DefaultButton = ContentDialogButton.Close,
         };
-        return await confirmation.ShowAsync() == ContentDialogResult.Primary;
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary || _detached) return;
+        try
+        {
+            var data = new DataPackage();
+            data.SetText(command); // No newline: copying cannot request shell execution.
+            Clipboard.SetContent(data);
+            NavigateTo(SessionWorkspaceSection.Terminal);
+        }
+        catch
+        {
+            await ShowWorkspaceMessageAsync(Loc.T("복사 실패", "Copy failed"),
+                Loc.T("클립보드를 사용할 수 없습니다. 다시 시도하세요.",
+                    "The clipboard is unavailable. Try again."));
+        }
+    }
+
+    private async void OpenFilesPath_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detached || XamlRoot is not { } root) return;
+        var path = new TextBox
+        {
+            Header = Loc.T("원격 절대 경로", "Absolute remote path"),
+            PlaceholderText = "/var/www",
+            Text = SessionView.WorkingDirectory.StartsWith("/", StringComparison.Ordinal)
+                ? SessionView.WorkingDirectory : "",
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(path,
+            Loc.T("Files에서 열 원격 절대 경로", "Absolute remote path to open in Files"));
+        var error = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(new TextBlock { Text = ViewModel.ConnectionIdentity, TextWrapping = TextWrapping.Wrap });
+        content.Children.Add(path);
+        content.Children.Add(error);
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            Title = Loc.T("Files에서 경로 열기", "Open path in Files"),
+            Content = content,
+            PrimaryButtonText = Loc.T("열기", "Open"),
+            CloseButtonText = Loc.T("취소", "Cancel"),
+        };
+        dialog.PrimaryButtonClick += (_, args) =>
+        {
+            try { TerminalDirectoryCommand.ValidateAbsolutePath(path.Text); }
+            catch (ArgumentException)
+            {
+                args.Cancel = true;
+                error.Text = Loc.T("/로 시작하며 제어 문자가 없는 경로를 입력하세요.",
+                    "Enter a path beginning with / and without control characters.");
+            }
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary || _detached) return;
+        NavigateTo(SessionWorkspaceSection.Files);
+        if (_filesBindingTask is not null) await _filesBindingTask;
+        if (!_detached) await FilesPanel.NavigateToPathAsync(path.Text);
+    }
+
+    private async Task ShowWorkspaceMessageAsync(string title, string message)
+    {
+        if (_detached || XamlRoot is not { } root) return;
+        await new ContentDialog
+        {
+            XamlRoot = root, Title = title, Content = message,
+            CloseButtonText = Loc.T("닫기", "Close"),
+        }.ShowAsync();
     }
 
     private void UpdateNavigationVisuals()
@@ -279,14 +333,4 @@ public sealed partial class SessionWorkspaceView : UserControl
         button.Foreground = ThemeResources.Brush(this, selected ? "TextPrimary" : "TextMuted");
     }
 
-    private static string DescribeTunnel(SshPortForwardingRule rule) => rule.Type switch
-    {
-        SshPortForwardingType.Local =>
-            $"LOCAL   {rule.BindHost}:{rule.BindPort} → {rule.DestinationHost}:{rule.DestinationPort}",
-        SshPortForwardingType.Remote =>
-            $"REMOTE  {rule.BindHost}:{rule.BindPort} → {rule.DestinationHost}:{rule.DestinationPort}",
-        SshPortForwardingType.Dynamic =>
-            $"SOCKS   {rule.BindHost}:{rule.BindPort}",
-        _ => rule.Type.ToString().ToUpperInvariant(),
-    };
 }
