@@ -46,7 +46,10 @@ public sealed class TransferCenterItemViewModel : ObservableObject
 
     public string PathText => $"{_job.SourcePath}  →  {_job.DestinationPath}";
 
-    public string ErrorText => _job.Targets
+    public string ErrorText => _job.RequiresEditReview && _job.State is SftpQueueJobState.Failed or SftpQueueJobState.Interrupted or SftpQueueJobState.Paused
+        ? Loc.T("파일 > 편집본에서 원격 변경을 확인한 뒤 다시 반영하세요. 로컬 편집본은 보관됩니다.",
+            "Review remote changes in Files > Edits before uploading again. The local working copy is retained.")
+        : _job.Targets
         .Select(target => target.Error)
         .FirstOrDefault(error => !string.IsNullOrWhiteSpace(error)) ?? "";
 

@@ -10,7 +10,7 @@ namespace sutty.Core.Sessions;
 
 public sealed partial class SshNetSession
 {
-    private readonly List<ForwardedPort> _configuredForwardedPorts = [];
+    private readonly SessionTunnelManager _tunnels;
     private readonly object _portForwardingDiagnosticGate = new();
     private bool _portForwardingRuntimeFailed;
     private SshClient? _jumpClient;
@@ -153,75 +153,129 @@ public sealed partial class SshNetSession
         }
     }
 
-    private void StartConfiguredForwardings(SshClient ssh)
+    public IReadOnlyList<TunnelSnapshot> Tunnels => _tunnels.Snapshot();
+    public event EventHandler? TunnelsChanged
     {
-        if (Info.PortForwardings.Count == 0)
-            return;
-        if (Info.PortForwardings.Count > 32)
-            throw new InvalidOperationException("At most 32 port-forwarding rules are supported per session.");
+        add => _tunnels.Changed += value;
+        remove => _tunnels.Changed -= value;
+    }
 
+    public async Task<Guid> AddTunnelAsync(SshPortForwardingRule rule, CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            foreach (var rule in Info.PortForwardings)
-            {
-                ValidateForwardingRule(rule);
-                if (ForwardingExposurePolicy.IsExternalBind(rule.BindHost))
-                {
-                    Log(
-                        ConnectionLogSeverity.Warning,
-                        "Port forwarding exposure",
-                        $"{rule.BindHost}:{rule.BindPort} 포워딩이 루프백 외부 주소에 바인드됩니다.",
-                        $"Forwarding {rule.BindHost}:{rule.BindPort} binds beyond loopback.");
-                }
-                ForwardedPort port = rule.Type switch
-                {
-                    SshPortForwardingType.Local => new ForwardedPortLocal(
-                        rule.BindHost,
-                        (uint)rule.BindPort,
-                        rule.DestinationHost,
-                        (uint)rule.DestinationPort),
-                    SshPortForwardingType.Remote => new ForwardedPortRemote(
-                        rule.BindHost,
-                        (uint)rule.BindPort,
-                        rule.DestinationHost,
-                        (uint)rule.DestinationPort),
-                    SshPortForwardingType.Dynamic => new ForwardedPortDynamic(
-                        rule.BindHost,
-                        (uint)rule.BindPort),
-                    _ => throw new ArgumentOutOfRangeException(nameof(rule.Type)),
-                };
-                port.Exception += ForwardedPort_Exception;
-                ssh.AddForwardedPort(port);
-                port.Start();
-                _configuredForwardedPorts.Add(port);
-                Log(
-                    ConnectionLogSeverity.Information,
-                    "Port forwarding",
-                    $"{DescribeForwarding(rule)} 포워딩을 시작했습니다.",
-                    $"Started {DescribeForwarding(rule)} forwarding.");
-            }
+            if (State != SessionState.Connected)
+                throw new InvalidOperationException("Connect the SSH session before adding a tunnel.");
+            return _tunnels.Add(rule);
         }
-        catch
+        finally { _lifecycleGate.Release(); }
+    }
+
+    public async Task StartTunnelAsync(Guid id, bool allowExternalBind = false,
+        CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            StopConfiguredForwardings(ssh);
-            throw;
+            if (State != SessionState.Connected)
+                throw new InvalidOperationException("Connect the SSH session before starting a tunnel.");
+            await _tunnels.StartAsync(id, allowExternalBind, ct).ConfigureAwait(false);
+        }
+        finally { _lifecycleGate.Release(); }
+    }
+
+    public async Task StopTunnelAsync(Guid id, CancellationToken ct = default)
+    {
+        await _lifecycleGate.WaitAsync(ct).ConfigureAwait(false);
+        try { await _tunnels.StopAsync(id, ct).ConfigureAwait(false); }
+        finally { _lifecycleGate.Release(); }
+    }
+
+    private async Task StartConfiguredForwardingsAsync(CancellationToken ct)
+    {
+        foreach (var tunnel in _tunnels.Snapshot())
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                // Initial external bindings already passed the connection workflow's
+                // default-cancel exposure confirmation. Every runtime start asks again.
+                await _tunnels.StartAsync(tunnel.Id, allowExternalBind: true, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error)
+            {
+                // One unavailable bind or server-rejected forward must not tear down
+                // a healthy SSH terminal. The failed row remains available for retry.
+                ForwardedPort_Exception(this, new ExceptionEventArgs(error));
+            }
         }
     }
 
-    private static void ValidateForwardingRule(SshPortForwardingRule rule)
+    private ITunnelListener CreateTunnelListener(TunnelDefinition rule)
     {
-        ArgumentNullException.ThrowIfNull(rule);
-        if (string.IsNullOrWhiteSpace(rule.BindHost) || rule.BindHost.Any(char.IsControl))
-            throw new InvalidOperationException("A valid forwarding bind host is required.");
-        if (rule.BindPort is < 1 or > 65_535)
-            throw new InvalidOperationException("A forwarding bind port must be between 1 and 65535.");
-        if (rule.Type == SshPortForwardingType.Dynamic)
-            return;
-        if (string.IsNullOrWhiteSpace(rule.DestinationHost) ||
-            rule.DestinationHost.Any(char.IsControl))
-            throw new InvalidOperationException("A valid forwarding destination host is required.");
-        if (rule.DestinationPort is < 1 or > 65_535)
-            throw new InvalidOperationException("A forwarding destination port must be between 1 and 65535.");
+        var ssh = _ssh;
+        if (ssh is not { IsConnected: true })
+            throw new InvalidOperationException("SSH session is not connected.");
+        ForwardedPort port = rule.Type switch
+        {
+            SshPortForwardingType.Local => new ForwardedPortLocal(rule.BindHost,
+                (uint)rule.BindPort, rule.DestinationHost, (uint)rule.DestinationPort),
+            SshPortForwardingType.Remote => new ForwardedPortRemote(rule.BindHost,
+                (uint)rule.BindPort, rule.DestinationHost, (uint)rule.DestinationPort),
+            SshPortForwardingType.Dynamic => new ForwardedPortDynamic(rule.BindHost, (uint)rule.BindPort),
+            _ => throw new ArgumentOutOfRangeException(nameof(rule.Type)),
+        };
+        return new SshNetTunnelListener(ssh, port, ForwardedPort_Exception);
+    }
+
+    private sealed class SshNetTunnelListener : ITunnelListener
+    {
+        private readonly SshClient _client;
+        private readonly ForwardedPort _port;
+        private readonly EventHandler<ExceptionEventArgs> _diagnosticHandler;
+        private volatile bool _disposed;
+        public bool IsStarted => !_disposed && _port.IsStarted;
+        public event EventHandler? Failed;
+        public event EventHandler? Closing;
+
+        public SshNetTunnelListener(SshClient client, ForwardedPort port,
+            EventHandler<ExceptionEventArgs> diagnosticHandler)
+        {
+            _client = client;
+            _port = port;
+            _diagnosticHandler = diagnosticHandler;
+            _port.Exception += OnException;
+            _port.Closing += OnClosing;
+        }
+
+        public void Start()
+        {
+            _client.AddForwardedPort(_port);
+            _port.Start();
+        }
+
+        private void OnException(object? sender, ExceptionEventArgs e)
+        {
+            Failed?.Invoke(this, EventArgs.Empty);
+            _diagnosticHandler(sender, e);
+        }
+
+        private void OnClosing(object? sender, EventArgs e) => Closing?.Invoke(this, e);
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _port.Exception -= OnException;
+            _port.Closing -= OnClosing;
+            try { if (_port.IsStarted) _port.Stop(); }
+            finally
+            {
+                try { _client.RemoveForwardedPort(_port); }
+                finally { _port.Dispose(); _disposed = true; }
+            }
+        }
     }
 
     private void ForwardedPort_Exception(object? sender, ExceptionEventArgs e)
@@ -255,27 +309,6 @@ public sealed partial class SshNetSession
                     ConnectionDiagnosticStage.PortForwarding));
             }
         }
-    }
-
-    private static string DescribeForwarding(SshPortForwardingRule rule) => rule.Type switch
-    {
-        SshPortForwardingType.Dynamic =>
-            $"dynamic {rule.BindHost}:{rule.BindPort}",
-        _ =>
-            $"{rule.Type.ToString().ToLowerInvariant()} {rule.BindHost}:{rule.BindPort}" +
-            $" -> {rule.DestinationHost}:{rule.DestinationPort}",
-    };
-
-    private void StopConfiguredForwardings(SshClient? ssh)
-    {
-        foreach (var port in _configuredForwardedPorts.AsEnumerable().Reverse())
-        {
-            port.Exception -= ForwardedPort_Exception;
-            try { if (port.IsStarted) port.Stop(); } catch { }
-            try { ssh?.RemoveForwardedPort(port); } catch { }
-            port.Dispose();
-        }
-        _configuredForwardedPorts.Clear();
     }
 
     private async Task CleanUpRouteAsync()

@@ -23,6 +23,8 @@
 
         <Border.ContextFlyout>
             <MenuFlyout>
+                <MenuFlyoutItem x:Name="DuplicateMenuItem" Click="DuplicateMenuItem_Click" Icon="Copy" />
+                <MenuFlyoutItem x:Name="AuthenticationAliasMenuItem" Click="AuthenticationAliasMenuItem_Click" />
                 <MenuFlyoutItem
                     x:Name="DeleteMenuItem"
                     Click="DeleteMenuItem_Click"

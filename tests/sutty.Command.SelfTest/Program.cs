@@ -52,6 +52,9 @@ try
         @"C:\keys\legacy.key",
         ["legacy"]);
 
+    SharingTests.SeedPreviousHostSchema();
+    HostProfileStore.EnsureInitialized();
+    SharingTests.VerifyPreviousHostMigration(Assert);
     var migrated = HostProfileStore.GetAll().Single();
     Assert(migrated.Host == "legacy.example", "legacy saved host migration");
     Assert(migrated.IsFavorite, "legacy favorite migration");
@@ -351,6 +354,7 @@ try
     Assert(HostProfileStore.Delete(created.Id), "saved profile delete");
     Assert(HostProfileStore.GetById(created.Id) is null, "deleted profile stays deleted");
 
+    SharingTests.Run(Assert);
     Console.WriteLine("Saved-host and connection-history self-tests passed.");
 }
 finally

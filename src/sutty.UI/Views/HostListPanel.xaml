@@ -27,6 +27,10 @@
                     QueryIcon="Find"
                     TextChanged="SearchBox_TextChanged" />
 
+                <Button Content="{x:Bind h:Loc.T('호스트·명령 공유 / 가져오기', 'Share / import hosts and commands')}"
+                        Click="ShareDefinitions_Click" HorizontalAlignment="Stretch"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('JSON 공유 및 가져오기', 'Share and import JSON definitions')}" />
+
                 <TextBlock
                     x:Name="TopHeader"
                     CharacterSpacing="80"

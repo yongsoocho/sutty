@@ -16,7 +16,7 @@ namespace sutty.Core.Sessions;
 /// SSH.NET(Renci.SshNet) 기반 실제 SSH 세션.
 /// SSH transport를 먼저 연결하고, 선택적 SFTP subsystem은 별도 상태로 연다.
 /// </summary>
-public sealed partial class SshNetSession : ISshSession
+public sealed partial class SshNetSession : ISshSession, IPortForwardingSession
 {
     private SshClient? _ssh;
     private SftpClient? _sftpClient;
@@ -68,6 +68,9 @@ public sealed partial class SshNetSession : ISshSession
     {
         SshConnectionPreflightValidator.Validate(info);
         Info = info;
+        _tunnels = new SessionTunnelManager(CreateTunnelListener);
+        foreach (var rule in info.PortForwardings)
+            _tunnels.Add(rule);
         _password = info.Password;
         _passphrase = info.Passphrase;
         _routePassword = info.Route?.Password ?? "";
@@ -162,7 +165,7 @@ public sealed partial class SshNetSession : ISshSession
                 else
                 {
                     BeginPortForwardingDiagnostics();
-                    StartConfiguredForwardings(connected.Client);
+                    await StartConfiguredForwardingsAsync(ct);
                     RecordPortForwardingStarted();
                 }
             }
@@ -578,7 +581,7 @@ public sealed partial class SshNetSession : ISshSession
 
         try
         {
-            StopConfiguredForwardings(ssh);
+            await _tunnels.StopAllAsync().ConfigureAwait(false);
         }
         catch (Exception error)
         {

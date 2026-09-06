@@ -39,6 +39,7 @@ public sealed class HostProfile
     public string Environment { get; init; } = HostEnvironments.Unclassified;
     public bool IsFavorite { get; init; }
     public string? CredentialId { get; init; }
+    public string AuthenticationAlias { get; init; } = "";
     public HostRouteProfile Route { get; init; } = new();
     public List<HostTunnelProfile> Tunnels { get; init; } = [];
     public DateTimeOffset CreatedAtUtc { get; init; }
@@ -59,6 +60,8 @@ public sealed class HostProfileDraft
     public string Environment { get; set; } = HostEnvironments.Unclassified;
     public bool IsFavorite { get; set; }
     public string? CredentialId { get; set; }
+    // Null preserves the alias when an older edit surface saves a profile.
+    public string? AuthenticationAlias { get; set; }
     public HostRouteProfile Route { get; set; } = new();
     public IEnumerable<HostTunnelProfile>? Tunnels { get; set; }
 }
@@ -130,6 +133,8 @@ public static class HostProfileStore
         ArgumentNullException.ThrowIfNull(draft);
         EnsureInitialized();
 
+        if (draft.AuthenticationAlias is null && !string.IsNullOrWhiteSpace(existingId))
+            draft.AuthenticationAlias = GetById(existingId)?.AuthenticationAlias;
         var normalized = Normalize(draft);
         var id = string.IsNullOrWhiteSpace(existingId)
             ? Guid.NewGuid().ToString("N")
@@ -138,11 +143,12 @@ public static class HostProfileStore
         using var connection = Db.Open();
         using var transaction = connection.BeginTransaction();
 
-        if (string.IsNullOrWhiteSpace(existingId))
+        // Imported portable identifiers can be new too; do not let them bypass the storage bound.
+        using (var count = connection.CreateCommand())
         {
-            using var count = connection.CreateCommand();
             count.Transaction = transaction;
-            count.CommandText = "SELECT COUNT(*) FROM host_profiles";
+            count.CommandText = "SELECT COUNT(*) FROM host_profiles WHERE NOT EXISTS (SELECT 1 FROM host_profiles WHERE id = $id)";
+            count.Parameters.AddWithValue("$id", id);
             if (Convert.ToInt32(count.ExecuteScalar()) >= MaxProfiles)
                 throw new InvalidOperationException($"A maximum of {MaxProfiles} saved hosts is supported.");
         }
@@ -157,11 +163,11 @@ public static class HostProfileStore
                     private_key_path, tags_json, group_name, environment,
                     is_favorite, credential_id, route_json, tunnels_json,
                     created_at_utc, updated_at_utc,
-                    last_connected_at_utc)
+                    last_connected_at_utc, authentication_alias)
                 VALUES (
                     $id, $displayName, $host, $port, $username, $authMethod,
                     $privateKeyPath, $tags, $groupName, $environment,
-                    $favorite, $credentialId, $route, $tunnels, $now, $now, NULL)
+                    $favorite, $credentialId, $route, $tunnels, $now, $now, NULL, $authenticationAlias)
                 ON CONFLICT(id) DO UPDATE SET
                     display_name = excluded.display_name,
                     host = excluded.host,
@@ -174,6 +180,7 @@ public static class HostProfileStore
                     environment = excluded.environment,
                     is_favorite = excluded.is_favorite,
                     credential_id = excluded.credential_id,
+                    authentication_alias = excluded.authentication_alias,
                     route_json = excluded.route_json,
                     tunnels_json = excluded.tunnels_json,
                     updated_at_utc = excluded.updated_at_utc
@@ -197,6 +204,36 @@ public static class HostProfileStore
         using var reader = command.ExecuteReader();
         return reader.Read() ? Read(reader) : null;
     }
+
+    /// <summary>Copy local definitions without sharing a deletable vault binding.</summary>
+    public static HostProfile Duplicate(string id, string displayName)
+    {
+        var source = GetById(id) ?? throw new ArgumentException("The saved host no longer exists.", nameof(id));
+        var draft = ToDraft(source);
+        draft.DisplayName = displayName;
+        draft.CredentialId = null;
+        return Save(draft);
+    }
+
+    public static HostProfileDraft ToDraft(HostProfile profile) => new()
+    {
+        DisplayName = profile.DisplayName, Host = profile.Host, Port = profile.Port,
+        Username = profile.Username, AuthMethod = profile.AuthMethod, PrivateKeyPath = profile.PrivateKeyPath,
+        Tags = [.. profile.Tags], GroupName = profile.GroupName, Environment = profile.Environment,
+        IsFavorite = profile.IsFavorite, CredentialId = profile.CredentialId,
+        AuthenticationAlias = profile.AuthenticationAlias, Route = profile.Route with { },
+        Tunnels = profile.Tunnels.Select(tunnel => tunnel with { }).ToList(),
+    };
+
+    public static void SetAuthenticationAlias(string id, string alias)
+    {
+        var profile = GetById(id) ?? throw new ArgumentException("The saved host no longer exists.", nameof(id));
+        var draft = ToDraft(profile);
+        draft.AuthenticationAlias = alias;
+        Save(draft, id);
+    }
+
+    internal static HostProfileDraft ValidateDraft(HostProfileDraft draft) => Normalize(draft);
 
     public static List<HostProfile> GetAll(string? query = null, int limit = 1_000)
     {
@@ -402,6 +439,12 @@ public static class HostProfileStore
             addTunnels.CommandText = "ALTER TABLE host_profiles ADD COLUMN tunnels_json TEXT NOT NULL DEFAULT '[]'";
             addTunnels.ExecuteNonQuery();
         }
+        if (!columns.Contains("authentication_alias"))
+        {
+            using var addAlias = connection.CreateCommand();
+            addAlias.CommandText = "ALTER TABLE host_profiles ADD COLUMN authentication_alias TEXT NOT NULL DEFAULT ''";
+            addAlias.ExecuteNonQuery();
+        }
     }
 
     private static void AddDraftParameters(
@@ -422,6 +465,7 @@ public static class HostProfileStore
         command.Parameters.AddWithValue("$environment", draft.Environment);
         command.Parameters.AddWithValue("$favorite", draft.IsFavorite ? 1 : 0);
         command.Parameters.AddWithValue("$credentialId", (object?)draft.CredentialId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$authenticationAlias", draft.AuthenticationAlias ?? "");
         command.Parameters.AddWithValue("$route", SerializeRoute(draft.Route));
         command.Parameters.AddWithValue("$tunnels", SerializeTunnels(draft.Tunnels));
         command.Parameters.AddWithValue("$now", now.ToString("O"));
@@ -470,6 +514,7 @@ public static class HostProfileStore
             Environment = HostEnvironments.Normalize(draft.Environment),
             IsFavorite = draft.IsFavorite,
             CredentialId = credentialId,
+            AuthenticationAlias = LimitClean(draft.AuthenticationAlias, 64, "authentication alias"),
             Route = NormalizeRoute(draft.Route),
             Tunnels = NormalizeTunnels(draft.Tunnels),
         };
@@ -722,6 +767,7 @@ public static class HostProfileStore
         CreatedAtUtc = DateTimeOffset.Parse(reader.GetString(14)),
         UpdatedAtUtc = DateTimeOffset.Parse(reader.GetString(15)),
         LastConnectedAtUtc = reader.IsDBNull(16) ? null : DateTimeOffset.Parse(reader.GetString(16)),
+        AuthenticationAlias = reader.GetString(17),
     };
 
     private const string SelectColumns = """
@@ -729,6 +775,6 @@ public static class HostProfileStore
         private_key_path, tags_json, group_name, environment,
         is_favorite, credential_id, route_json, tunnels_json,
         created_at_utc, updated_at_utc,
-        last_connected_at_utc
+        last_connected_at_utc, authentication_alias
         """;
 }

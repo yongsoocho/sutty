@@ -141,6 +141,9 @@ public static class SettingsService
         settings.DefaultSshPort = Math.Clamp(settings.DefaultSshPort, 1, 65_535);
         settings.DefaultKeepAliveSeconds = Math.Clamp(settings.DefaultKeepAliveSeconds, 0, 3_600);
         settings.SftpRetryCount = Math.Clamp(settings.SftpRetryCount, 0, 10);
+        settings.ExternalEditorExecutable = settings.ExternalEditorExecutable?.Trim() ?? "";
+        settings.ExternalEditorArguments = string.IsNullOrWhiteSpace(settings.ExternalEditorArguments)
+            ? "{file}" : settings.ExternalEditorArguments;
         settings.SftpVerificationMode = settings.SftpVerificationMode?.ToLowerInvariant() switch
         {
             "sizeonly" => "SizeOnly",
