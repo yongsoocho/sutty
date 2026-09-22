@@ -44,7 +44,15 @@
                 Key="Number7"
                 Modifiers="Menu"
                 Invoked="NavigationKeyboardAccelerator_Invoked" />
+            <KeyboardAccelerator
+                Key="Number8"
+                Modifiers="Menu"
+                Invoked="NavigationKeyboardAccelerator_Invoked" />
         </Grid.KeyboardAccelerators>
+        <Grid.RowDefinitions>
+            <RowDefinition x:Name="ShellRow" Height="*" />
+            <RowDefinition x:Name="BottomToolsRow" Height="0" />
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="48" />
             <ColumnDefinition Width="*" />
@@ -76,7 +84,7 @@
             Background="Transparent" />
 
         <!--  ── Column 0: Logo + Left Nav Rail ──  -->
-        <Grid Grid.Column="0" Background="{ThemeResource RailBg}">
+        <Grid Grid.Column="0" Grid.RowSpan="2" Background="{ThemeResource RailBg}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="38" />
                 <RowDefinition Height="*" />
@@ -153,6 +161,17 @@
                     </NavigationViewItem>
 
                     <NavigationViewItem
+                        AutomationProperties.Name="{x:Bind h:Loc.T('다중 명령', 'Multi Command')}"
+                        Content="Multi Command"
+                        Style="{StaticResource CompactRailItem}"
+                        Tag="MultiCommand"
+                        ToolTipService.ToolTip="Alt+8 · Multi Command">
+                        <NavigationViewItem.Icon>
+                            <FontIcon Glyph="&#xE8F1;" Style="{StaticResource CompactRailIcon}" />
+                        </NavigationViewItem.Icon>
+                    </NavigationViewItem>
+
+                    <NavigationViewItem
                         AutomationProperties.Name="{x:Bind h:Loc.T('설정', 'Settings')}"
                         Content="Settings"
                         Style="{StaticResource CompactRailItem}"
@@ -193,8 +212,8 @@
                 x:Name="TitleTabs"
                 Grid.Row="0"
                 Height="38"
-                Margin="8,0,0,0"
-                HorizontalAlignment="Left"
+                Margin="8,0,132,0"
+                HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch"
                 IsAddTabButtonVisible="True"
                 AddTabButtonClick="TitleTabs_AddTabButtonClick"
@@ -218,8 +237,19 @@
                         <MenuFlyoutItem
                             AutomationProperties.Name="{x:Bind h:Loc.T('로컬 PowerShell', 'Local PowerShell')}"
                             Click="OpenLocalPowerShell_Click"
-                            Icon="CommandPrompt"
-                            Text="{x:Bind h:Loc.T('로컬 PowerShell', 'Local PowerShell')}" />
+                            Text="{x:Bind h:Loc.T('로컬 PowerShell', 'Local PowerShell')}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE756;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem
+                            AutomationProperties.Name="{x:Bind h:Loc.T('로컬 CMD', 'Local CMD')}"
+                            Click="OpenLocalCommandPrompt_Click"
+                            Text="{x:Bind h:Loc.T('로컬 CMD', 'Local CMD')}">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE756;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
                         <MenuFlyoutItem
                             AutomationProperties.Name="{x:Bind h:Loc.T('호스트 가져오기', 'Import hosts')}"
                             Click="ImportHosts_Click"
@@ -229,9 +259,7 @@
                 </TabView.Resources>
                 <TabView.TabStripHeader>
                     <!--
-                        Chrome keeps a selected tab in the strip even on its start page.
-                        This visual-only tab gives the adjacent + button the same anchor
-                        while Sutty has no local or SSH tabs yet.
+                        Brief startup placeholder until the default or restored shell tab exists.
                     -->
                     <Border
                         x:Name="EmptyTabHeader"
@@ -239,9 +267,9 @@
                         Height="32"
                         Margin="2,6,0,0"
                         VerticalAlignment="Bottom"
-                        AutomationProperties.Name="New SSH connection"
+                        AutomationProperties.Name="PowerShell"
                         Background="{ThemeResource PanelBg}"
-                        BorderBrush="{ThemeResource ShellBorder}"
+                        BorderBrush="Transparent"
                         BorderThickness="1,1,1,0"
                         CornerRadius="8,8,0,0"
                         IsHitTestVisible="False">
@@ -260,29 +288,23 @@
                                 FontSize="12"
                                 FontWeight="SemiBold"
                                 Foreground="{ThemeResource TextPrimary}"
-                                Text="{x:Bind h:Loc.T('새 SSH 연결', 'New SSH')}" />
+                                Text="PowerShell" />
                             <TextBlock
                                 VerticalAlignment="Center"
                                 FontSize="10.5"
                                 Foreground="{ThemeResource TextFaint}"
-                                Text="SSH / SFTP" />
+                                Text="{x:Bind h:Loc.T('로컬', 'Local')}" />
                         </StackPanel>
                     </Border>
                 </TabView.TabStripHeader>
             </TabView>
 
-            <!--  Main Content: global pages or the selected session workspace.  -->
+            <!--  The selected shell stays mounted while auxiliary tools open beside it.  -->
             <Grid Grid.Row="1" Background="{ThemeResource PanelBg}">
-                <ContentControl
-                    x:Name="GlobalPageHost"
-                    HorizontalContentAlignment="Stretch"
-                    VerticalContentAlignment="Stretch" />
                 <ContentControl
                     x:Name="SessionHost"
                     HorizontalContentAlignment="Stretch"
-                    VerticalContentAlignment="Stretch"
-                    Visibility="Collapsed" />
-                <local:MultiSessionGrid x:Name="MultiGrid" Visibility="Collapsed" />
+                    VerticalContentAlignment="Stretch" />
                 <StackPanel
                     x:Name="NoSessionState"
                     HorizontalAlignment="Center"
@@ -297,13 +319,26 @@
                         HorizontalAlignment="Center"
                         Foreground="{ThemeResource TextMuted}"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
-                        Text="{x:Bind h:Loc.T('연결된 세션이 없습니다', 'No connected sessions')}" />
+                        Text="{x:Bind h:Loc.T('로컬 셸을 시작하는 중입니다', 'Starting the local shell')}" />
                     <TextBlock
                         HorizontalAlignment="Center"
                         FontSize="12"
                         Foreground="{ThemeResource TextMuted}"
-                        Text="{x:Bind h:Loc.T('Home에서 SSH 연결을 시작하세요.', 'Start an SSH connection from Home.')}" />
+                        Text="{x:Bind h:Loc.T('+ 메뉴에서 PowerShell 또는 CMD를 열 수 있습니다.', 'Open PowerShell or CMD from the + menu.')}" />
                 </StackPanel>
+                <Grid x:Name="FullPageOverlay" Background="{ThemeResource PanelBg}" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Button Margin="16,10" HorizontalAlignment="Left"
+                            Click="CloseDetailsPane_Click"
+                            AutomationProperties.Name="{x:Bind h:Loc.T('셸로 돌아가기', 'Back to shell')}"
+                            Content="{x:Bind h:Loc.T('← 셸로 돌아가기', '← Back to shell')}" />
+                    <ContentControl x:Name="FullPageHost" Grid.Row="1"
+                                    HorizontalContentAlignment="Stretch"
+                                    VerticalContentAlignment="Stretch" />
+                </Grid>
             </Grid>
         </Grid>
 
@@ -324,20 +359,42 @@
         <!--  ── Column 3: Right Panel ──  -->
         <Grid x:Name="RightPanelHost" Grid.Column="2" Visibility="Collapsed">
             <Grid.RowDefinitions>
-                <RowDefinition Height="38" />
+                <RowDefinition x:Name="RightPanelTopSpacer" Height="38" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <Border
+                x:Name="RightPanelBorder"
                 Grid.Row="1"
-                Padding="16"
                 VerticalAlignment="Stretch"
                 Background="{ThemeResource SidePanelBg}"
                 BorderBrush="{ThemeResource ShellBorder}"
                 BorderThickness="1,0,0,0">
-                <ContentControl
-                    x:Name="RightPanel"
-                    HorizontalContentAlignment="Stretch"
-                    VerticalContentAlignment="Stretch" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition x:Name="MultiCommandsColumn" Width="0" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition x:Name="MultiTargetsRow" Height="0" />
+                        <RowDefinition x:Name="ToolContentRow" Height="*" />
+                    </Grid.RowDefinitions>
+                    <Button
+                        Grid.ColumnSpan="2"
+                        Margin="8,4"
+                        HorizontalAlignment="Right"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('보조 패널 닫기', 'Close side panel')}"
+                        ToolTipService.ToolTip="{x:Bind h:Loc.T('보조 패널 닫기', 'Close side panel')}"
+                        Click="CloseDetailsPane_Click">
+                        <FontIcon Glyph="&#xE711;" FontSize="12" />
+                    </Button>
+                        <local:MultiSessionGrid x:Name="MultiGrid" Grid.Row="1" Visibility="Collapsed" />
+                        <ContentControl
+                            x:Name="RightPanel"
+                            Grid.Row="2"
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch" />
+                </Grid>
             </Border>
         </Grid>
     </Grid>

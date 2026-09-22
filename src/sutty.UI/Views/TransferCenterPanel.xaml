@@ -3,6 +3,7 @@
     x:Class="sutty.UI.Views.TransferCenterPanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:sutty.UI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:h="using:sutty.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -11,7 +12,8 @@
     Unloaded="TransferCenterPanel_Unloaded"
     mc:Ignorable="d">
 
-    <Grid Padding="20" RowSpacing="12">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Grid Padding="12" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -19,12 +21,8 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Spacing="3">
+        <StackPanel Spacing="10">
+            <StackPanel x:Name="QueueHeading" Spacing="3">
                 <TextBlock
                     FontSize="20"
                     FontWeight="SemiBold"
@@ -36,38 +34,28 @@
                     Text="{x:Bind h:Loc.T('저장된 큐를 실시간으로 확인하고 제어합니다. 일치하는 Files 세션이 연결되어 있을 때만 단일 전송 제어가 활성화됩니다.', 'Monitor and control the durable queue live. Single-transfer controls are enabled only while a matching Files session is connected.')}"
                     TextWrapping="Wrap" />
             </StackPanel>
-            <StackPanel
-                Grid.Column="1"
-                HorizontalAlignment="Right"
-                VerticalAlignment="Center"
-                Orientation="Horizontal"
+            <controls:WrapPanel
                 Spacing="8">
                 <Button
                     x:Name="RemoveCompletedButton"
-                    MinWidth="112"
                     AutomationProperties.Name="{x:Bind h:Loc.T('완료된 전송 모두 제거', 'Remove all completed transfers')}"
                     Click="RemoveAllCompleted_Click"
                     Content="{x:Bind h:Loc.T('완료 기록 정리', 'Clear completed')}" />
                 <Button
-                    MinWidth="92"
                     AutomationProperties.Name="{x:Bind h:Loc.T('전송 목록 새로 고침', 'Refresh transfer list')}"
                     Click="Refresh_Click"
                     Content="{x:Bind h:Loc.T('새로 고침', 'Refresh')}"
                     ToolTipService.ToolTip="{x:Bind h:Loc.T('저장된 전송 큐를 다시 읽습니다.', 'Read the durable transfer queue again.')}" />
-            </StackPanel>
-        </Grid>
+                <Button x:Name="QueueFiltersButton" Visibility="Collapsed" Click="ToggleFilters_Click"
+                        Content="{x:Bind h:Loc.T('필터', 'Filters')}"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('전송 큐 필터 표시 또는 숨기기', 'Show or hide transfer queue filters')}" />
+            </controls:WrapPanel>
+        </StackPanel>
 
-        <Grid Grid.Row="1" ColumnSpacing="10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <controls:WrapPanel x:Name="QueueFilters" Grid.Row="1" Spacing="8">
             <ComboBox
                 x:Name="StateFilter"
-                MinWidth="176"
+                Width="210"
                 AutomationProperties.Name="{x:Bind h:Loc.T('전송 상태 필터', 'Transfer state filter')}"
                 SelectedIndex="0"
                 SelectionChanged="StateFilter_SelectionChanged">
@@ -80,8 +68,7 @@
             </ComboBox>
             <ComboBox
                 x:Name="DirectionFilter"
-                Grid.Column="1"
-                MinWidth="128"
+                Width="150"
                 AutomationProperties.Name="{x:Bind h:Loc.T('전송 방향 필터', 'Transfer direction filter')}"
                 SelectedIndex="0"
                 SelectionChanged="DirectionFilter_SelectionChanged">
@@ -91,26 +78,23 @@
             </ComboBox>
             <TextBox
                 x:Name="TargetFilter"
-                Grid.Column="2"
-                MinWidth="164"
+                Width="240"
                 AutomationProperties.Name="{x:Bind h:Loc.T('전송 대상 필터', 'Transfer target filter')}"
                 PlaceholderText="{x:Bind h:Loc.T('호스트 또는 대상 검색', 'Filter host or target')}"
                 TextChanged="TargetFilter_TextChanged" />
             <TextBlock
                 x:Name="SnapshotTimeText"
-                Grid.Column="3"
                 VerticalAlignment="Center"
                 FontSize="10.5"
                 Foreground="{ThemeResource TextFaint}"
                 TextTrimming="CharacterEllipsis" />
             <TextBlock
                 x:Name="CountText"
-                Grid.Column="4"
                 VerticalAlignment="Center"
                 FontFamily="Cascadia Mono, Consolas"
                 FontSize="10.5"
                 Foreground="{ThemeResource TextFaint}" />
-        </Grid>
+        </controls:WrapPanel>
 
         <TextBlock
             x:Name="LiveStatusText"
@@ -124,6 +108,8 @@
         <Grid Grid.Row="3">
             <ListView
                 x:Name="TransferList"
+                MaxHeight="720"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                 AutomationProperties.Name="{x:Bind h:Loc.T('저장된 전송 작업', 'Saved transfer jobs')}"
                 Background="Transparent"
                 IsItemClickEnabled="False"
@@ -231,11 +217,7 @@
                                         Text="{x:Bind ProgressText, Mode=OneWay}" />
                                 </Grid>
 
-                                <Grid Grid.Row="3" ColumnSpacing="10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Row="3" Spacing="4">
                                     <TextBlock
                                         MaxLines="2"
                                         AutomationProperties.LiveSetting="Polite"
@@ -246,17 +228,13 @@
                                         TextWrapping="Wrap"
                                         Visibility="{x:Bind ErrorVisibility, Mode=OneWay}" />
                                     <TextBlock
-                                        Grid.Column="1"
-                                        HorizontalAlignment="Right"
                                         FontSize="10"
                                         Foreground="{ThemeResource TextFaint}"
                                         Text="{x:Bind UpdatedText, Mode=OneWay}" />
-                                </Grid>
+                                </StackPanel>
 
-                                <StackPanel
+                                <controls:WrapPanel
                                     Grid.Row="4"
-                                    HorizontalAlignment="Right"
-                                    Orientation="Horizontal"
                                     Spacing="6">
                                     <Button
                                         MinWidth="0"
@@ -298,7 +276,7 @@
                                         Content="{x:Bind h:Loc.T('기록 제거', 'Remove')}"
                                         IsEnabled="{x:Bind CanRemove, Mode=OneWay}"
                                         Visibility="{x:Bind RemoveVisibility, Mode=OneWay}" />
-                                </StackPanel>
+                                </controls:WrapPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -324,4 +302,5 @@
             </StackPanel>
         </Grid>
     </Grid>
+    </ScrollViewer>
 </UserControl>

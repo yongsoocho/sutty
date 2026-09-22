@@ -10,12 +10,19 @@ public sealed class WorkspaceTabState
 {
     public string Kind { get; set; } = WorkspaceTabKinds.LocalTerminal;
     public string SavedHostId { get; set; } = "";
+    public string LocalShell { get; set; } = WorkspaceLocalShells.PowerShell;
 }
 
 public static class WorkspaceTabKinds
 {
     public const string LocalTerminal = "LocalTerminal";
     public const string SavedHost = "SavedHost";
+}
+
+public static class WorkspaceLocalShells
+{
+    public const string PowerShell = "PowerShell";
+    public const string CommandPrompt = "CommandPrompt";
 }
 
 /// <summary>A bounded snapshot of the tabs that were open when Sutty last ran.</summary>
@@ -163,6 +170,9 @@ public static class WorkspaceStateStore
             {
                 Kind = kind,
                 SavedHostId = kind == WorkspaceTabKinds.SavedHost ? savedHostId : "",
+                LocalShell = kind == WorkspaceTabKinds.LocalTerminal
+                    ? NormalizeLocalShell(tab.LocalShell)
+                    : "",
             });
         }
 
@@ -190,6 +200,11 @@ public static class WorkspaceStateStore
             ? normalized
             : "";
     }
+
+    private static string NormalizeLocalShell(string? value) =>
+        string.Equals(value, WorkspaceLocalShells.CommandPrompt, StringComparison.OrdinalIgnoreCase)
+            ? WorkspaceLocalShells.CommandPrompt
+            : WorkspaceLocalShells.PowerShell;
 
     private static void TryDelete(string path)
     {

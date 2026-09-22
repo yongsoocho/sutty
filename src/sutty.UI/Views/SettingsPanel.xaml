@@ -34,6 +34,28 @@
             <Setter Property="CornerRadius" Value="7" />
             <Setter Property="FontSize" Value="12.5" />
             <Setter Property="MinHeight" Value="36" />
+            <Setter Property="SpinButtonPlacementMode" Value="Hidden" />
+        </Style>
+        <Style x:Key="SettingsDangerButton" TargetType="Button">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Background" Value="{ThemeResource CardBg}" />
+            <Setter Property="Foreground" Value="{ThemeResource StatusRed}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource StatusRed}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="ContentTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SettingsDangerConfirmationButton" TargetType="Button"
+            BasedOn="{StaticResource SettingsDangerButton}">
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
         </Style>
     </UserControl.Resources>
 
@@ -44,10 +66,13 @@
             Margin="0"
             Background="Transparent"
             IsBackButtonVisible="Collapsed"
-            IsPaneToggleButtonVisible="False"
+            IsPaneToggleButtonVisible="True"
+            IsPaneOpen="True"
             IsSettingsVisible="False"
-            OpenPaneLength="166"
-            PaneDisplayMode="Left"
+            OpenPaneLength="196"
+            ExpandedModeThresholdWidth="1000"
+            CompactModeThresholdWidth="640"
+            PaneDisplayMode="Auto"
             SelectionChanged="SettingsNav_SelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="{x:Bind h:Loc.T('모양', 'Appearance')}" FontSize="12.5" Tag="Appearance">
@@ -88,7 +113,7 @@
             </NavigationView.MenuItems>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <Grid Padding="16,12,16,16">
+                <Grid MaxWidth="1040" Padding="20,12,20,24">
 
                     <!--  ── Appearance: 언어/테마 (선택 즉시 적용/저장) ──  -->
                     <StackPanel x:Name="AppearancePane" Spacing="10">
@@ -131,11 +156,19 @@
                                 Toggled="DarkModeToggle_Toggled" />
                         </Border>
                         <Border Style="{StaticResource SettingsCard}">
-                            <RadioButtons
+                            <StackPanel Spacing="12">
+                            <ComboBox
                                 x:Name="ThemeRadios"
+                                HorizontalAlignment="Stretch"
+                                IsTextSearchEnabled="True"
+                                MaxDropDownHeight="420"
                                 FontSize="12.5"
-                                Header="Theme"
+                                Header="{x:Bind h:Loc.T('앱 테마', 'Application theme')}"
                                 SelectionChanged="ThemeRadios_SelectionChanged" />
+                            <Border Height="6" Background="{ThemeResource AccentGradient}" CornerRadius="3" />
+                            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextMuted}"
+                                Text="{x:Bind h:Loc.T('모든 테마에서 그라데이션 강조를 유지합니다. 터미널 색상은 터미널 설정에서 별도로 선택할 수도 있습니다.', 'Every theme keeps gradient accents. You can also choose a separate terminal palette in Terminal settings.')}" />
+                            </StackPanel>
                         </Border>
                     </StackPanel>
 
@@ -170,7 +203,7 @@
                                         x:Name="FontSizeBox"
                                         Maximum="32"
                                         Minimum="8"
-                                        SpinButtonPlacementMode="Compact"
+                                        SpinButtonPlacementMode="Hidden"
                                         ValueChanged="NumberBox_ValueChanged"
                                         Style="{StaticResource SettingsNumber}" />
                                 </StackPanel>
@@ -230,14 +263,8 @@
                                     OffContent="{x:Bind h:Loc.T('새 로컬 탭에 미적용', 'Disabled for new local tabs')}"
                                     OnContent="{x:Bind h:Loc.T('새 로컬 탭에 적용', 'Enabled for new local tabs')}"
                                     Toggled="TerminalAppearanceToggle_Toggled" />
-                                <RadioButtons
-                                    x:Name="TerminalModeRadios"
-                                    Header="{x:Bind h:Loc.T('기본 보기 모드', 'Default view mode')}"
-                                    MaxColumns="2"
-                                    SelectionChanged="TerminalModeRadios_SelectionChanged">
-                                    <RadioButton Content="{x:Bind h:Loc.T('명령', 'COMMANDS')}" Tag="Repl" />
-                                    <RadioButton Content="TERMINAL" Tag="Terminal" />
-                                </RadioButtons>
+                                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('가운데 화면은 항상 셸입니다. + 메뉴에서 PowerShell 또는 CMD를 열고, 명령 도구는 옆 패널에서 사용하세요.', 'The center always shows the shell. Open PowerShell or CMD from the + menu and use command tools in the side panel.')}" />
                                 <ToggleSwitch
                                     x:Name="StructuredHighlightToggle"
                                     Header="{x:Bind h:Loc.T('JSON / YAML 문법 강조', 'JSON / YAML syntax highlighting')}"
@@ -282,7 +309,7 @@
                                         x:Name="KeepAliveBox"
                                         Maximum="3600"
                                         Minimum="0"
-                                        SpinButtonPlacementMode="Compact"
+                                        SpinButtonPlacementMode="Hidden"
                                         ValueChanged="NumberBox_ValueChanged"
                                         Style="{StaticResource SettingsNumber}" />
                                 </StackPanel>
@@ -417,7 +444,7 @@
                                         x:Name="HistoryDaysBox"
                                         Maximum="365"
                                         Minimum="1"
-                                        SpinButtonPlacementMode="Compact"
+                                        SpinButtonPlacementMode="Hidden"
                                         ValueChanged="NumberBox_ValueChanged"
                                         Style="{StaticResource SettingsNumber}" />
                                 </StackPanel>
@@ -427,7 +454,7 @@
                                         x:Name="HistoryTopHostCountBox"
                                         Maximum="16"
                                         Minimum="1"
-                                        SpinButtonPlacementMode="Compact"
+                                        SpinButtonPlacementMode="Hidden"
                                         ValueChanged="NumberBox_ValueChanged"
                                         Style="{StaticResource SettingsNumber}" />
                                 </StackPanel>
@@ -617,6 +644,27 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                        <Border Style="{StaticResource SettingsCard}" BorderBrush="{ThemeResource StatusRed}">
+                            <StackPanel Spacing="10">
+                                <TextBlock FontSize="12.5" FontWeight="SemiBold"
+                                    Foreground="{ThemeResource StatusRed}"
+                                    Text="{x:Bind h:Loc.T('초기화', 'Reset')}" />
+                                <TextBlock FontSize="11" Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                                    Text="{x:Bind h:Loc.T('초기화할 대상을 선택하세요. 각 작업은 실행 전에 예 / 아니오로 다시 확인합니다.', 'Choose what to reset. Each action asks Yes / No before making changes.')}" />
+                                <Button x:Name="ResetSettingsButton" Style="{StaticResource SettingsDangerButton}"
+                                    Click="ResetSettings_Click"
+                                    Content="{x:Bind h:Loc.T('설정 초기화', 'Reset settings')}" />
+                                <TextBlock FontSize="10.5" Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                                    Text="{x:Bind h:Loc.T('테마·언어·터미널·연결 기본값·창 설정을 기본값으로 되돌립니다.', 'Restore defaults for themes, language, terminal, connections, and window preferences.')}" />
+                                <Button x:Name="ResetDatabaseButton" Style="{StaticResource SettingsDangerButton}"
+                                    Click="ResetDatabase_Click"
+                                    Content="{x:Bind h:Loc.T('SQLite 데이터 초기화', 'Reset SQLite data')}" />
+                                <TextBlock FontSize="10.5" Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                                    Text="{x:Bind h:Loc.T('저장 Host·접속 기록·명령 템플릿·연결 즐겨찾기와 최근 기록을 삭제합니다.', 'Delete saved hosts, connection history, command templates, launcher favorites, and launcher history.')}" />
+                                <TextBlock x:Name="ResetStatusText" FontSize="11" TextWrapping="Wrap"
+                                    AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                 </Grid>
@@ -638,7 +686,7 @@
                         CornerRadius="8"
                         FontSize="12.5"
                         FontWeight="SemiBold"
-                        Foreground="#FFFFFF">
+                        Foreground="{ThemeResource AccentForeground}">
                         <Button.Resources>
                             <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
                             <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />

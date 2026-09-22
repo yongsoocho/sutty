@@ -7,6 +7,7 @@
     x:Class="sutty.UI.Views.MultiCommandPanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:sutty.UI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:h="using:sutty.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -15,11 +16,12 @@
     VerticalAlignment="Stretch"
     mc:Ignorable="d">
 
-    <Grid RowSpacing="12">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Grid RowSpacing="12" Padding="0,0,0,12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!--  ── 위 25%: 브로드캐스트 입력 ──  -->
@@ -64,18 +66,16 @@
                     CornerRadius="7"
                     FontSize="12"
                     FontWeight="SemiBold"
-                    Foreground="#FFFFFF"
+                    Foreground="{ThemeResource AccentForeground}"
                     ToolTipService.ToolTip="Run on all checked sessions">
                     <Button.Resources>
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
                         <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
                     </Button.Resources>
                 </Button>
-                <StackPanel
+                <controls:WrapPanel
                     x:Name="BroadcastStatusPanel"
                     Grid.Row="2"
-                    HorizontalAlignment="Left"
-                    Orientation="Horizontal"
                     Spacing="7"
                     Visibility="Collapsed">
                     <ProgressRing
@@ -86,17 +86,18 @@
                     <TextBlock
                         x:Name="BroadcastStatusText"
                         VerticalAlignment="Center"
+                        TextWrapping="Wrap"
                         FontSize="10.5"
                         Foreground="{ThemeResource TextMuted}" />
-                </StackPanel>
+                </controls:WrapPanel>
             </Grid>
         </Grid>
 
         <!--  ── 체크된 SSH 세션 대상 다중 SFTP ──  -->
         <Expander
             Grid.Row="1"
-            MaxHeight="300"
             HorizontalAlignment="Stretch"
+            HorizontalContentAlignment="Stretch"
                     Header="{x:Bind h:Loc.T('다중 SFTP 전송', 'Multi-server SFTP transfer')}">
             <StackPanel Padding="0,8,0,2" Spacing="7">
                 <TextBox
@@ -108,11 +109,7 @@
                     Header="{x:Bind h:Loc.T('원격 경로 / 업로드 대상 폴더', 'Remote path / upload destination')}"
                     PlaceholderText="/tmp"
                     Text="/tmp" />
-                <Grid ColumnSpacing="7">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
+                <StackPanel Spacing="7">
                     <Button
                         x:Name="UploadFilesButton"
                         Height="32"
@@ -126,7 +123,6 @@
                     </Button>
                     <Button
                         x:Name="UploadFolderButton"
-                        Grid.Column="1"
                         Height="32"
                         HorizontalAlignment="Stretch"
                         Click="UploadFolder_Click"
@@ -136,17 +132,14 @@
                             <TextBlock Text="{x:Bind h:Loc.T('폴더 업로드…', 'Upload folder…')}" />
                         </StackPanel>
                     </Button>
-                </Grid>
+                </StackPanel>
                 <Button
                     x:Name="DownloadPathButton"
-                    Height="32"
+                    MinHeight="32"
                     HorizontalAlignment="Stretch"
                     Click="DownloadPath_Click"
                     CornerRadius="7">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon FontSize="11" Glyph="&#xE896;" />
-                        <TextBlock Text="{x:Bind h:Loc.T('선택 서버들에서 이 경로 다운로드…', 'Download this path from selected servers…')}" />
-                    </StackPanel>
+                    <TextBlock Text="{x:Bind h:Loc.T('선택 서버들에서 이 경로 다운로드…', 'Download this path from selected servers…')}" TextWrapping="Wrap" />
                 </Button>
                 <Button
                     x:Name="RetryFailedButton"
@@ -249,6 +242,7 @@
                 FontSize="10.5"
                 FontWeight="SemiBold"
                 Foreground="{ThemeResource TextMuted}"
+                TextWrapping="Wrap"
                 Text="{x:Bind h:Loc.T('SAVED COMMANDS · 실행하면 체크된 모든 세션으로', 'SAVED COMMANDS · runs on all checked sessions')}" />
 
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
@@ -326,7 +320,7 @@
                                                 CornerRadius="6"
                                                 FontSize="11.5"
                                                 FontWeight="SemiBold"
-                                                Foreground="#FFFFFF">
+                                                Foreground="{ThemeResource AccentForeground}">
                                                 <Button.Resources>
                                                     <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
                                                     <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
@@ -345,10 +339,12 @@
                         HorizontalAlignment="Center"
                         FontSize="12"
                         Foreground="{ThemeResource TextMuted}"
+                        TextWrapping="Wrap"
                         Text="{x:Bind h:Loc.T('저장된 명령이 없습니다 — Command 탭에서 추가하세요', 'No saved commands — add them in the Command tab')}"
                         Visibility="Collapsed" />
                 </StackPanel>
             </ScrollViewer>
         </Grid>
     </Grid>
+    </ScrollViewer>
 </UserControl>

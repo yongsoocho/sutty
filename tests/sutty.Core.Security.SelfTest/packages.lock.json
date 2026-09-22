@@ -34,7 +34,7 @@
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[8.0.3, )",
           "SSH.NET": "[2026.0.0, )",
-          "sutty.SshAgent": "[1.0.0, )"
+          "sutty.SshAgent": "[0.1.0-alpha.4, )"
         }
       },
       "sutty.sshagent": {

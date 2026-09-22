@@ -42,6 +42,8 @@ try
         "deleting a command notifies all command views");
     CommandStore.Changed -= commandChanged;
 
+    LauncherStoreSelfTests.Run(Assert, scratch);
+
     HostHistoryStore.SetPinned(
         "legacy.example",
         "Legacy host",
@@ -355,6 +357,7 @@ try
     Assert(HostProfileStore.GetById(created.Id) is null, "deleted profile stays deleted");
 
     SharingTests.Run(Assert);
+    DatabaseResetSelfTests.Run(Assert, scratch);
     Console.WriteLine("Saved-host and connection-history self-tests passed.");
 }
 finally

@@ -13,10 +13,13 @@ public sealed partial class HomeDashboardPanel : UserControl
 
     public event EventHandler<HostInfoModel>? HistoryConnectRequested;
 
+    public event LocalCommandLaunchRequestedEventHandler? LocalCommandLaunchRequested;
+
     public HomeDashboardPanel()
     {
         InitializeComponent();
         QuickConnect.ConnectRequested += ForwardConnectAsync;
+        QuickConnect.LocalCommandLaunchRequested += ForwardLocalCommandLaunchAsync;
         HostHistory.ConnectRequested += (_, host) => HistoryConnectRequested?.Invoke(this, host);
     }
 
@@ -49,5 +52,18 @@ public sealed partial class HomeDashboardPanel : UserControl
             return;
         foreach (HomeConnectRequestedEventHandler callback in callbacks.GetInvocationList())
             await callback(this, info);
+    }
+
+    private async Task<bool> ForwardLocalCommandLaunchAsync(
+        object? sender,
+        LocalCommandLaunchRequest request)
+    {
+        if (LocalCommandLaunchRequested is not { } callbacks)
+            return false;
+
+        var launched = false;
+        foreach (LocalCommandLaunchRequestedEventHandler callback in callbacks.GetInvocationList())
+            launched |= await callback(this, request);
+        return launched;
     }
 }

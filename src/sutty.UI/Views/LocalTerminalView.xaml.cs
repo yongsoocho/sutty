@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Commands;
@@ -27,6 +28,9 @@ public sealed partial class LocalTerminalView : UserControl
     private const int MaxTerminalDrainBytes = 256 * 1024;
 
     private readonly object _terminalOutputGate = new();
+    private readonly LocalTerminalLaunchPlan? _launchPlan;
+    private readonly ILocalWorkingDirectoryTerminal? _workingDirectorySource;
+    private string _lastNotifiedWorkingDirectory = string.Empty;
     private readonly Queue<byte[]> _terminalOutputQueue = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly SemaphoreSlim _broadcastCommandGate = new(1, 1);
@@ -37,6 +41,7 @@ public sealed partial class LocalTerminalView : UserControl
     private bool _terminalBacklogResetPending;
     private int _terminalDrainQueued;
     private bool _terminalResizeInProgress;
+    private int _directLaunchAttempted;
     private int _closed;
     private TerminalSize _requestedTerminalSize = new(120, 40, 0, 0);
 
@@ -44,22 +49,62 @@ public sealed partial class LocalTerminalView : UserControl
     public event EventHandler<TerminalAppShortcutRequest>? AppShortcutRequested;
 
     public LocalTerminalView()
-        : this(new WindowsConPtyTerminal(
-            loadProfile: SettingsService.Current.LoadLocalShellProfile))
+        : this(LocalShellKind.PowerShell)
+    {
+    }
+
+    public LocalTerminalView(LocalShellKind shellKind)
+        : this(new WindowsConPtyTerminal(shellKind,
+            loadProfile: SettingsService.Current.LoadLocalShellProfile), null, shellKind)
+    {
+    }
+
+    /// <summary>
+    /// Opens an already-validated local connection command directly inside this
+    /// ConPTY tab. The command is not replayed during workspace restore.
+    /// </summary>
+    public LocalTerminalView(LocalTerminalLaunchPlan launchPlan)
+        : this(
+            new WindowsConPtyTerminal(launchPlan ?? throw new ArgumentNullException(nameof(launchPlan))),
+            launchPlan)
     {
     }
 
     public LocalTerminalView(IInteractiveTerminal terminal)
+        : this(terminal, null)
+    {
+    }
+
+    private LocalTerminalView(
+        IInteractiveTerminal terminal,
+        LocalTerminalLaunchPlan? launchPlan,
+        LocalShellKind shellKind = LocalShellKind.PowerShell)
     {
         Terminal = terminal ?? throw new ArgumentNullException(nameof(terminal));
+        _workingDirectorySource = terminal as ILocalWorkingDirectoryTerminal;
+        _launchPlan = launchPlan;
+        ShellKind = shellKind;
         InitializeComponent();
+        TerminalSurface.OutputShell = launchPlan is null && shellKind == LocalShellKind.CommandPrompt
+            ? "cmd" : null;
+        SizeChanged += (_, args) =>
+        {
+            StatusPill.Visibility = args.NewSize.Width < 460 ? Visibility.Collapsed : Visibility.Visible;
+            SubtitleText.Visibility = args.NewSize.Width < 360 ? Visibility.Collapsed : Visibility.Visible;
+        };
 
         Terminal.TerminalStateChanged += OnTerminalStateChanged;
         Terminal.TerminalDataReceived += OnTerminalDataReceived;
+        if (_workingDirectorySource is not null)
+            _workingDirectorySource.WorkingDirectoryChanged += OnWorkingDirectoryChanged;
         TerminalSurface.InputReceived += (_, data) => _ = SendTerminalTextAsync(data);
         TerminalSurface.AppShortcutRequested += (_, request) =>
             AppShortcutRequested?.Invoke(this, request);
         TerminalSurface.TerminalSizeChanged += TerminalSurface_TerminalSizeChanged;
+        TerminalSurface.OutputCopyCompleted += (_, copied) =>
+            ToolTipService.SetToolTip(CopyOutputButton, copied
+                ? Loc.T("마지막 출력을 복사했습니다.", "Last output copied.")
+                : Loc.T("클립보드에 복사하지 못했습니다. 다시 눌러 주세요.", "Could not copy to the clipboard. Try again."));
         TerminalSurface.RendererFailed += (_, message) =>
         {
             TerminalStatusText.Text = Loc.T("터미널 렌더러 오류", "Terminal renderer error");
@@ -73,6 +118,25 @@ public sealed partial class LocalTerminalView : UserControl
     }
 
     public IInteractiveTerminal Terminal { get; }
+
+    /// <summary>The shell's current filesystem location, or empty until it is known.</summary>
+    public string WorkingDirectory => _workingDirectorySource?.WorkingDirectory ?? string.Empty;
+
+    /// <summary>Raised on the UI thread after the shell reports a different location.</summary>
+    public event EventHandler<string>? WorkingDirectoryChanged;
+
+    public LocalShellKind ShellKind { get; }
+    public string DisplayTitle => _launchPlan?.LaunchTitle ??
+        (ShellKind == LocalShellKind.CommandPrompt ? "CMD" : "PowerShell");
+
+    /// <summary>
+    /// Direct command tabs intentionally are not restored: their owner can use
+    /// the bounded local history or a favorite to explicitly run them again.
+    /// </summary>
+    public bool CanRestoreWorkspace => _launchPlan is null;
+
+    /// <summary>Return keyboard focus to the active local shell.</summary>
+    public void FocusTerminal() => TerminalSurface.FocusTerminal();
 
     /// <summary>Apply current terminal font settings to this already-open local tab.</summary>
     public void ApplyTerminalSettings()
@@ -90,9 +154,33 @@ public sealed partial class LocalTerminalView : UserControl
     /// <summary>Refresh labels that depend on the current Korean/English setting.</summary>
     public void RefreshLanguage()
     {
-        SubtitleText.Text = Loc.T(
-            $"로컬 · {Environment.UserName}@{Environment.MachineName}",
-            $"Local · {Environment.UserName}@{Environment.MachineName}");
+        var copyLabel = Loc.T("마지막 출력 복사", "Copy last output");
+        AutomationProperties.SetName(CopyOutputButton, copyLabel);
+        ToolTipService.SetToolTip(CopyOutputButton, copyLabel);
+        if (_launchPlan is null)
+        {
+            TitleText.Text = DisplayTitle;
+            SubtitleText.Text = Loc.T(
+                $"로컬 · {Environment.UserName}@{Environment.MachineName}",
+                $"Local · {Environment.UserName}@{Environment.MachineName}");
+            AutomationProperties.SetName(TerminalSurface, Loc.T(
+                $"로컬 {DisplayTitle} 터미널",
+                $"Local {DisplayTitle} terminal"));
+        }
+        else
+        {
+            TitleText.Text = _launchPlan.LaunchTitle;
+            SubtitleText.Text = _launchPlan.Kind == LocalTerminalLaunchKind.OpenSsh
+                ? Loc.T(
+                    "로컬 SSH · .ssh/config와 SSH Agent 설정 사용",
+                    "Local SSH · uses .ssh/config and SSH Agent settings")
+                : Loc.T(
+                    "로컬 명령 · 설치된 프로그램과 PATH 설정 사용",
+                    "Local command · uses the installed program and PATH settings");
+            AutomationProperties.SetName(TerminalSurface, Loc.T(
+                "로컬 연결 명령 터미널",
+                "Local connection command terminal"));
+        }
         UpdateTerminalStatus(Terminal.TerminalState);
     }
 
@@ -105,6 +193,8 @@ public sealed partial class LocalTerminalView : UserControl
         _lifetimeCancellation.Cancel();
         Terminal.TerminalStateChanged -= OnTerminalStateChanged;
         Terminal.TerminalDataReceived -= OnTerminalDataReceived;
+        if (_workingDirectorySource is not null)
+            _workingDirectorySource.WorkingDirectoryChanged -= OnWorkingDirectoryChanged;
         ClearTerminalBacklog();
 
         try
@@ -115,6 +205,22 @@ public sealed partial class LocalTerminalView : UserControl
         {
             Debug.WriteLine($"Local terminal close failed: {error}");
         }
+    }
+
+    private void OnWorkingDirectoryChanged(object? sender, string path)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (Volatile.Read(ref _closed) != 0)
+                return;
+            // Read the current source value rather than an older queued event:
+            // a close/reopen can replace a shell before the UI drains this queue.
+            var current = WorkingDirectory;
+            if (string.Equals(_lastNotifiedWorkingDirectory, current, StringComparison.Ordinal))
+                return;
+            _lastNotifiedWorkingDirectory = current;
+            WorkingDirectoryChanged?.Invoke(this, current);
+        });
     }
 
     private void OnTerminalStateChanged(object? sender, TerminalState state)
@@ -196,7 +302,9 @@ public sealed partial class LocalTerminalView : UserControl
         }
     }
 
-    private void DrainTerminalOutput()
+    private void DrainTerminalOutput() => DrainTerminalOutput(allOutput: false);
+
+    private void DrainTerminalOutput(bool allOutput)
     {
         List<byte[]> batch = [];
         long droppedBytes;
@@ -204,7 +312,7 @@ public sealed partial class LocalTerminalView : UserControl
         lock (_terminalOutputGate)
         {
             var batchBytes = 0;
-            while (_terminalOutputQueue.Count > 0 && batchBytes < MaxTerminalDrainBytes)
+            while (_terminalOutputQueue.Count > 0 && (allOutput || batchBytes < MaxTerminalDrainBytes))
             {
                 var data = _terminalOutputQueue.Dequeue();
                 _terminalQueuedBytes -= data.Length;
@@ -259,6 +367,12 @@ public sealed partial class LocalTerminalView : UserControl
             return;
         }
 
+        // Tab selection can reload this view after a process exits or fails.
+        // A saved command is one explicit launch, so reloading must preserve its
+        // final output instead of silently starting another connection.
+        if (_launchPlan is not null && Interlocked.Exchange(ref _directLaunchAttempted, 1) != 0)
+            return;
+
         _requestedTerminalSize = TerminalSurface.ViewportSize;
         ClearTerminalBacklog();
         TerminalSurface.Reset();
@@ -308,6 +422,12 @@ public sealed partial class LocalTerminalView : UserControl
             Debug.WriteLine($"Local terminal input failed: {error}");
             UpdateTerminalStatus(Terminal.TerminalState);
         }
+    }
+
+    private void CopyOutput_Click(object sender, RoutedEventArgs e)
+    {
+        DrainTerminalOutput(allOutput: true);
+        TerminalSurface.CopyLatestOutput();
     }
 
     /// <summary>

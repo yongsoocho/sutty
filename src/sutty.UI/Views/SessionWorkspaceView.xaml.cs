@@ -16,13 +16,14 @@ using System.Threading.Tasks;
 
 namespace sutty.UI.Views;
 
-/// <summary>Keeps Terminal, Files, Commands, and Tunnels bound to one exact SSH session.</summary>
+/// <summary>Keeps a shell visible while displaying tools for that exact SSH session beside it.</summary>
 public sealed partial class SessionWorkspaceView : UserControl
 {
     private bool _filesBound;
     private bool _detached;
     private int _openTerminalHereInFlight;
     private Task? _filesBindingTask;
+    private ContentControl? _externalFilesHost;
     private readonly CancellationTokenSource _lifetime = new();
     public SessionWorkspaceViewModel ViewModel { get; }
 
@@ -33,6 +34,12 @@ public sealed partial class SessionWorkspaceView : UserControl
     public ObservableCollection<TunnelRow> Tunnels { get; } = [];
 
     public SessionWorkspaceSection CurrentSection => ViewModel.CurrentSection;
+
+    public event EventHandler<SessionWorkspaceSection>? SectionChanged;
+    public event EventHandler? TerminalActivationRequested;
+
+    // A borrowed file browser can be visible while its owning SSH workspace is not.
+    private XamlRoot? DialogRoot => FilesPanel.XamlRoot ?? XamlRoot;
 
     public SessionWorkspaceView(SessionView sessionView, IntPtr ownerWindowHandle)
     {
@@ -49,7 +56,7 @@ public sealed partial class SessionWorkspaceView : UserControl
 
         InitializeComponent();
         SessionContent.Content = sessionView;
-        sessionView.UseWorkspaceNavigation();
+        CommandResultsHost.Content = sessionView.TakeCommandRunner();
         sessionView.WorkingDirectoryChanged += SessionView_WorkingDirectoryChanged;
 
         FilesPanel.OwnerWindowHandle = ownerWindowHandle;
@@ -67,12 +74,15 @@ public sealed partial class SessionWorkspaceView : UserControl
 
     public void NavigateTo(SessionWorkspaceSection section)
     {
+        var previousSection = CurrentSection;
         ViewModel.SelectSection(section);
-        InteractivePane.Visibility = section is SessionWorkspaceSection.Terminal or
-            SessionWorkspaceSection.Commands
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        FilesPanel.Visibility = section == SessionWorkspaceSection.Files
+        AuxiliaryPane.Visibility = section == SessionWorkspaceSection.Terminal
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        UpdateWorkspaceLayout();
+        if (section == SessionWorkspaceSection.Files && _externalFilesHost is { } externalHost)
+            RestoreFileBrowser(externalHost);
+        FilesPanelHost.Visibility = section == SessionWorkspaceSection.Files
             ? Visibility.Visible
             : Visibility.Collapsed;
         TunnelsPane.Visibility = section == SessionWorkspaceSection.Tunnels
@@ -80,12 +90,11 @@ public sealed partial class SessionWorkspaceView : UserControl
             : Visibility.Collapsed;
 
         var commands = section == SessionWorkspaceSection.Commands;
-        CommandLibraryColumn.Width = commands ? new GridLength(320) : new GridLength(0);
-        CommandLibraryHost.Visibility = commands ? Visibility.Visible : Visibility.Collapsed;
+        CommandsPane.Visibility = commands ? Visibility.Visible : Visibility.Collapsed;
         if (commands)
-            SessionView.ShowCommandsWorkspace();
+            SessionView.FocusCommandRunner();
         else if (section == SessionWorkspaceSection.Terminal)
-            SessionView.ShowTerminalWorkspace();
+            SessionView.FocusTerminal();
         else if (section == SessionWorkspaceSection.Files && !_filesBound)
         {
             _filesBound = true;
@@ -93,6 +102,31 @@ public sealed partial class SessionWorkspaceView : UserControl
         }
 
         UpdateNavigationVisuals();
+        if (CurrentSection != previousSection)
+            SectionChanged?.Invoke(this, CurrentSection);
+    }
+
+    private void Workspace_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateWorkspaceLayout();
+
+    private void UpdateWorkspaceLayout()
+    {
+        if (AuxiliaryBorder is null) return;
+        var compactHeader = ActualWidth < 740;
+        Grid.SetRow(WorkspaceNavigation, compactHeader ? 1 : 0);
+        Grid.SetColumn(WorkspaceNavigation, compactHeader ? 0 : 1);
+        Grid.SetColumnSpan(WorkspaceNavigation, compactHeader ? 2 : 1);
+
+        var toolsOpen = CurrentSection != SessionWorkspaceSection.Terminal;
+        var stacked = ActualWidth < 960;
+        AuxiliaryBorder.Visibility = toolsOpen ? Visibility.Visible : Visibility.Collapsed;
+        AuxiliaryColumn.Width = toolsOpen && !stacked
+            ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        AuxiliaryRow.Height = toolsOpen && stacked
+            ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        ShellRow.Height = new GridLength(toolsOpen && stacked ? 1.4 : 1, GridUnitType.Star);
+        Grid.SetColumn(AuxiliaryBorder, stacked ? 0 : 1);
+        Grid.SetRow(AuxiliaryBorder, stacked ? 1 : 0);
+        AuxiliaryBorder.BorderThickness = stacked ? new Thickness(0, 1, 0, 0) : new Thickness(1, 0, 0, 0);
     }
 
     public void ReapplyTerminalSettings()
@@ -113,10 +147,49 @@ public sealed partial class SessionWorkspaceView : UserControl
     public void CancelTransfers(bool userInitiated) =>
         FilesPanel.CancelTransfersForSession(SessionView.Session, userInitiated);
 
+    /// <summary>
+    /// Lends this session's existing browser to the global Transfers page. The browser,
+    /// transfer executor and drag payloads retain their single session owner.
+    /// </summary>
+    public Task ShowFileBrowserAsync(ContentControl host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        if (_detached) return Task.CompletedTask;
+        if (_externalFilesHost is { } previousHost && !ReferenceEquals(previousHost, host))
+            RestoreFileBrowser(previousHost);
+        if (!ReferenceEquals(_externalFilesHost, host))
+        {
+            FilesPanelHost.Content = null;
+            _externalFilesHost = host;
+            FilesPanel.PreferRemotePane = true;
+            host.Content = FilesPanel;
+        }
+        if (!_filesBound)
+        {
+            _filesBound = true;
+            _filesBindingTask = BindFilesAsync();
+        }
+        return _filesBindingTask ?? Task.CompletedTask;
+    }
+
+    /// <summary>Returns a borrowed browser without disconnecting or cancelling transfers.</summary>
+    public void RestoreFileBrowser(ContentControl host)
+    {
+        if (!ReferenceEquals(_externalFilesHost, host)) return;
+        if (ReferenceEquals(host.Content, FilesPanel))
+            host.Content = null;
+        _externalFilesHost = null;
+        FilesPanel.PreferRemotePane = false;
+        if (!_detached)
+            FilesPanelHost.Content = FilesPanel;
+    }
+
     public async Task DetachAsync(bool userInitiated)
     {
         if (_detached) return;
         _detached = true;
+        if (_externalFilesHost is { } externalHost)
+            RestoreFileBrowser(externalHost);
         FilesPanel.StopRemoteEditing();
         _lifetime.Cancel();
         if (SessionView.Session is IPortForwardingSession tunnels)
@@ -153,7 +226,7 @@ public sealed partial class SessionWorkspaceView : UserControl
             await FilesPanel.LoadAsync(null);
             return;
         }
-        if (CurrentSection == SessionWorkspaceSection.Files &&
+        if ((CurrentSection == SessionWorkspaceSection.Files || _externalFilesHost is not null) &&
             SessionView.WorkingDirectory.StartsWith("/", StringComparison.Ordinal))
         {
             await FilesPanel.NavigateToPathAsync(SessionView.WorkingDirectory);
@@ -183,7 +256,7 @@ public sealed partial class SessionWorkspaceView : UserControl
 
     private void SessionView_WorkingDirectoryChanged(object? sender, string remotePath)
     {
-        if (!_detached && CurrentSection == SessionWorkspaceSection.Files &&
+        if (!_detached && (CurrentSection == SessionWorkspaceSection.Files || _externalFilesHost is not null) &&
             remotePath.StartsWith("/", StringComparison.Ordinal))
         {
             _ = FilesPanel.NavigateToPathAsync(remotePath);
@@ -207,7 +280,7 @@ public sealed partial class SessionWorkspaceView : UserControl
 
     private async Task OpenTerminalHereCoreAsync(string remotePath)
     {
-        if (_detached || XamlRoot is not { } root) return;
+        if (_detached || DialogRoot is not { } root) return;
         string command;
         try { command = SessionView.PrepareDirectoryCommand(remotePath); }
         catch (ArgumentException)
@@ -257,19 +330,21 @@ public sealed partial class SessionWorkspaceView : UserControl
             var data = new DataPackage();
             data.SetText(command); // No newline: copying cannot request shell execution.
             Clipboard.SetContent(data);
-            NavigateTo(SessionWorkspaceSection.Terminal);
         }
         catch
         {
             await ShowWorkspaceMessageAsync(Loc.T("복사 실패", "Copy failed"),
                 Loc.T("클립보드를 사용할 수 없습니다. 다시 시도하세요.",
                     "The clipboard is unavailable. Try again."));
+            return;
         }
+        NavigateTo(SessionWorkspaceSection.Terminal);
+        TerminalActivationRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private async void OpenFilesPath_Click(object sender, RoutedEventArgs e)
     {
-        if (_detached || XamlRoot is not { } root) return;
+        if (_detached || DialogRoot is not { } root) return;
         var path = new TextBox
         {
             Header = Loc.T("원격 절대 경로", "Absolute remote path"),
@@ -310,7 +385,7 @@ public sealed partial class SessionWorkspaceView : UserControl
 
     private async Task ShowWorkspaceMessageAsync(string title, string message)
     {
-        if (_detached || XamlRoot is not { } root) return;
+        if (_detached || DialogRoot is not { } root) return;
         await new ContentDialog
         {
             XamlRoot = root, Title = title, Content = message,

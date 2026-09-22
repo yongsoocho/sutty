@@ -13,11 +13,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <Grid Padding="24,18,24,14" Background="{ThemeResource AppBg}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <Grid Padding="16" Background="{ThemeResource AppBg}">
             <StackPanel Spacing="3">
                 <TextBlock
                     FontSize="18"
@@ -25,20 +21,13 @@
                     Text="{x:Bind h:Loc.T('명령 라이브러리', 'Command library')}" />
                 <TextBlock
                     Foreground="{ThemeResource TextMuted}"
+                    TextWrapping="Wrap"
                     Text="{x:Bind h:Loc.T('저장 명령을 선택한 SSH 세션에서 실행합니다.', 'Run saved commands in the selected SSH session.')}" />
             </StackPanel>
-            <Button
-                x:Name="PowerToolsButton"
-                Grid.Column="1"
-                Padding="14,7"
-                AutomationProperties.Name="{x:Bind h:Loc.T('여러 세션 명령 도구 열기', 'Open multi-session command tools')}"
-                Click="PowerTools_Click"
-                Content="{x:Bind h:Loc.T('여러 세션 도구', 'Multi-session tools')}"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('명시적으로 선택한 세션에만 실행', 'Run only on explicitly selected sessions')}" />
         </Grid>
         <local:CommandPanel
             x:Name="CommandLibrary"
             Grid.Row="1"
-            Margin="24,16,24,24" />
+            Margin="12,8,12,12" />
     </Grid>
 </UserControl>

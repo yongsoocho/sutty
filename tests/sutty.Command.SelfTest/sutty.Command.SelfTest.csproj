@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\sutty.Command\sutty.Command.csproj" />
+    <ProjectReference Include="..\..\src\sutty.Core\sutty.Core.csproj" />
   </ItemGroup>
 </Project>

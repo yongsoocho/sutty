@@ -12,4 +12,8 @@
     <!-- Override the vulnerable 2.1.11 native SQLite bundle with its patched servicing release. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Local connection shortcuts are parsed by the Core no-shell launch planner. -->
+    <ProjectReference Include="..\sutty.Core\sutty.Core.csproj" />
+  </ItemGroup>
 </Project>

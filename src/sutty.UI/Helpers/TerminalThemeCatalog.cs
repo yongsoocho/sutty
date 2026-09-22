@@ -1,3 +1,4 @@
+using sutty.Setting;
 using sutty.UI.Controls;
 using System;
 using System.Collections.Generic;
@@ -13,85 +14,59 @@ internal sealed record TerminalThemePreset(
 
 internal static class TerminalThemeCatalog
 {
-    public const string FollowApplication = "FollowApplication";
+    public const string FollowApplication = ThemeCatalog.FollowApplication;
 
     public static IReadOnlyList<TerminalThemePreset> Presets { get; } =
-    [
-        new("DeepField", "Sutty Deep Field", true, Palette(
-            "#08111f", "#d7e2f0", "#6ee7d8", "#08111f", "#315878",
-            "#111827", "#ff6b7a", "#66d9a6", "#f6c76a", "#72a7ff", "#c792ea", "#6ee7d8", "#d7e2f0",
-            "#637083", "#ff8793", "#83e6bb", "#ffdc8a", "#93bdff", "#ddb3f4", "#99f6e4", "#ffffff")),
-        new("Ubuntu", "Ubuntu", true, Palette(
-            "#300a24", "#eeeeec", "#f2f2f2", "#300a24", "#5e2750",
-            "#2e3436", "#cc0000", "#4e9a06", "#c4a000", "#3465a4", "#75507b", "#06989a", "#d3d7cf",
-            "#555753", "#ef2929", "#8ae234", "#fce94f", "#729fcf", "#ad7fa8", "#34e2e2", "#eeeeec")),
-        new("AtomOneDark", "Atom One Dark", true, Palette(
-            "#282c34", "#abb2bf", "#528bff", "#282c34", "#3e4451",
-            "#1e2127", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#abb2bf",
-            "#5c6370", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#ffffff")),
-        new("Dracula", "Dracula", true, Palette(
-            "#282a36", "#f8f8f2", "#f8f8f2", "#282a36", "#44475a",
-            "#21222c", "#ff5555", "#50fa7b", "#f1fa8c", "#bd93f9", "#ff79c6", "#8be9fd", "#f8f8f2",
-            "#6272a4", "#ff6e6e", "#69ff94", "#ffffa5", "#d6acff", "#ff92df", "#a4ffff", "#ffffff")),
-        new("GitHubDark", "GitHub Dark", true, Palette(
-            "#0d1117", "#c9d1d9", "#58a6ff", "#0d1117", "#264f78",
-            "#484f58", "#ff7b72", "#3fb950", "#d29922", "#58a6ff", "#bc8cff", "#39c5cf", "#b1bac4",
-            "#6e7681", "#ffa198", "#56d364", "#e3b341", "#79c0ff", "#d2a8ff", "#56d4dd", "#f0f6fc")),
-        new("GitHubLight", "GitHub Light", false, Palette(
-            "#ffffff", "#24292f", "#0969da", "#ffffff", "#add6ff",
-            "#24292f", "#cf222e", "#116329", "#4d2d00", "#0969da", "#8250df", "#1b7c83", "#6e7781",
-            "#57606a", "#a40e26", "#1a7f37", "#633c01", "#218bff", "#a475f9", "#3192aa", "#8c959f")),
-        new("SolarizedDark", "Solarized Dark", true, Palette(
-            "#002b36", "#839496", "#93a1a1", "#002b36", "#073642",
-            "#073642", "#dc322f", "#859900", "#b58900", "#268bd2", "#d33682", "#2aa198", "#eee8d5",
-            "#586e75", "#cb4b16", "#586e75", "#657b83", "#839496", "#6c71c4", "#93a1a1", "#fdf6e3")),
-        new("SolarizedLight", "Solarized Light", false, Palette(
-            "#fdf6e3", "#657b83", "#586e75", "#fdf6e3", "#eee8d5",
-            "#073642", "#dc322f", "#859900", "#b58900", "#268bd2", "#d33682", "#2aa198", "#eee8d5",
-            "#002b36", "#cb4b16", "#586e75", "#657b83", "#839496", "#6c71c4", "#93a1a1", "#fdf6e3")),
-    ];
+        ThemeCatalog.Presets.Select(CreatePreset).ToArray();
 
-    public static TerminalThemePreset Resolve(string? id, bool applicationIsDark)
+    public static TerminalThemePreset Resolve(string? id, string? applicationTheme)
     {
-        if (string.IsNullOrWhiteSpace(id) ||
-            string.Equals(id, FollowApplication, StringComparison.OrdinalIgnoreCase))
+        var result = CreatePreset(ThemeCatalog.ResolveTerminal(id, applicationTheme));
+        if (ThemeCatalog.NormalizeTerminalId(id) == FollowApplication)
         {
-            return applicationIsDark
-                ? Presets[0]
-                : Presets.First(preset => preset.Id == "GitHubLight");
+            // Follow the exact named palette, including its ANSI colors, even when
+            // switching between two dark themes without an ActualThemeChanged event.
+            var app = ThemeManager.Find(applicationTheme ?? "Dark");
+            result.Palette.Background = app.Colors["TerminalBg"];
+            result.Palette.Foreground = app.Colors["TerminalFg"];
+            result.Palette.CursorAccent = app.Colors["TerminalBg"];
         }
 
-        return Presets.FirstOrDefault(preset =>
-                   string.Equals(preset.Id, id, StringComparison.OrdinalIgnoreCase))
-               ?? (applicationIsDark ? Presets[0] : Presets.First(preset => preset.Id == "GitHubLight"));
+        return result;
     }
 
-    private static TerminalThemePayload Palette(
-        string background, string foreground, string cursor, string cursorAccent, string selection,
-        string black, string red, string green, string yellow, string blue, string magenta, string cyan, string white,
-        string brightBlack, string brightRed, string brightGreen, string brightYellow, string brightBlue,
-        string brightMagenta, string brightCyan, string brightWhite) => new()
+    private static TerminalThemePreset CreatePreset(ThemeDefinition definition)
+    {
+        var ansi = definition.AnsiColors;
+        var displayName = definition.Id switch
         {
-            Background = background,
-            Foreground = foreground,
-            Cursor = cursor,
-            CursorAccent = cursorAccent,
-            SelectionBackground = selection,
-            Black = black,
-            Red = red,
-            Green = green,
-            Yellow = yellow,
-            Blue = blue,
-            Magenta = magenta,
-            Cyan = cyan,
-            White = white,
-            BrightBlack = brightBlack,
-            BrightRed = brightRed,
-            BrightGreen = brightGreen,
-            BrightYellow = brightYellow,
-            BrightBlue = brightBlue,
-            BrightMagenta = brightMagenta,
-            BrightCyan = brightCyan,
-            BrightWhite = brightWhite,
+            "DeepField" => "Sutty Deep Field",
+            "DeepFieldLight" => "Sutty Deep Field Light",
+            _ => definition.Name,
         };
+        return new(definition.Id, displayName, definition.IsDark, new TerminalThemePayload
+        {
+            Background = definition.Background,
+            Foreground = definition.Foreground,
+            Cursor = definition.Accent,
+            CursorAccent = definition.Background,
+            SelectionBackground = Blend(definition.Background, definition.Accent, 0.30),
+            Black = ansi[0], Red = ansi[1], Green = ansi[2], Yellow = ansi[3],
+            Blue = ansi[4], Magenta = ansi[5], Cyan = ansi[6], White = ansi[7],
+            BrightBlack = ansi[8], BrightRed = ansi[9], BrightGreen = ansi[10], BrightYellow = ansi[11],
+            BrightBlue = ansi[12], BrightMagenta = ansi[13], BrightCyan = ansi[14], BrightWhite = ansi[15],
+        });
+    }
+
+    private static string Blend(string first, string second, double amount)
+    {
+        var result = "#";
+        for (var offset = 1; offset <= 5; offset += 2)
+        {
+            var a = Convert.ToByte(first.Substring(offset, 2), 16);
+            var b = Convert.ToByte(second.Substring(offset, 2), 16);
+            result += ((byte)Math.Round(a + (b - a) * amount)).ToString("X2");
+        }
+        return result;
+    }
 }

@@ -164,7 +164,7 @@
             Content="{x:Bind h:Loc.T('지원 번들 저장…', 'Save support bundle…')}"
             CornerRadius="8"
             FontWeight="SemiBold"
-            Foreground="#FFFFFF" />
+            Foreground="{ThemeResource AccentForeground}" />
 
         <TextBlock
             x:Name="StatusText"

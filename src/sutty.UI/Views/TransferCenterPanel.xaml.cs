@@ -26,6 +26,17 @@ public sealed partial class TransferCenterPanel : UserControl
 
     public TransferCenterPanel() => InitializeComponent();
 
+    public void SetCompactPresentation(bool compact)
+    {
+        QueueHeading.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        QueueFiltersButton.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+        QueueFilters.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ToggleFilters_Click(object sender, RoutedEventArgs e) =>
+        QueueFilters.Visibility = QueueFilters.Visibility == Visibility.Visible
+            ? Visibility.Collapsed : Visibility.Visible;
+
     public void RefreshLanguage()
     {
         Bindings.Update();

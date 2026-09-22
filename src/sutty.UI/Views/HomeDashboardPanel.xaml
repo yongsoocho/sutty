@@ -7,13 +7,10 @@
     xmlns:local="using:sutty.UI.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
-    <Grid Padding="22" ColumnSpacing="18">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="430" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Padding="12" Spacing="12">
         <Border
-            Padding="16"
+            Padding="12"
             Background="{ThemeResource SidePanelBg}"
             BorderBrush="{ThemeResource CardBorder}"
             BorderThickness="1"
@@ -21,13 +18,15 @@
             <local:HomePanel x:Name="QuickConnect" />
         </Border>
         <Border
-            Grid.Column="1"
-            Padding="18"
+            MinHeight="260"
+            MaxHeight="420"
+            Padding="12"
             Background="{ThemeResource CardBg}"
             BorderBrush="{ThemeResource CardBorder}"
             BorderThickness="1"
             CornerRadius="10">
             <local:HostListPanel x:Name="HostHistory" />
         </Border>
-    </Grid>
+    </StackPanel>
+    </ScrollViewer>
 </UserControl>

@@ -22,6 +22,7 @@ internal sealed class TerminalBridgeMessage
     public int Scrollback { get; set; }
     public bool ScreenReaderMode { get; set; }
     public string? Language { get; set; }
+    public string? OutputShell { get; set; }
     public TerminalThemePayload? Theme { get; set; }
 }
 

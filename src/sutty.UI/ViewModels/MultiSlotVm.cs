@@ -48,7 +48,7 @@ public sealed class MultiSlotVm : ObservableObject
     public bool IsEmpty => !HasSession;
 
     public string Title => View?.Session.Info.Title
-        ?? (LocalView is null ? "" : "PowerShell");
+        ?? LocalView?.DisplayTitle ?? "";
 
     public string HostText => View is not null
         ? $"{View.Session.Info.Host}:{View.Session.Info.Port}"
@@ -94,6 +94,15 @@ public sealed class MultiSlotVm : ObservableObject
             }];
 
     public object? SessionKey => (object?)View ?? LocalView;
+
+    /// <summary>Refresh computed labels when a retained card is shown again.</summary>
+    public void RefreshSessionDetails()
+    {
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(HostText));
+        OnPropertyChanged(nameof(StateText));
+        OnPropertyChanged(nameof(StateBrush));
+    }
 
     public bool CanUseSftp => View?.Session is
     {

@@ -10,6 +10,7 @@ internal static class ShellStateSelfTests
         PersistedTerminalModeMapsToWorkspaceSection();
         ConnectionPersistenceRequiresSuccessAndConsent();
         SessionSectionsFollowTheActiveWorkspace();
+        SwitchingTabsPreservesOpenTools();
         InvalidEnumValuesAreRejected();
         ForgettingOnlyClearsTheActiveWorkspace();
         Console.WriteLine("Shell state and navigation self-tests passed.");
@@ -63,8 +64,8 @@ internal static class ShellStateSelfTests
                SessionWorkspaceSection.Terminal,
             "Terminal setting opens Terminal workspace");
         Assert(SessionWorkspaceViewModel.ResolveInitialSection("Repl") ==
-               SessionWorkspaceSection.Commands,
-            "legacy Repl setting opens Commands workspace");
+               SessionWorkspaceSection.Terminal,
+            "legacy Repl setting keeps the initial shell visible");
         Assert(SessionWorkspaceViewModel.ResolveInitialSection(null) ==
                SessionWorkspaceSection.Terminal,
             "missing terminal setting uses Terminal workspace");
@@ -87,8 +88,8 @@ internal static class ShellStateSelfTests
 
         Assert(shell.Mode == AppShellMode.Global, "shell initial mode");
         Assert(shell.GlobalPage == AppGlobalPage.Home, "shell initial Home page");
-        Assert(shell.IsGlobalContentVisible && !shell.IsSessionContentVisible,
-            "shell initial visibility");
+        Assert(shell.IsGlobalContentVisible && shell.IsSessionContentVisible,
+            "Home opens beside the visible shell");
         Assert(!shell.HasActiveWorkspace && shell.ActiveWorkspace is null,
             "shell initial workspace");
         Assert(!shell.IsDetailsPaneOpen, "shell initial details pane");
@@ -119,6 +120,10 @@ internal static class ShellStateSelfTests
             "Alt+0 is not a global destination");
         Assert(!NavigationService.TryGetGlobalPageForAccelerator(6, out _),
             "Alt+6 is not a global destination");
+        Assert(NavigationService.TryGetGlobalPageForAccelerator(8, out var multi) &&
+               multi == AppGlobalPage.MultiCommand &&
+               NavigationService.GetAcceleratorNumber(multi) == 8,
+            "Alt+8 opens independent Multi Command without changing existing shortcuts");
 
         Assert(NavigationService.TryGetSessionSectionForAccelerator(6, out var terminal) &&
                terminal == SessionWorkspaceSection.Terminal,
@@ -151,6 +156,15 @@ internal static class ShellStateSelfTests
                ReferenceEquals(shell.ActiveWorkspace, workspace),
             "activate SSH workspace");
 
+        foreach (var page in Enum.GetValues<AppGlobalPage>())
+        {
+            navigation.NavigateGlobal(page);
+            Assert(shell.IsSessionContentVisible == (page != AppGlobalPage.Settings) &&
+                   shell.IsFullPageVisible == (page == AppGlobalPage.Settings) && shell.IsGlobalContentVisible &&
+                   ReferenceEquals(shell.ActiveWorkspace, workspace),
+                $"{page} preserves the active session and only Settings covers the shell");
+        }
+
         navigation.NavigateWorkspace(workspace, SessionWorkspaceSection.Files);
         Assert(workspace.CurrentSection == SessionWorkspaceSection.Files && workspace.IsFilesSelected,
             "navigate to Files");
@@ -163,6 +177,47 @@ internal static class ShellStateSelfTests
         navigation.NavigateWorkspace(workspace, SessionWorkspaceSection.Terminal);
         Assert(workspace.CurrentSection == SessionWorkspaceSection.Terminal && workspace.IsTerminalSelected,
             "return to Terminal");
+    }
+
+    private static void SwitchingTabsPreservesOpenTools()
+    {
+        var shell = new AppShellViewModel();
+        var navigation = new NavigationService(shell);
+        var first = CreateWorkspace();
+        var second = CreateWorkspace();
+        navigation.ActivateSession(first);
+        foreach (var page in Enum.GetValues<AppGlobalPage>())
+        {
+            navigation.NavigateGlobal(page);
+            navigation.SetDetailsPaneOpen(page != AppGlobalPage.Settings);
+            navigation.SwitchSession(second);
+            Assert(ReferenceEquals(shell.ActiveWorkspace, second) &&
+                   shell.Mode == AppShellMode.Global && shell.GlobalPage == page &&
+                   shell.IsDetailsPaneOpen == (page != AppGlobalPage.Settings),
+                $"SSH tab switch preserves {page} and its pane");
+            navigation.SwitchSession(null);
+            Assert(shell.ActiveWorkspace is null && shell.GlobalPage == page &&
+                   shell.Mode == AppShellMode.Global &&
+                   shell.IsFullPageVisible == (page == AppGlobalPage.Settings),
+                $"local tab switch preserves {page}");
+        }
+
+        foreach (var section in new[] { SessionWorkspaceSection.Files,
+                     SessionWorkspaceSection.Commands, SessionWorkspaceSection.Tunnels })
+        {
+            navigation.NavigateWorkspace(first, section);
+            navigation.SwitchSession(second);
+            Assert(second.CurrentSection == section && shell.Mode == AppShellMode.Session,
+                $"SSH tool {section} follows the selected SSH tab");
+            navigation.SwitchSession(null);
+            Assert(navigation.SessionSection == section,
+                $"local tab retains {section} intent");
+            navigation.SwitchSession(first);
+            Assert(first.CurrentSection == section, $"returning to SSH restores {section}");
+        }
+        navigation.ActivateSession(null);
+        Assert(navigation.SessionSection == SessionWorkspaceSection.Terminal,
+            "explicit return to local shell closes the supporting tool");
     }
 
     private static void InvalidEnumValuesAreRejected()

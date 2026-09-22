@@ -3,7 +3,7 @@ using System;
 
 namespace sutty.UI.ViewModels;
 
-/// <summary>Pages that share the context of one SSH session.</summary>
+/// <summary>Tools displayed beside the persistent shell of one SSH session.</summary>
 public enum SessionWorkspaceSection
 {
     Terminal,
@@ -89,11 +89,9 @@ public sealed class SessionWorkspaceViewModel : ObservableObject
     public void SelectSection(SessionWorkspaceSection section) => CurrentSection = section;
 
     /// <summary>
-    /// Maps the persisted legacy terminal-mode value to the equivalent workspace page.
-    /// "Repl" remains an internal compatibility value; the user-facing page is Commands.
+    /// Always starts with the shell. The legacy terminal-mode preference must never
+    /// replace the interactive terminal with structured command output.
     /// </summary>
     public static SessionWorkspaceSection ResolveInitialSection(string? terminalMode) =>
-        string.Equals(terminalMode, "Repl", StringComparison.Ordinal)
-            ? SessionWorkspaceSection.Commands
-            : SessionWorkspaceSection.Terminal;
+        SessionWorkspaceSection.Terminal;
 }

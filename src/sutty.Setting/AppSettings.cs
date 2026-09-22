@@ -12,7 +12,7 @@ public sealed class AppSettings
     public string TerminalFontFamily { get; set; } = "Cascadia Mono";
     public int TerminalFontSize { get; set; } = 13;
 
-    /// <summary>Terminal palette id, or FollowApplication to follow the app light/dark mode.</summary>
+    /// <summary>Terminal palette id, or FollowApplication to follow the named app palette and ANSI colors.</summary>
     public string TerminalTheme { get; set; } = "FollowApplication";
 
     /// <summary>xterm cursor shape: underline, bar, or block.</summary>
