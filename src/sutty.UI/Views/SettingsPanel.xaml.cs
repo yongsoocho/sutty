@@ -31,6 +31,7 @@ namespace sutty.UI.Views
         Sftp = 1 << 9,
         HostProfiles = 1 << 10,
         Workspace = 1 << 11,
+        Database = 1 << 12,
         All = Language | Theme | TerminalAppearance | TerminalMode | TerminalFeatures |
               Connection | History | Window | Sftp | HostProfiles | Workspace,
     }
@@ -81,6 +82,7 @@ namespace sutty.UI.Views
         private bool _loading = true;
         private SettingChangeKind _pendingChanges;
         private IReadOnlyList<string> _installedFonts = [];
+        private bool _resetInProgress;
 
         public SettingsPanel()
         {
@@ -99,58 +101,7 @@ namespace sutty.UI.Views
             foreach (var preset in ThemeManager.Presets)
                 ThemeRadios.Items.Add(preset.Name);
 
-            ThemeRadios.SelectedItem = ThemeManager.Find(settings.Theme).Name;
-            DarkModeToggle.IsOn = ThemeManager.IsDark(settings.Theme);
-            LanguageCombo.SelectedIndex = settings.Language == "en" ? 1 : 0;
-
-            FontFamilyBox.Text = settings.TerminalFontFamily;
-            FontSizeBox.Value = settings.TerminalFontSize;
-            PopulateTerminalAppearanceChoices(settings);
-            ScrollbackBox.Value = settings.TerminalScrollbackLines;
-            CursorBlinkToggle.IsOn = settings.TerminalCursorBlink;
-            ScreenReaderToggle.IsOn = settings.TerminalScreenReaderMode;
-            LoadShellProfileToggle.IsOn = settings.LoadLocalShellProfile;
-            TerminalModeRadios.SelectedItem = TerminalModeRadios.Items
-                .OfType<RadioButton>()
-                .FirstOrDefault(item => string.Equals(
-                    item.Tag as string,
-                    settings.TerminalMode,
-                    StringComparison.Ordinal))
-                ?? TerminalModeRadios.Items[0];
-            StructuredHighlightToggle.IsOn = settings.EnableStructuredTextHighlighting;
-            SeverityHighlightToggle.IsOn = settings.EnableSeverityHighlighting;
-            CommandSuggestionToggle.IsOn = settings.EnableCommandSuggestions;
-            SuggestionTabToggle.IsOn = settings.AcceptSuggestionWithTab;
-            DefaultPortBox.Value = settings.DefaultSshPort;
-            KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
-            SftpRetryToggle.IsOn = settings.SftpRetryEnabled;
-            EditorExecutableBox.Text = settings.ExternalEditorExecutable;
-            EditorArgumentsBox.Text = settings.ExternalEditorArguments;
-            SftpRetryCountBox.Value = settings.SftpRetryCount;
-            SftpRetryCountBox.IsEnabled = settings.SftpRetryEnabled;
-            SftpVerificationCombo.SelectedItem = SftpVerificationCombo.Items
-                .OfType<ComboBoxItem>()
-                .FirstOrDefault(item => string.Equals(
-                    item.Tag as string,
-                    settings.SftpVerificationMode,
-                    StringComparison.OrdinalIgnoreCase))
-                ?? SftpVerificationCombo.Items[1];
-            SftpConflictPolicyCombo.SelectedItem = SftpConflictPolicyCombo.Items
-                .OfType<ComboBoxItem>()
-                .FirstOrDefault(item => string.Equals(
-                    item.Tag as string,
-                    settings.SftpConflictPolicy,
-                    StringComparison.OrdinalIgnoreCase))
-                ?? SftpConflictPolicyCombo.Items[0];
-            HistoryDaysBox.Value = settings.HistoryRetentionDays;
-            HistoryTopHostCountBox.Value = settings.HistoryTopHostCount;
-            RestoreWorkspaceToggle.IsOn = settings.RestoreWorkspaceOnStartup;
-            ConfirmWorkspaceRestoreToggle.IsOn = settings.ConfirmWorkspaceRestore;
-            ConfirmWorkspaceRestoreToggle.IsEnabled = settings.RestoreWorkspaceOnStartup;
-
-            MainWidthBox.Value = PositiveOrNaN(settings.MainWindowWidth);
-            MainHeightBox.Value = PositiveOrNaN(settings.MainWindowHeight);
-            PanelWidthBox.Value = PositiveOrNaN(settings.RightPanelWidth);
+            LoadSettingsControls(settings);
 
             ReleaseVersionText.Text = AppReleaseInfo.DisplayVersion;
             ReleaseBuildText.Text = string.IsNullOrWhiteSpace(AppReleaseInfo.BuildMetadata)
@@ -160,6 +111,66 @@ namespace sutty.UI.Views
             SettingsNav.SelectedItem = SettingsNav.MenuItems.First();
             _loading = false;
             _ = LoadInstalledFontsAsync();
+        }
+
+        private void LoadSettingsControls(AppSettings settings)
+        {
+            var wasLoading = _loading;
+            _loading = true;
+            try
+            {
+                RequestedTheme = ThemeManager.IsDark(settings.Theme)
+                    ? ElementTheme.Dark : ElementTheme.Light;
+                ThemeRadios.SelectedItem = ThemeManager.Find(settings.Theme).Name;
+                DarkModeToggle.IsOn = ThemeManager.IsDark(settings.Theme);
+                LanguageCombo.SelectedIndex = settings.Language == "en" ? 1 : 0;
+
+                FontFamilyBox.Text = settings.TerminalFontFamily;
+                FontSizeBox.Value = settings.TerminalFontSize;
+                PopulateTerminalAppearanceChoices(settings);
+                ScrollbackBox.Value = settings.TerminalScrollbackLines;
+                CursorBlinkToggle.IsOn = settings.TerminalCursorBlink;
+                ScreenReaderToggle.IsOn = settings.TerminalScreenReaderMode;
+                LoadShellProfileToggle.IsOn = settings.LoadLocalShellProfile;
+                StructuredHighlightToggle.IsOn = settings.EnableStructuredTextHighlighting;
+                SeverityHighlightToggle.IsOn = settings.EnableSeverityHighlighting;
+                CommandSuggestionToggle.IsOn = settings.EnableCommandSuggestions;
+                SuggestionTabToggle.IsOn = settings.AcceptSuggestionWithTab;
+                DefaultPortBox.Value = settings.DefaultSshPort;
+                KeepAliveBox.Value = settings.DefaultKeepAliveSeconds;
+                SftpRetryToggle.IsOn = settings.SftpRetryEnabled;
+                EditorExecutableBox.Text = settings.ExternalEditorExecutable;
+                EditorArgumentsBox.Text = settings.ExternalEditorArguments;
+                SftpRetryCountBox.Value = settings.SftpRetryCount;
+                SftpRetryCountBox.IsEnabled = settings.SftpRetryEnabled;
+                SftpVerificationCombo.SelectedItem = SftpVerificationCombo.Items
+                    .OfType<ComboBoxItem>()
+                    .FirstOrDefault(item => string.Equals(
+                        item.Tag as string,
+                        settings.SftpVerificationMode,
+                        StringComparison.OrdinalIgnoreCase))
+                    ?? SftpVerificationCombo.Items[1];
+                SftpConflictPolicyCombo.SelectedItem = SftpConflictPolicyCombo.Items
+                    .OfType<ComboBoxItem>()
+                    .FirstOrDefault(item => string.Equals(
+                        item.Tag as string,
+                        settings.SftpConflictPolicy,
+                        StringComparison.OrdinalIgnoreCase))
+                    ?? SftpConflictPolicyCombo.Items[0];
+                HistoryDaysBox.Value = settings.HistoryRetentionDays;
+                HistoryTopHostCountBox.Value = settings.HistoryTopHostCount;
+                RestoreWorkspaceToggle.IsOn = settings.RestoreWorkspaceOnStartup;
+                ConfirmWorkspaceRestoreToggle.IsOn = settings.ConfirmWorkspaceRestore;
+                ConfirmWorkspaceRestoreToggle.IsEnabled = settings.RestoreWorkspaceOnStartup;
+
+                MainWidthBox.Value = PositiveOrNaN(settings.MainWindowWidth);
+                MainHeightBox.Value = PositiveOrNaN(settings.MainWindowHeight);
+                PanelWidthBox.Value = PositiveOrNaN(settings.RightPanelWidth);
+            }
+            finally
+            {
+                _loading = wasLoading;
+            }
         }
 
         private static double PositiveOrNaN(int value) => value > 0 ? value : double.NaN;
@@ -292,18 +303,6 @@ namespace sutty.UI.Views
             SettingsService.Current.Theme = preset.Name;
             RequestedTheme = preset.IsDark ? ElementTheme.Dark : ElementTheme.Light;
             CommitChangesNow(SettingChangeKind.Theme);
-        }
-
-        private void TerminalModeRadios_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_loading)
-                return;
-
-            SettingsService.Current.TerminalMode =
-                (TerminalModeRadios.SelectedItem as RadioButton)?.Tag as string == "Terminal"
-                    ? "Terminal"
-                    : "Repl";
-            CommitChangesNow(SettingChangeKind.TerminalMode);
         }
 
         private void TerminalAppearanceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

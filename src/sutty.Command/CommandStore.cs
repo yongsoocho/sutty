@@ -137,6 +137,8 @@ public static class CommandStore
         return Convert.ToInt64(cmd.ExecuteScalar());
     }
 
+    internal static void NotifyDatabaseReset() => NotifyChanged();
+
     private static void NotifyChanged()
     {
         if (Changed is not { } callbacks)

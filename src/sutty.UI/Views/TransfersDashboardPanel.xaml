@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="sutty.UI.Views.TransfersDashboardPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:h="using:sutty.UI.Helpers"
+    xmlns:local="using:sutty.UI.Views"
+    Loaded="Dashboard_Loaded"
+    Unloaded="Dashboard_Unloaded">
+        <Grid Padding="12" RowSpacing="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="3*" />
+                <RowDefinition Height="2*" />
+            </Grid.RowDefinitions>
+            <StackPanel Spacing="6">
+                <TextBlock FontSize="18" FontWeight="SemiBold"
+                           Foreground="{ThemeResource TextPrimary}"
+                           Text="{x:Bind h:Loc.T('파일 전송', 'File transfers')}" />
+                <TextBlock Foreground="{ThemeResource TextMuted}" FontSize="11.5" TextWrapping="Wrap"
+                           Text="{x:Bind h:Loc.T('현재 선택한 셸의 파일과 폴더를 표시합니다.', 'Files and folders for the currently selected shell.')}" />
+                <TextBlock x:Name="ActiveShellText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                           Foreground="{ThemeResource TextPrimary}" AutomationProperties.LiveSetting="Polite" />
+                <TextBlock x:Name="BrowserError" Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
+            </StackPanel>
+
+            <Border x:Name="BrowserCard" Grid.Row="1" BorderBrush="{ThemeResource CardBorder}" BorderThickness="1"
+                    Background="{ThemeResource CardBg}" CornerRadius="10">
+                <ContentControl x:Name="BrowserHost"
+                                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+            </Border>
+
+            <Border x:Name="NoTargetState" Grid.Row="1" Padding="20" Background="{ThemeResource CardBg}"
+                    BorderBrush="{ThemeResource CardBorder}" BorderThickness="1" CornerRadius="10">
+                <StackPanel Spacing="8">
+                    <FontIcon Glyph="&#xE8B7;" FontSize="24" Foreground="{ThemeResource AccentBlue}" />
+                    <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                               Foreground="{ThemeResource TextMuted}"
+                               Text="{x:Bind h:Loc.T('셸 탭을 선택하면 현재 위치의 파일과 폴더가 표시됩니다.', 'Select a shell tab to browse the files and folders at its current location.')}" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Row="2" Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
+                    BorderThickness="1" CornerRadius="10">
+                <Grid RowSpacing="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Margin="12,12,12,0" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextPrimary}"
+                               Text="{x:Bind h:Loc.T('전송 큐', 'Transfer queue')}" />
+                    <local:TransferCenterPanel x:Name="TransferQueue" Grid.Row="1" />
+                </Grid>
+            </Border>
+        </Grid>
+</UserControl>

@@ -34,6 +34,7 @@
             <SolidColorBrush x:Key="AccentBlue" Color="#2BC7B5" />
             <SolidColorBrush x:Key="AccentTeal" Color="#5BDCCB" />
             <SolidColorBrush x:Key="AccentViolet" Color="#78A9EE" />
+            <SolidColorBrush x:Key="AccentForeground" Color="#000000" />
             <SolidColorBrush x:Key="TerminalBg" Color="#0A0D10" />
             <SolidColorBrush x:Key="TerminalFg" Color="#9FB0C0" />
             <SolidColorBrush x:Key="StatusGreen" Color="#34C08D" />
@@ -83,7 +84,10 @@
 
             <!--  TabView (세션 탭)  -->
             <SolidColorBrush x:Key="TabViewBackground" Color="Transparent" />
-            <SolidColorBrush x:Key="TabViewBorderBrush" Color="#1E242B" />
+            <!-- Keep the title tabs borderless; the shell header owns the divider below. -->
+            <SolidColorBrush x:Key="TabViewBorderBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewItemBorderBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewSelectedItemBorderBrush" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackground" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#0A0D10" />
             <SolidColorBrush x:Key="TabViewItemHeaderDragBackground" Color="#0A0D10" />
@@ -93,7 +97,7 @@
             <SolidColorBrush x:Key="TabViewItemHeaderForegroundPointerOver" Color="#B9C4CF" />
             <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#8C99A8" />
             <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#2BC7B5" />
-            <SolidColorBrush x:Key="TabViewItemSeparator" Color="#1E242B" />
+            <SolidColorBrush x:Key="TabViewItemSeparator" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewButtonBackground" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewButtonBackgroundPointerOver" Color="#161C22" />
             <SolidColorBrush x:Key="TabViewButtonBackgroundPressed" Color="#12171D" />
@@ -152,6 +156,7 @@
             <SolidColorBrush x:Key="AccentBlue" Color="#0FA396" />
             <SolidColorBrush x:Key="AccentTeal" Color="#0B7C72" />
             <SolidColorBrush x:Key="AccentViolet" Color="#2570C8" />
+            <SolidColorBrush x:Key="AccentForeground" Color="#FFFFFF" />
             <SolidColorBrush x:Key="TerminalBg" Color="#FFFFFF" />
             <SolidColorBrush x:Key="TerminalFg" Color="#48545F" />
             <SolidColorBrush x:Key="StatusGreen" Color="#18A876" />
@@ -201,7 +206,9 @@
 
             <!--  TabView  -->
             <SolidColorBrush x:Key="TabViewBackground" Color="Transparent" />
-            <SolidColorBrush x:Key="TabViewBorderBrush" Color="#D8DEE5" />
+            <SolidColorBrush x:Key="TabViewBorderBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewItemBorderBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewSelectedItemBorderBrush" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackground" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewItemHeaderBackgroundSelected" Color="#FFFFFF" />
             <SolidColorBrush x:Key="TabViewItemHeaderDragBackground" Color="#FFFFFF" />
@@ -211,7 +218,7 @@
             <SolidColorBrush x:Key="TabViewItemHeaderForegroundPointerOver" Color="#48545F" />
             <SolidColorBrush x:Key="TabViewItemIconForeground" Color="#5A6875" />
             <SolidColorBrush x:Key="TabViewItemIconForegroundSelected" Color="#0FA396" />
-            <SolidColorBrush x:Key="TabViewItemSeparator" Color="#D8DEE5" />
+            <SolidColorBrush x:Key="TabViewItemSeparator" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewButtonBackground" Color="Transparent" />
             <SolidColorBrush x:Key="TabViewButtonBackgroundPointerOver" Color="#D9E0E7" />
             <SolidColorBrush x:Key="TabViewButtonBackgroundPressed" Color="#EDF0F3" />

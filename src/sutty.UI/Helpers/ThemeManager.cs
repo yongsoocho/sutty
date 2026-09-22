@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using sutty.Setting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,9 +30,10 @@ public static class ThemeManager
         "AppBg", "PanelBg", "SidePanelBg", "CardBg", "CardBgHover", "CardBorder",
         "InputBg", "PillBg", "TextPrimary", "TextMuted", "TextFaint",
         "AccentBlue", "AccentTeal", "AccentViolet", "TerminalBg", "TerminalFg",
+        "AccentForeground", "StatusGreen", "StatusAmber", "StatusRed", "StatusIdle",
     ];
 
-    public static IReadOnlyList<ThemePreset> Presets { get; } =
+    private static readonly IReadOnlyList<ThemePreset> LegacyPresets =
     [
         // 기본 다크 = "Sutty Deep Field" 디자인 원본 (1a) — Palette.xaml Dark 딕셔너리와 동일 값 유지
         new("Dark", true, "#0E1216", "#0E1216", new Dictionary<string, string>
@@ -114,8 +116,11 @@ public static class ThemeManager
         }),
     ];
 
+    public static IReadOnlyList<ThemePreset> Presets { get; } = ThemeCatalog.Presets
+        .Select(CreatePreset).ToArray();
+
     public static ThemePreset Find(string name) =>
-        Presets.FirstOrDefault(p => p.Name == name) ?? Presets[0];
+        Presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) ?? Presets[0];
 
     public static bool IsDark(string name) => Find(name).IsDark;
 
@@ -123,11 +128,13 @@ public static class ThemeManager
     public static void Apply(string name, FrameworkElement root)
     {
         var preset = Find(name);
-        var themeKey = preset.IsDark ? "Dark" : "Light";
-        var dict = FindPaletteThemeDictionary(themeKey);
-
-        if (dict is not null)
+        // Some control resource aliases retain a brush from the dictionary active when
+        // they were created. Refresh both dictionaries to avoid stale chrome after switches.
+        foreach (var themeKey in new[] { "Dark", "Light" })
         {
+            var dict = FindPaletteThemeDictionary(themeKey);
+            if (dict is null) continue;
+
             foreach (var key in CoreKeys)
                 if (preset.Colors.TryGetValue(key, out var hex))
                     SetBrush(dict, key, hex);
@@ -141,6 +148,86 @@ public static class ThemeManager
         root.RequestedTheme = preset.IsDark ? ElementTheme.Dark : ElementTheme.Light;
     }
 
+    private static ThemePreset CreatePreset(ThemeDefinition definition)
+    {
+        var bg = definition.Background;
+        var fg = definition.Foreground;
+        var legacy = LegacyPresets.FirstOrDefault(p => p.Name == definition.Name);
+        var colors = new Dictionary<string, string>
+        {
+            ["AppBg"] = Mix(bg, definition.IsDark ? "#000000" : fg, definition.IsDark ? 0.18 : 0.04),
+            ["PanelBg"] = bg,
+            ["SidePanelBg"] = Mix(bg, fg, 0.035),
+            ["CardBg"] = Mix(bg, fg, 0.055),
+            ["CardBgHover"] = Mix(bg, fg, 0.11),
+            ["CardBorder"] = Mix(bg, fg, 0.20),
+            ["InputBg"] = bg,
+            ["PillBg"] = Mix(bg, fg, 0.09),
+            ["TextPrimary"] = fg,
+            ["TextMuted"] = Mix(bg, fg, 0.80),
+            ["TextFaint"] = Mix(bg, fg, 0.70),
+            ["AccentBlue"] = definition.Accent,
+            ["AccentTeal"] = definition.SecondaryAccent,
+            ["AccentViolet"] = definition.Violet,
+            ["TerminalBg"] = bg,
+            ["TerminalFg"] = fg,
+            ["StatusGreen"] = definition.AnsiColors[2],
+            ["StatusAmber"] = definition.AnsiColors[3],
+            ["StatusRed"] = definition.AnsiColors[1],
+        };
+
+        // Preserve the existing Deep Field and previously shipped app palettes.
+        if (legacy is not null)
+            foreach (var pair in legacy.Colors)
+                colors[pair.Key] = pair.Value;
+
+        AddRole("ActiveTabBg", "CardBg");
+        AddRole("ShellBorder", "CardBorder");
+        AddRole("InputBorder", "CardBorder");
+        AddRole("Divider", "CardBorder");
+        AddRole("OutputGuide", "CardBorder");
+        AddRole("TextPlaceholder", "TextFaint");
+        AddRole("StatusIdle", "TextFaint");
+        AddRole("GradientStart", "AccentBlue");
+        AddRole("GradientEnd", "AccentTeal");
+        colors.TryAdd("GradientHoverStart", Mix(colors["GradientStart"], fg, 0.10));
+        colors.TryAdd("GradientHoverEnd", Mix(colors["GradientEnd"], fg, 0.10));
+        colors["AccentForeground"] = GradientForeground(colors);
+
+        return new(definition.Name, definition.IsDark,
+            legacy?.RailTop ?? Mix(bg, definition.Accent, 0.08),
+            legacy?.RailBottom ?? Mix(bg, definition.SecondaryAccent, 0.04), colors);
+
+        void AddRole(string role, string fallback) => colors.TryAdd(role, colors[fallback]);
+    }
+
+    private static string Mix(string first, string second, double amount)
+    {
+        var a = Parse(first);
+        var b = Parse(second);
+        var r = (byte)Math.Round(a.R + (b.R - a.R) * amount);
+        var g = (byte)Math.Round(a.G + (b.G - a.G) * amount);
+        var blue = (byte)Math.Round(a.B + (b.B - a.B) * amount);
+        return $"#{r:X2}{g:X2}{blue:X2}";
+    }
+
+    private static string GradientForeground(IReadOnlyDictionary<string, string> colors)
+    {
+        var luminances = new[] { "GradientStart", "GradientEnd", "GradientHoverStart", "GradientHoverEnd" }
+            .Select(key => Luminance(Parse(colors[key]))).ToArray();
+        var whiteContrast = 1.05 / (luminances.Max() + 0.05);
+        var blackContrast = (luminances.Min() + 0.05) / 0.05;
+        return blackContrast >= whiteContrast ? "#000000" : "#FFFFFF";
+
+        static double Luminance(Color color) =>
+            0.2126 * Linear(color.R) + 0.7152 * Linear(color.G) + 0.0722 * Linear(color.B);
+        static double Linear(byte channel)
+        {
+            var value = channel / 255.0;
+            return value <= 0.04045 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+        }
+    }
+
     // TextBox/ComboBox/TabView 오버라이드는 코어 색에서 파생시킨다
     private static void ApplyDerivedControlBrushes(ResourceDictionary dict, ThemePreset p)
     {
@@ -148,7 +235,6 @@ public static class ThemeManager
         var inputBorder = Role(p, "InputBorder", "CardBorder");
         var placeholder = Role(p, "TextPlaceholder", "TextFaint");
         var activeTab = Role(p, "ActiveTabBg", "CardBg");
-        var shellBorder = Role(p, "ShellBorder", "CardBorder");
 
         SetBrush(dict, "TextControlBackground", c["InputBg"]);
         SetBrush(dict, "TextControlBackgroundPointerOver", c["InputBg"]);
@@ -178,7 +264,12 @@ public static class ThemeManager
         SetBrush(dict, "TabViewItemHeaderForegroundPointerOver", c["TextPrimary"]);
         SetBrush(dict, "TabViewItemIconForeground", c["TextMuted"]);
         SetBrush(dict, "TabViewItemIconForegroundSelected", c["AccentBlue"]);
-        SetBrush(dict, "TabViewItemSeparator", shellBorder);
+        // Tab borders stay transparent across presets; ShellBorder belongs to the shell header.
+        SetBrush(dict, "TabViewButtonBackgroundPointerOver", c["CardBgHover"]);
+        SetBrush(dict, "TabViewButtonBackgroundPressed", c["PillBg"]);
+        SetBrush(dict, "TabViewButtonForeground", c["TextMuted"]);
+        SetBrush(dict, "TabViewButtonForegroundPointerOver", c["TextPrimary"]);
+        SetBrush(dict, "TabViewButtonForegroundPressed", c["AccentTeal"]);
 
         SetBrush(dict, "NavigationViewItemBackgroundPointerOver", c["CardBgHover"]);
         SetBrush(dict, "NavigationViewItemBackgroundPressed", c["PillBg"]);
@@ -210,12 +301,6 @@ public static class ThemeManager
 
         ApplyAccentBrushesToDictionary(dict, p.IsDark, start, end, hoverStart, hoverEnd);
 
-        // Button.Resources의 pressed/hover 별칭은 컨트롤 생성 시점의 테마
-        // 그라디언트를 보관한다. 비활성 딕셔너리도 같은 값으로 갱신해 두면
-        // 시작 테마와 설정 테마가 달라도 런타임 전환 색이 남지 않는다.
-        var inactiveTheme = FindPaletteThemeDictionary(p.IsDark ? "Light" : "Dark");
-        if (inactiveTheme is not null && !ReferenceEquals(inactiveTheme, dict))
-            ApplyAccentBrushesToDictionary(inactiveTheme, p.IsDark, start, end, hoverStart, hoverEnd);
     }
 
     private static void ApplyAccentBrushesToDictionary(

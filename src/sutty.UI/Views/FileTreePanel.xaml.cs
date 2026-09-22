@@ -51,6 +51,41 @@ public sealed partial class FileTreePanel : UserControl
     private string _currentPath = "/";
     private bool _isAvailable = true;
     private bool _localInitialized;
+    private bool _preferRemotePane;
+
+    /// <summary>The global Transfers page starts with its selected server in a stacked layout.</summary>
+    public bool PreferRemotePane
+    {
+        get => _preferRemotePane;
+        set
+        {
+            if (_preferRemotePane == value) return;
+            _preferRemotePane = value;
+            UpdateBrowserLayout(BrowserViewport.ActualWidth, BrowserViewport.ActualHeight);
+            BrowserViewport.ChangeView(null, 0, null, true);
+        }
+    }
+
+    private void BrowserViewport_SizeChanged(object sender, SizeChangedEventArgs e)
+        => UpdateBrowserLayout(e.NewSize.Width, e.NewSize.Height);
+
+    private void UpdateBrowserLayout(double width, double height)
+    {
+        var wide = width >= 900;
+        BrowserLayout.Height = Math.Max(wide ? 320 : 760, height);
+        TransferActionsColumn.Width = wide ? new GridLength(112) : new GridLength(0);
+        RemoteBrowserColumn.Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        TransferActionsRow.Height = wide ? new GridLength(0) : GridLength.Auto;
+        RemoteBrowserRow.Height = wide ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        Grid.SetRow(LocalBrowserCard, !wide && _preferRemotePane ? 2 : 0);
+        Grid.SetColumnSpan(LocalBrowserCard, wide ? 1 : 3);
+        Grid.SetColumn(BrowserTransferActions, wide ? 1 : 0);
+        Grid.SetRow(BrowserTransferActions, wide ? 0 : 1);
+        Grid.SetColumnSpan(BrowserTransferActions, wide ? 1 : 3);
+        Grid.SetColumn(RemoteBrowserCard, wide ? 2 : 0);
+        Grid.SetRow(RemoteBrowserCard, wide || _preferRemotePane ? 0 : 2);
+        Grid.SetColumnSpan(RemoteBrowserCard, wide ? 1 : 3);
+    }
 
     public FileTreePanel()
     {

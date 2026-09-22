@@ -49,7 +49,9 @@ namespace sutty.UI.Views
         private HomeDashboardPanel? _homeDashboard;
         private SettingsPanel? _embeddedSettings;
         private MultiCommandPanel? _multiCommandPanel;
-        private double _detailsPaneWidth = 316;
+        private double _detailsPaneWidth = 460;
+        private bool _isBottomDetailsPane;
+        private bool _updatingDetailsLayout;
         private string _appIconPath = "";
         private bool _isMultiView;
         private int _broadcastInProgress;
@@ -111,7 +113,10 @@ namespace sutty.UI.Views
                 FlushWorkspaceSnapshot();
                 FlushRightPanelWidth();
                 foreach (var localView in GetOpenLocalTerminalViews())
+                {
+                    ReleaseLocalFileBrowser(localView);
                     _ = localView.CloseAsync();
+                }
                 LocalCredentialVault.Default.Dispose();
             };
 
@@ -123,6 +128,7 @@ namespace sutty.UI.Views
                 (s, size) => { s.MainWindowWidth = size.Width; s.MainWindowHeight = size.Height; });
 
             RestoreRightPanelWidth();
+            Root.SizeChanged += (_, _) => UpdateDetailsPaneWidth();
             HideDetailsPane();
             InitializeWorkspacePersistence();
             Root.Loaded += Root_Loaded;
@@ -163,6 +169,14 @@ namespace sutty.UI.Views
             {
                 _restoringWorkspace = false;
                 Debug.WriteLine($"Workspace restore failed: {error.GetType().Name}");
+            }
+            finally
+            {
+                if (!_windowClosing && TitleTabs.TabItems.Count == 0)
+                {
+                    await OpenLocalTerminalTabAsync();
+                    SelectNavigationItem("Home");
+                }
             }
         }
 
@@ -205,9 +219,11 @@ namespace sutty.UI.Views
 
                 WorkspaceTabState? state = tab.DataContext switch
                 {
-                    LocalTerminalView => new WorkspaceTabState
+                    LocalTerminalView localView when localView.CanRestoreWorkspace => new WorkspaceTabState
                     {
                         Kind = WorkspaceTabKinds.LocalTerminal,
+                        LocalShell = localView.ShellKind == LocalShellKind.CommandPrompt
+                            ? WorkspaceLocalShells.CommandPrompt : WorkspaceLocalShells.PowerShell,
                     },
                     SessionView sessionView when
                         !string.IsNullOrWhiteSpace(sessionView.Session.Info.SavedHostId) =>
@@ -282,7 +298,9 @@ namespace sutty.UI.Views
                     var tabCountBeforeRestore = TitleTabs.TabItems.Count;
                     if (tab.Kind == WorkspaceTabKinds.LocalTerminal)
                     {
-                        await OpenLocalTerminalTabAsync();
+                        await OpenLocalTerminalTabAsync(shellKind:
+                            tab.LocalShell == WorkspaceLocalShells.CommandPrompt
+                                ? LocalShellKind.CommandPrompt : LocalShellKind.PowerShell);
                     }
                     else if (tab.Kind == WorkspaceTabKinds.SavedHost &&
                              !string.IsNullOrWhiteSpace(tab.SavedHostId))
@@ -467,7 +485,7 @@ namespace sutty.UI.Views
             _panelWidthSaveTimer.IsRepeating = false;
             _panelWidthSaveTimer.Tick += (_, _) =>
             {
-                if (RightPanelHost.Visibility != Visibility.Visible)
+                if (RightPanelHost.Visibility != Visibility.Visible || _isBottomDetailsPane)
                     return;
                 SettingsService.Current.RightPanelWidth = (int)RightPanelColumn.ActualWidth;
                 SettingsService.Save();
@@ -475,6 +493,10 @@ namespace sutty.UI.Views
 
             RightPanelHost.SizeChanged += (_, _) =>
             {
+                if (_updatingDetailsLayout || _isBottomDetailsPane ||
+                    RightPanelHost.Visibility != Visibility.Visible)
+                    return;
+                _detailsPaneWidth = RightPanelColumn.ActualWidth;
                 _panelWidthSaveTimer.Stop();
                 _panelWidthSaveTimer.Start(); // 드래그 중 이벤트 폭주 → 마지막만 저장
             };
@@ -484,6 +506,7 @@ namespace sutty.UI.Views
         private void FlushRightPanelWidth()
         {
             if (_panelWidthSaveTimer is { IsRunning: true } &&
+                !_isBottomDetailsPane &&
                 RightPanelHost.Visibility == Visibility.Visible)
             {
                 _panelWidthSaveTimer.Stop();
@@ -494,23 +517,84 @@ namespace sutty.UI.Views
 
         private void ShowDetailsPane()
         {
-            RightPanelColumn.MinWidth = 300;
-            RightPanelColumn.Width = new GridLength(Math.Clamp(_detailsPaneWidth, 300, 800));
             RightPanelHost.Visibility = Visibility.Visible;
-            RightPanelSplitter.Visibility = Visibility.Visible;
+            UpdateDetailsPaneWidth();
             _navigation.SetDetailsPaneOpen(true);
+        }
+
+        private void UpdateDetailsPaneWidth()
+        {
+            if (RightPanelHost.Visibility != Visibility.Visible || _updatingDetailsLayout)
+                return;
+            _updatingDetailsLayout = true;
+            try
+            {
+                _isBottomDetailsPane = Root.ActualWidth > 0 && Root.ActualWidth < 1100;
+                Grid.SetRow(RightPanelHost, _isBottomDetailsPane ? 1 : 0);
+                Grid.SetColumn(RightPanelHost, _isBottomDetailsPane ? 1 : 2);
+                Grid.SetColumnSpan(RightPanelHost, _isBottomDetailsPane ? 2 : 1);
+                RightPanelTopSpacer.Height = new GridLength(_isBottomDetailsPane ? 0 : 38);
+                RightPanelBorder.BorderThickness = _isBottomDetailsPane
+                    ? new Thickness(0, 1, 0, 0) : new Thickness(1, 0, 0, 0);
+                BottomToolsRow.Height = _isBottomDetailsPane
+                    ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+                ShellRow.Height = new GridLength(_isBottomDetailsPane ? 1.2 : 1, GridUnitType.Star);
+                RightPanelSplitter.Visibility = _isBottomDetailsPane ? Visibility.Collapsed : Visibility.Visible;
+                RightPanelColumn.MinWidth = 0;
+                if (_isBottomDetailsPane)
+                {
+                    RightPanelColumn.Width = new GridLength(0);
+                }
+                else
+                {
+                    var maximum = Math.Min(800, Math.Max(360, Root.ActualWidth - 48 - 520));
+                    RightPanelColumn.MaxWidth = maximum;
+                    RightPanelColumn.MinWidth = 360;
+                    RightPanelColumn.Width = new GridLength(Math.Clamp(_detailsPaneWidth, 360, maximum));
+                }
+                UpdateMultiToolLayout();
+            }
+            finally { _updatingDetailsLayout = false; }
         }
 
         private void HideDetailsPane()
         {
-            if (RightPanelHost.Visibility == Visibility.Visible && RightPanelColumn.ActualWidth >= 300)
+            if (!_isBottomDetailsPane && RightPanelHost.Visibility == Visibility.Visible && RightPanelColumn.ActualWidth >= 300)
                 _detailsPaneWidth = RightPanelColumn.ActualWidth;
             RightPanelHost.Visibility = Visibility.Collapsed;
             RightPanelSplitter.Visibility = Visibility.Collapsed;
             RightPanelColumn.MinWidth = 0;
             RightPanelColumn.Width = new GridLength(0);
+            BottomToolsRow.Height = new GridLength(0);
+            ShellRow.Height = new GridLength(1, GridUnitType.Star);
             RightPanel.Content = null;
             _navigation.SetDetailsPaneOpen(false);
+        }
+
+        private void UpdateMultiToolLayout()
+        {
+            var sideBySide = _isMultiView && _isBottomDetailsPane;
+            MultiCommandsColumn.Width = sideBySide
+                ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            MultiTargetsRow.Height = _isMultiView ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            ToolContentRow.Height = sideBySide ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+            Grid.SetColumn(RightPanel, sideBySide ? 1 : 0);
+            Grid.SetRow(RightPanel, sideBySide ? 1 : 2);
+        }
+
+        private void CloseDetailsPane_Click(object sender, RoutedEventArgs e)
+        {
+            ActivateSelectedSession();
+            UpdateSessionArea();
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (TitleTabs.SelectedItem is not TabViewItem tab)
+                    return;
+                if (tab.DataContext is LocalTerminalView local)
+                    local.FocusTerminal();
+                else if (tab.DataContext is SessionView session)
+                    session.FocusTerminal();
+            });
         }
 
         // ── 테마 (전환 UI는 Setting > Appearance에 있음) ──
@@ -581,6 +665,7 @@ namespace sutty.UI.Views
                 "Hosts" => AppGlobalPage.Hosts,
                 "Transfers" => AppGlobalPage.Transfers,
                 "Commands" => AppGlobalPage.Commands,
+                "MultiCommand" => AppGlobalPage.MultiCommand,
                 "Settings" => AppGlobalPage.Settings,
                 _ => (AppGlobalPage?)null,
             };
@@ -593,10 +678,22 @@ namespace sutty.UI.Views
             if (page != AppGlobalPage.Home)
                 ClearCachedHomeSecrets();
             _navigation.NavigateGlobal(page);
-            _isMultiView = false;
+            _isMultiView = page == AppGlobalPage.MultiCommand;
             MultiGrid.Visibility = Visibility.Collapsed;
+            CollapseSessionTools();
             HideDetailsPane();
-            GlobalPageHost.Content = GetGlobalPage(page);
+            FullPageHost.Content = null;
+            if (page == AppGlobalPage.Settings)
+            {
+                FullPageHost.Content = GetGlobalPage(page);
+            }
+            else
+            {
+                RightPanel.Content = GetGlobalPage(page);
+                if (RightPanel.Content is TransfersDashboardPanel transfers)
+                    RefreshTransferTargets(transfers);
+                ShowDetailsPane();
+            }
             UpdateSessionArea();
         }
 
@@ -604,7 +701,7 @@ namespace sutty.UI.Views
         {
             if (_globalPages.TryGetValue(page, out var cached))
             {
-                if (cached is Border { Child: TransferCenterPanel transfers })
+                if (cached is TransfersDashboardPanel transfers)
                     transfers.RefreshFromStore();
                 if (page == AppGlobalPage.Home)
                     _homeDashboard?.RefreshHosts();
@@ -620,8 +717,9 @@ namespace sutty.UI.Views
             {
                 AppGlobalPage.Home => CreateHomeDashboard(),
                 AppGlobalPage.Hosts => WrapGlobalPage(CreateHostListPanel()),
-                AppGlobalPage.Transfers => WrapGlobalPage(new TransferCenterPanel()),
+                AppGlobalPage.Transfers => new TransfersDashboardPanel(),
                 AppGlobalPage.Commands => CreateCommandsDashboard(),
+                AppGlobalPage.MultiCommand => _multiCommandPanel ??= CreateMultiPanel(),
                 AppGlobalPage.Settings => CreateEmbeddedSettingsPanel(),
                 _ => throw new ArgumentOutOfRangeException(nameof(page)),
             };
@@ -637,16 +735,31 @@ namespace sutty.UI.Views
             };
             dashboard.ConnectRequested += async (_, info) => await OpenSessionTabAsync(info);
             dashboard.HistoryConnectRequested += async (_, host) => await OpenHistoryDraftAsync(host);
+            dashboard.LocalCommandLaunchRequested += async (_, request) =>
+                await OpenLocalCommandLaunchTabAsync(request);
             _homeDashboard = dashboard;
             return dashboard;
+        }
+
+        private void RefreshTransferTargets(TransfersDashboardPanel panel)
+        {
+            var workspace = ActiveSessionView is { } active &&
+                _sessionWorkspaces.TryGetValue(active, out var activeWorkspace) ? activeWorkspace : null;
+            var local = (TitleTabs.SelectedItem as TabViewItem)?.DataContext as LocalTerminalView;
+            panel.SetActiveShell(workspace, local);
+        }
+
+        private void ReleaseLocalFileBrowser(LocalTerminalView local)
+        {
+            if (_globalPages.TryGetValue(AppGlobalPage.Transfers, out var page) &&
+                page is TransfersDashboardPanel transfers)
+                transfers.ReleaseLocalShell(local);
         }
 
         private CommandsDashboardPanel CreateCommandsDashboard()
         {
             var dashboard = new CommandsDashboardPanel();
             dashboard.RunRequested += async (_, command) => await RunCommandOnActiveSessionAsync(command);
-            dashboard.PowerToolsRequested += (_, _) => OpenMultiPowerTools();
-            dashboard.SetPowerToolsAvailable(GetOpenTerminalViews().Count >= 2);
             return dashboard;
         }
 
@@ -668,22 +781,17 @@ namespace sutty.UI.Views
 
         private static FrameworkElement WrapGlobalPage(FrameworkElement content) => new Border
         {
-            Padding = new Thickness(24),
+            Padding = new Thickness(16),
             Child = content,
         };
 
-        private void OpenMultiPowerTools()
+        private void CollapseSessionTools()
         {
-            if (GetOpenTerminalViews().Count < 2)
-                return;
-            ClearCachedHomeSecrets();
-            _multiCommandPanel ??= CreateMultiPanel();
-            RightPanel.Content = _multiCommandPanel;
-            ShowDetailsPane();
-            _isMultiView = true;
-            MultiGrid.SetSessions(GetOpenTerminalViews());
-            MultiGrid.Visibility = Visibility.Visible;
-            UpdateSessionArea();
+            if (TitleTabs.SelectedItem is TabViewItem { DataContext: SessionView session } &&
+                _sessionWorkspaces.TryGetValue(session, out var workspace))
+            {
+                workspace.NavigateTo(SessionWorkspaceSection.Terminal);
+            }
         }
 
         private HostListPanel CreateHostListPanel()
@@ -1705,6 +1813,24 @@ namespace sutty.UI.Views
 
         private async Task RunCommandOnActiveSessionAsync(string command)
         {
+            if ((TitleTabs.SelectedItem as TabViewItem)?.DataContext is LocalTerminalView local)
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                try { await local.RunExternalCommandDetailedAsync(command, timeout.Token); }
+                catch (OperationCanceledException) { /* The selected shell closed. */ }
+                catch (Exception error)
+                {
+                    if (_windowClosing) return;
+                    await new ContentDialog
+                    {
+                        Title = Helpers.Loc.T("명령 실행 실패", "Command failed"),
+                        Content = error.Message,
+                        CloseButtonText = "OK",
+                        XamlRoot = Content.XamlRoot,
+                    }.ShowAsync();
+                }
+                return;
+            }
             if ((TitleTabs.SelectedItem as TabViewItem)?.DataContext is not SessionView view)
             {
                 var dialog = new ContentDialog
@@ -1799,7 +1925,12 @@ namespace sutty.UI.Views
             // Alt+6 still returns to a selected local terminal. Alt+7 is deliberately
             // consumed for local tabs because there is no remote filesystem.
             if (navigationNumber == 6 && TitleTabs.SelectedItem is TabViewItem)
+            {
                 ActivateSelectedSession();
+                UpdateSessionArea();
+                if ((TitleTabs.SelectedItem as TabViewItem)?.DataContext is LocalTerminalView local)
+                    DispatcherQueue.TryEnqueue(local.FocusTerminal);
+            }
         }
 
         private void TerminalView_AppShortcutRequested(
@@ -1841,7 +1972,7 @@ namespace sutty.UI.Views
                 return false;
 
             TitleTabs.SelectedItem = TitleTabs.TabItems[index];
-            ActivateSelectedSession();
+            SwitchSelectedSession();
             UpdateSessionArea();
             return true;
         }
@@ -1877,13 +2008,56 @@ namespace sutty.UI.Views
         private async void OpenLocalPowerShell_Click(object sender, RoutedEventArgs e) =>
             await OpenLocalTerminalTabAsync();
 
+        private async void OpenLocalCommandPrompt_Click(object sender, RoutedEventArgs e) =>
+            await OpenLocalTerminalTabAsync(shellKind: LocalShellKind.CommandPrompt);
+
         private void ImportHosts_Click(object sender, RoutedEventArgs e)
         {
             SelectNavigationItem("Settings");
             CreateEmbeddedSettingsPanel().NavigateToSection("Connection");
         }
 
-        private async Task OpenLocalTerminalTabAsync()
+        /// <summary>
+        /// Records an explicit command shortcut only after the tab limit allows
+        /// it, then lets the tab own the direct ConPTY process lifetime.
+        /// </summary>
+        private async Task<bool> OpenLocalCommandLaunchTabAsync(LocalCommandLaunchRequest request)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            // Preserve the existing tab-limit explanation and avoid creating a
+            // history row for a command that could not be handed to a tab.
+            if (TitleTabs.TabItems.Count >= MaxSessions)
+                return await OpenLocalTerminalTabAsync(request.Plan);
+
+            sutty.Command.CommandLauncherHistoryEntry history = request.FavoriteId is { } favoriteId
+                ? sutty.Command.CommandLauncherStore.RecordFavoriteLaunch(favoriteId, request.Plan)
+                : sutty.Command.CommandLauncherStore.RecordAdHocLaunch(request.Plan, request.DisplayName);
+
+            try
+            {
+                var opened = await OpenLocalTerminalTabAsync(request.Plan, history.Id);
+                if (!opened)
+                {
+                    TryCompleteCommandLaunch(
+                        history.Id,
+                        sutty.Command.CommandLauncherLaunchOutcome.LaunchNotStarted);
+                }
+                return opened;
+            }
+            catch
+            {
+                TryCompleteCommandLaunch(
+                    history.Id,
+                    sutty.Command.CommandLauncherLaunchOutcome.LaunchNotStarted);
+                throw;
+            }
+        }
+
+        private async Task<bool> OpenLocalTerminalTabAsync(
+            LocalTerminalLaunchPlan? launchPlan = null,
+            long? commandHistoryId = null,
+            LocalShellKind shellKind = LocalShellKind.PowerShell)
         {
             if (TitleTabs.TabItems.Count >= MaxSessions)
             {
@@ -1897,11 +2071,15 @@ namespace sutty.UI.Views
                     XamlRoot = Content.XamlRoot,
                 };
                 await limitDialog.ShowAsync();
-                return;
+                return false;
             }
 
-            var view = new LocalTerminalView();
+            var view = launchPlan is null
+                ? new LocalTerminalView(shellKind)
+                : new LocalTerminalView(launchPlan);
             view.AppShortcutRequested += TerminalView_AppShortcutRequested;
+            if (commandHistoryId is > 0)
+                TrackCommandLaunchLifecycle(view, commandHistoryId.Value);
             var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
             {
                 Width = 7,
@@ -1920,7 +2098,7 @@ namespace sutty.UI.Views
             header.Children.Add(dot);
             header.Children.Add(new TextBlock
             {
-                Text = "PowerShell",
+                Text = view.DisplayTitle,
                 FontSize = 12,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -1952,9 +2130,58 @@ namespace sutty.UI.Views
 
             TitleTabs.TabItems.Add(tab);
             TitleTabs.SelectedItem = tab;
-            ActivateSelectedSession();
+            SwitchSelectedSession();
             UpdateSessionArea();
             QueueWorkspaceSnapshot();
+            return true;
+        }
+
+        private static void TrackCommandLaunchLifecycle(LocalTerminalView view, long historyId)
+        {
+            var hasStarted = 0;
+            EventHandler<TerminalState>? stateHandler = null;
+            stateHandler = (_, state) =>
+            {
+                switch (state)
+                {
+                    case TerminalState.Open:
+                        Interlocked.Exchange(ref hasStarted, 1);
+                        TryCompleteCommandLaunch(
+                            historyId,
+                            sutty.Command.CommandLauncherLaunchOutcome.Started);
+                        break;
+                    case TerminalState.Failed:
+                        TryCompleteCommandLaunch(
+                            historyId,
+                            sutty.Command.CommandLauncherLaunchOutcome.Failed);
+                        view.Terminal.TerminalStateChanged -= stateHandler;
+                        break;
+                    case TerminalState.Closed:
+                        TryCompleteCommandLaunch(
+                            historyId,
+                            Volatile.Read(ref hasStarted) == 1
+                                ? sutty.Command.CommandLauncherLaunchOutcome.Exited
+                                : sutty.Command.CommandLauncherLaunchOutcome.Cancelled);
+                        view.Terminal.TerminalStateChanged -= stateHandler;
+                        break;
+                }
+            };
+            view.Terminal.TerminalStateChanged += stateHandler;
+        }
+
+        private static void TryCompleteCommandLaunch(
+            long historyId,
+            sutty.Command.CommandLauncherLaunchOutcome outcome)
+        {
+            try
+            {
+                _ = sutty.Command.CommandLauncherStore.CompleteLaunch(historyId, outcome);
+            }
+            catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or IOException or
+                                          UnauthorizedAccessException or InvalidOperationException)
+            {
+                Debug.WriteLine($"Command launcher history update failed: {error.GetType().Name}");
+            }
         }
 
         private async Task OpenSessionTabAsync(SshConnectionInfo info)
@@ -2020,6 +2247,8 @@ namespace sutty.UI.Views
                 view,
                 WinRT.Interop.WindowNative.GetWindowHandle(this));
             _sessionWorkspaces[view] = workspace;
+            workspace.SectionChanged += SessionWorkspace_SectionChanged;
+            workspace.TerminalActivationRequested += SessionWorkspace_TerminalActivationRequested;
 
             // 리디자인 탭 헤더: [상태점] 세션이름 username
             var dot = new Microsoft.UI.Xaml.Shapes.Ellipse
@@ -2089,7 +2318,7 @@ namespace sutty.UI.Views
 
             TitleTabs.TabItems.Add(tab);
             TitleTabs.SelectedItem = tab;
-            ActivateWorkspace(workspace, workspace.CurrentSection);
+            SwitchSelectedSession();
             UpdateSessionArea();
             QueueWorkspaceSnapshot();
 
@@ -3189,7 +3418,7 @@ namespace sutty.UI.Views
         {
             if (_suppressTabActivation)
                 return;
-            ActivateSelectedSession();
+            SwitchSelectedSession();
             UpdateSessionArea();
             QueueWorkspaceSnapshot();
         }
@@ -3252,7 +3481,7 @@ namespace sutty.UI.Views
                 return;
 
             TitleTabs.SelectedItem = tab;
-            ActivateSelectedSession();
+            SwitchSelectedSession();
             UpdateSessionArea();
         }
 
@@ -3267,6 +3496,63 @@ namespace sutty.UI.Views
             }
 
             return false;
+        }
+
+        private void SwitchSelectedSession()
+        {
+            // Selection can briefly be null while TabView removes/replaces a tab.
+            if (TitleTabs.SelectedItem is not TabViewItem selected)
+                return;
+
+            var workspace = selected.DataContext is SessionView session &&
+                _sessionWorkspaces.TryGetValue(session, out var active) ? active : null;
+            var keepGlobalPage = _shellState.Mode == AppShellMode.Global &&
+                (_shellState.IsDetailsPaneOpen || _shellState.IsFullPageVisible);
+            if (_shellState.Mode == AppShellMode.Global && !keepGlobalPage)
+            {
+                ActivateSelectedSession();
+                return;
+            }
+
+            _navigation.SwitchSession(workspace?.ViewModel);
+            SessionHost.Content = (FrameworkElement?)workspace ?? selected.DataContext as FrameworkElement;
+            if (keepGlobalPage)
+            {
+                // Global tools already own the supporting pane. Keep only the shell
+                // in the new workspace so its old session tools do not compete for space.
+                workspace?.NavigateTo(SessionWorkspaceSection.Terminal);
+                return;
+            }
+
+            var section = _navigation.SessionSection;
+            HideDetailsPane();
+            if (workspace is not null)
+            {
+                workspace.NavigateTo(section);
+                return;
+            }
+
+            // Files and saved commands also work for local shells. A local tab keeps
+            // the tunnel pane visible with an explanation until an SSH tab is selected.
+            if (section == SessionWorkspaceSection.Terminal)
+                return;
+            RightPanel.Content = section switch
+            {
+                SessionWorkspaceSection.Files => GetGlobalPage(AppGlobalPage.Transfers),
+                SessionWorkspaceSection.Commands => GetGlobalPage(AppGlobalPage.Commands),
+                _ => new Border
+                {
+                    Padding = new Thickness(20),
+                    Child = new TextBlock
+                    {
+                        Text = Helpers.Loc.T("터널을 관리하려면 SSH 셸 탭을 선택하세요.",
+                            "Select an SSH shell tab to manage tunnels."),
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = Helpers.ThemeResources.Brush(Root, "TextMuted"),
+                    },
+                },
+            };
+            ShowDetailsPane();
         }
 
         private void ActivateSelectedSession()
@@ -3311,6 +3597,34 @@ namespace sutty.UI.Views
             UpdateSessionArea();
         }
 
+        private void SessionWorkspace_SectionChanged(object? sender, SessionWorkspaceSection section)
+        {
+            if (section == SessionWorkspaceSection.Terminal || sender is not SessionWorkspaceView workspace ||
+                TitleTabs.SelectedItem is not TabViewItem { DataContext: SessionView selected } ||
+                !ReferenceEquals(selected, workspace.SessionView))
+                return;
+
+            ClearCachedHomeSecrets();
+            _isMultiView = false;
+            HideDetailsPane();
+            LeftNav.SelectedItem = null;
+            _navigation.ActivateSession(workspace.ViewModel);
+            UpdateSessionArea();
+        }
+
+        private void SessionWorkspace_TerminalActivationRequested(object? sender, EventArgs e)
+        {
+            if (sender is not SessionWorkspaceView workspace)
+                return;
+            var tab = TitleTabs.TabItems.OfType<TabViewItem>()
+                .FirstOrDefault(item => ReferenceEquals(item.DataContext, workspace.SessionView));
+            if (tab is null)
+                return;
+            TitleTabs.SelectedItem = tab;
+            ActivateWorkspace(workspace, SessionWorkspaceSection.Terminal);
+            DispatcherQueue.TryEnqueue(workspace.SessionView.FocusTerminal);
+        }
+
         private void ClearCachedHomeSecrets()
         {
             if (_shellState.Mode == AppShellMode.Global &&
@@ -3322,29 +3636,30 @@ namespace sutty.UI.Views
 
         private void UpdateSessionArea()
         {
-            if (_globalPages.TryGetValue(AppGlobalPage.Commands, out var commandPage) &&
-                commandPage is CommandsDashboardPanel commands)
-            {
-                commands.SetPowerToolsAvailable(GetOpenTerminalViews().Count >= 2);
-            }
+            if (RightPanel.Content is TransfersDashboardPanel transfers)
+                RefreshTransferTargets(transfers);
             EmptyTabHeader.Visibility = TitleTabs.TabItems.Count == 0
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-            var showGlobal = !_isMultiView && _shellState.Mode == AppShellMode.Global;
-            var showSession = !_isMultiView && _shellState.Mode == AppShellMode.Session;
-            GlobalPageHost.Visibility = showGlobal ? Visibility.Visible : Visibility.Collapsed;
-            SessionHost.Visibility = showSession ? Visibility.Visible : Visibility.Collapsed;
+            var fullPage = !_isMultiView && _shellState.IsFullPageVisible;
+            FullPageOverlay.Visibility = fullPage ? Visibility.Visible : Visibility.Collapsed;
+            SessionHost.Visibility = fullPage ? Visibility.Collapsed : Visibility.Visible;
             MultiGrid.Visibility = _isMultiView ? Visibility.Visible : Visibility.Collapsed;
-            NoSessionState.Visibility = showSession && TitleTabs.SelectedItem is null
+            UpdateMultiToolLayout();
+            NoSessionState.Visibility = !fullPage && TitleTabs.SelectedItem is null
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
-            if (showSession && TitleTabs.SelectedItem is TabViewItem selected)
+            if (TitleTabs.SelectedItem is TabViewItem selected)
             {
                 SessionHost.Content = selected.DataContext is SessionView sessionView &&
                     _sessionWorkspaces.TryGetValue(sessionView, out var workspace)
                     ? workspace
                     : selected.DataContext as FrameworkElement;
+            }
+            else
+            {
+                SessionHost.Content = null;
             }
 
             // Multi 그리드가 보이는 중이면 열린 세션 목록으로 갱신
@@ -3415,8 +3730,7 @@ namespace sutty.UI.Views
             try
             {
                 sender.TabItems.Remove(args.Tab);
-                if (!preserveGlobalPage && !preserveMultiView &&
-                    sender.TabItems.Count > 0 &&
+                if (sender.TabItems.Count > 0 &&
                     (sender.SelectedItem is null ||
                      !sender.TabItems.Contains(sender.SelectedItem)))
                 {
@@ -3428,27 +3742,15 @@ namespace sutty.UI.Views
                 _suppressTabActivation = false;
             }
 
-            if (preserveMultiView)
+            if (sender.TabItems.Count == 0)
             {
-                var remainingTerminals = GetOpenTerminalViews();
-                if (remainingTerminals.Count >= 2)
-                {
-                    MultiGrid.SetSessions(remainingTerminals);
-                }
-                else
-                {
-                    // Multi is available only while at least two terminal sessions exist.
-                    SelectNavigationItem("Commands");
-                }
+                var page = _shellState.GlobalPage;
+                await OpenLocalTerminalTabAsync();
+                if (preserveGlobalPage || preserveMultiView)
+                    SelectNavigationItem(page.ToString());
             }
-            else if (!preserveGlobalPage && sender.TabItems.Count == 0)
-            {
-                SelectNavigationItem("Home");
-            }
-            else if (!preserveGlobalPage)
-            {
-                ActivateSelectedSession();
-            }
+
+            SwitchSelectedSession();
             UpdateSessionArea();
             QueueWorkspaceSnapshot();
 
@@ -3458,6 +3760,8 @@ namespace sutty.UI.Views
                 view.AppShortcutRequested -= TerminalView_AppShortcutRequested;
                 if (_sessionWorkspaces.Remove(view, out var workspace))
                 {
+                    workspace.SectionChanged -= SessionWorkspace_SectionChanged;
+                    workspace.TerminalActivationRequested -= SessionWorkspace_TerminalActivationRequested;
                     _navigation.ForgetWorkspace(workspace.ViewModel);
                     try { await DetachAndCloseSessionAsync(workspace).WaitAsync(TimeSpan.FromSeconds(10)); }
                     catch (TimeoutException) { Debug.WriteLine("Session cleanup is continuing after tab close."); }
@@ -3468,6 +3772,7 @@ namespace sutty.UI.Views
             else if (args.Tab.DataContext is LocalTerminalView localView)
             {
                 localView.AppShortcutRequested -= TerminalView_AppShortcutRequested;
+                ReleaseLocalFileBrowser(localView);
                 await ObserveCloseOperationAsync(localView.CloseAsync());
             }
         }
@@ -3753,13 +4058,14 @@ namespace sutty.UI.Views
         private void ApplySettingsChanges(SettingChangeKind changes)
         {
             if (changes.HasFlag(SettingChangeKind.TerminalAppearance) ||
+                changes.HasFlag(SettingChangeKind.Theme) ||
                 changes.HasFlag(SettingChangeKind.TerminalMode) ||
                 changes.HasFlag(SettingChangeKind.TerminalFeatures))
             {
                 foreach (var workspace in _sessionWorkspaces.Values)
                     workspace.ReapplyTerminalSettings();
 
-                if (changes.HasFlag(SettingChangeKind.TerminalAppearance))
+                if (changes.HasFlag(SettingChangeKind.TerminalAppearance) || changes.HasFlag(SettingChangeKind.Theme))
                 {
                     foreach (var localView in GetOpenLocalTerminalViews())
                         localView.ApplyTerminalSettings();
@@ -3778,7 +4084,7 @@ namespace sutty.UI.Views
                 foreach (var hosts in _hostPanels)
                     hosts.RefreshLanguage();
                 if (_globalPages.TryGetValue(AppGlobalPage.Transfers, out var transferPage) &&
-                    transferPage is Border { Child: TransferCenterPanel transfers })
+                    transferPage is TransfersDashboardPanel transfers)
                 {
                     transfers.RefreshLanguage();
                 }
@@ -3810,8 +4116,15 @@ namespace sutty.UI.Views
             if (changes.HasFlag(SettingChangeKind.History) ||
                 changes.HasFlag(SettingChangeKind.HostProfiles))
             {
+                _homeDashboard?.RefreshHosts();
                 foreach (var hosts in _hostPanels)
                     hosts.RefreshFromStore();
+            }
+
+            if (changes.HasFlag(SettingChangeKind.Database))
+            {
+                foreach (var view in GetOpenSessionViews())
+                    view.RefreshSavedCommandSuggestions();
             }
 
             if (changes.HasFlag(SettingChangeKind.Window))
@@ -3837,13 +4150,11 @@ namespace sutty.UI.Views
             if (s.MainWindowWidth > 0 && s.MainWindowHeight > 0)
                 AppWindow.ResizeClient(new SizeInt32(s.MainWindowWidth, s.MainWindowHeight));
 
-            // Right details remains collapsed by default; remember a requested width and
-            // apply it only while an explicit details surface is open.
+            // Remember the preferred tool width without covering the central shell.
             if (s.RightPanelWidth > 0)
             {
                 _detailsPaneWidth = Math.Clamp(s.RightPanelWidth, 300, 800);
-                if (RightPanelHost.Visibility == Visibility.Visible)
-                    RightPanelColumn.Width = new GridLength(_detailsPaneWidth);
+                UpdateDetailsPaneWidth();
             }
         }
     }

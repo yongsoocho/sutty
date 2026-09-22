@@ -20,11 +20,9 @@
             Grid.Row="0"
             Padding="14,7"
             BorderBrush="{ThemeResource Divider}"
-            BorderThickness="0,0,0,1">
+            BorderThickness="0,1,0,1">
             <Grid ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -37,43 +35,75 @@
                     Foreground="{ThemeResource AccentTeal}"
                     Glyph="&#xE756;" />
 
+                <Grid Grid.Column="1" HorizontalAlignment="Left"
+                      VerticalAlignment="Center" ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center" Spacing="1">
+                        <TextBlock
+                            x:Name="TitleText"
+                            FontFamily="Cascadia Mono, Consolas"
+                            FontSize="11.5"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource TextPrimary}"
+                            TextTrimming="CharacterEllipsis"
+                            Text="PowerShell" />
+                        <TextBlock
+                            x:Name="SubtitleText"
+                            FontSize="9.5"
+                            TextTrimming="CharacterEllipsis"
+                            Foreground="{ThemeResource TextMuted}" />
+                    </StackPanel>
+                    <Border
+                        x:Name="StatusPill"
+                        Grid.Column="1"
+                        Padding="8,2"
+                        VerticalAlignment="Center"
+                        CornerRadius="10">
+                        <TextBlock
+                            x:Name="StatusPillText"
+                            FontSize="10.5"
+                            FontWeight="SemiBold" />
+                    </Border>
+                </Grid>
+
                 <StackPanel
-                    Grid.Column="1"
-                    VerticalAlignment="Center"
-                    Spacing="1">
-                    <TextBlock
-                        x:Name="TitleText"
-                        FontFamily="Cascadia Mono, Consolas"
-                        FontSize="11.5"
-                        FontWeight="SemiBold"
-                        Foreground="{ThemeResource TextPrimary}"
-                        Text="PowerShell" />
-                    <TextBlock
-                        x:Name="SubtitleText"
-                        FontSize="9.5"
-                        Foreground="{ThemeResource TextMuted}" />
-                </StackPanel>
-
-                <Border
-                    x:Name="StatusPill"
                     Grid.Column="2"
-                    Padding="8,2"
                     VerticalAlignment="Center"
-                    CornerRadius="10">
+                    Orientation="Horizontal"
+                    Spacing="6">
                     <TextBlock
-                        x:Name="StatusPillText"
+                        x:Name="TerminalStatusText"
+                        MaxWidth="160"
+                        VerticalAlignment="Center"
+                        FontFamily="Cascadia Mono, Consolas"
                         FontSize="10.5"
-                        FontWeight="SemiBold" />
-                </Border>
-
-                <TextBlock
-                    x:Name="TerminalStatusText"
-                    Grid.Column="4"
-                    VerticalAlignment="Center"
-                    FontFamily="Cascadia Mono, Consolas"
-                    FontSize="10.5"
-                    Foreground="{ThemeResource TextMuted}"
-                    Text="CONPTY 120&#x00D7;40" />
+                        Foreground="{ThemeResource TextMuted}"
+                        TextTrimming="CharacterEllipsis"
+                        Text="CONPTY 120&#x00D7;40" />
+                    <Button
+                        x:Name="CopyOutputButton"
+                        Width="30"
+                        Height="30"
+                        MinWidth="0"
+                        MinHeight="0"
+                        Padding="6"
+                        Background="{ThemeResource AccentGradient}"
+                        BorderThickness="0"
+                        CornerRadius="8"
+                        Foreground="{ThemeResource AccentForeground}"
+                        Click="CopyOutput_Click">
+                        <Button.Resources>
+                            <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
+                            <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                            <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="AccentForeground" />
+                            <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="AccentForeground" />
+                        </Button.Resources>
+                        <FontIcon FontSize="15" Foreground="{ThemeResource AccentForeground}" Glyph="&#xE8C8;" />
+                    </Button>
+                </StackPanel>
             </Grid>
         </Border>
 

@@ -108,6 +108,14 @@ internal static class LocalFileBrowserSelfTests
             "a late completion cannot replace a newer folder selection");
 
         service.ResetDelayed();
+        using var inactiveTab = new CancellationTokenSource();
+        var leavingTab = browser.NavigateAsync(Path.Combine(root, "delayed"), inactiveTab.Token);
+        inactiveTab.Cancel();
+        service.CompleteDelayed();
+        Assert(!await leavingTab && browser.CurrentPath == latest && browser.Items[0].Name == "latest" && !browser.IsLoading,
+            "leaving a shell tab cancels pending enumeration even if the provider completes afterward");
+
+        service.ResetDelayed();
         var disposed = browser.NavigateAsync(Path.Combine(root, "delayed"));
         browser.Dispose();
         service.CompleteDelayed();

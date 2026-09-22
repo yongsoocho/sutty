@@ -8,29 +8,53 @@ using System.Text;
 namespace sutty.Core.Terminal;
 
 /// <summary>
-/// Windows-local PowerShell terminal backed by the public ConPTY API. The child is
+/// Windows-local shell terminal backed by the public ConPTY API. The child is
 /// assigned to a kill-on-close job so an app crash cannot leave the shell tree behind.
 /// </summary>
 [SupportedOSPlatform("windows10.0.17763")]
-public sealed class WindowsConPtyTerminal : IInteractiveTerminal
+public sealed class WindowsConPtyTerminal : IInteractiveTerminal, ILocalWorkingDirectoryTerminal
 {
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly SemaphoreSlim _resizeGate = new(1, 1);
+    private readonly LocalShellKind _shellKind;
     private readonly bool _loadProfile;
+    private readonly LocalTerminalLaunchPlan? _launchPlan;
     private ConPtyHost? _host;
+    private string _workingDirectory = string.Empty;
 
     public WindowsConPtyTerminal(bool loadProfile = false)
+        : this(LocalShellKind.PowerShell, loadProfile)
     {
+    }
+
+    public WindowsConPtyTerminal(LocalShellKind shellKind, bool loadProfile = false)
+    {
+        if (!Enum.IsDefined(shellKind))
+            throw new ArgumentOutOfRangeException(nameof(shellKind));
+        _shellKind = shellKind;
         _loadProfile = loadProfile;
+    }
+
+    /// <summary>
+    /// Creates a ConPTY terminal that hosts one already-validated direct process.
+    /// The plan is passed to CreateProcess as an executable plus argv, never typed
+    /// into a PowerShell prompt or evaluated by cmd.exe.
+    /// </summary>
+    public WindowsConPtyTerminal(LocalTerminalLaunchPlan launchPlan)
+    {
+        _launchPlan = launchPlan ?? throw new ArgumentNullException(nameof(launchPlan));
     }
 
     public TerminalState TerminalState { get; private set; } = TerminalState.Closed;
     public string? LastTerminalError { get; private set; }
     public bool SupportsTerminalResize => true;
+    public LocalTerminalLaunchPlan? LaunchPlan => _launchPlan;
+    public string WorkingDirectory => Volatile.Read(ref _workingDirectory);
 
     public event EventHandler<TerminalState>? TerminalStateChanged;
     public event EventHandler<TerminalDataReceivedEventArgs>? TerminalDataReceived;
+    public event EventHandler<string>? WorkingDirectoryChanged;
 
     public async Task OpenTerminalAsync(TerminalSize size, CancellationToken ct = default)
     {
@@ -47,11 +71,18 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
             ConPtyHost? host = null;
             try
             {
-                host = ConPtyHost.Create(size.Clamp(), _loadProfile);
+                var directoryNonce = Guid.NewGuid().ToString("N");
+                var directoryTracker = _launchPlan is null
+                    ? new LocalWorkingDirectoryTracker(directoryNonce, SetWorkingDirectory)
+                    : null;
+                host = ConPtyHost.Create(size.Clamp(), _shellKind, _loadProfile, _launchPlan, directoryNonce);
                 host.DataReceived += (_, data) =>
                 {
                     if (ReferenceEquals(Volatile.Read(ref _host), host))
+                    {
+                        directoryTracker?.Feed(data.Span);
                         TerminalDataReceived?.Invoke(this, new TerminalDataReceivedEventArgs(data.ToArray()));
+                    }
                 };
                 host.Ended += (_, error) => _ = RetireHostAsync(host, error);
                 Volatile.Write(ref _host, host);
@@ -63,6 +94,7 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
                 if (host is not null)
                     await host.DisposeAsync();
                 Volatile.Write(ref _host, null);
+                SetWorkingDirectory(string.Empty);
                 SetState(TerminalState.Closed);
                 throw;
             }
@@ -71,6 +103,7 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
                 if (host is not null)
                     await host.DisposeAsync();
                 Volatile.Write(ref _host, null);
+                SetWorkingDirectory(string.Empty);
                 LastTerminalError = error.Message;
                 SetState(TerminalState.Failed);
             }
@@ -159,6 +192,7 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
 
             Volatile.Write(ref _host, null);
             await host.DisposeAsync();
+            SetWorkingDirectory(string.Empty);
             if (error is not null)
             {
                 LastTerminalError = error.Message;
@@ -180,6 +214,13 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
         var host = Interlocked.Exchange(ref _host, null);
         if (host is not null)
             await host.DisposeAsync();
+        SetWorkingDirectory(string.Empty);
+    }
+
+    private void SetWorkingDirectory(string path)
+    {
+        if (!string.Equals(Interlocked.Exchange(ref _workingDirectory, path), path, StringComparison.Ordinal))
+            WorkingDirectoryChanged?.Invoke(this, path);
     }
 
     private void SetState(TerminalState state)
@@ -222,7 +263,12 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
         public event EventHandler<ReadOnlyMemory<byte>>? DataReceived;
         public event EventHandler<Exception?>? Ended;
 
-        public static ConPtyHost Create(TerminalSize size, bool loadProfile)
+        public static ConPtyHost Create(
+            TerminalSize size,
+            LocalShellKind shellKind,
+            bool loadProfile,
+            LocalTerminalLaunchPlan? launchPlan,
+            string directoryNonce)
         {
             IntPtr inputRead = IntPtr.Zero;
             IntPtr inputWrite = IntPtr.Zero;
@@ -233,6 +279,7 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
             IntPtr processHandle = IntPtr.Zero;
             IntPtr threadHandle = IntPtr.Zero;
             IntPtr jobHandle = IntPtr.Zero;
+            IntPtr environmentBlock = IntPtr.Zero;
             var attributeListInitialized = false;
             FileStream? input = null;
             FileStream? output = null;
@@ -276,18 +323,24 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
                     IntPtr.Zero));
                 startup.AttributeList = attributeList;
 
-                var shellPath = GetPowerShellPath();
-                var profileArgument = loadProfile ? string.Empty : " -NoProfile";
-                var commandLine = new StringBuilder($"\"{shellPath}\" -NoLogo{profileArgument} -NoExit");
+                var applicationPath = launchPlan?.ExecutablePath ?? GetShellPath(shellKind);
+                var shellArguments = shellKind == LocalShellKind.CommandPrompt
+                    ? " /D /Q"
+                    : LocalShellIntegration.PowerShellArguments(loadProfile, directoryNonce);
+                if (launchPlan is null && shellKind == LocalShellKind.CommandPrompt)
+                    environmentBlock = Marshal.StringToHGlobalUni(LocalShellIntegration.CreateCommandPromptEnvironment(directoryNonce));
+                var commandLine = launchPlan is null
+                    ? new StringBuilder($"\"{applicationPath}\"{shellArguments}")
+                    : new StringBuilder(launchPlan.CreateNativeCommandLine());
                 var workingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 ThrowIfFalse(CreateProcess(
-                    shellPath,
+                    applicationPath,
                     commandLine,
                     IntPtr.Zero,
                     IntPtr.Zero,
                     false,
                     ExtendedStartupInfoPresent | CreateUnicodeEnvironment,
-                    IntPtr.Zero,
+                    environmentBlock,
                     workingDirectory,
                     ref startup,
                     out var processInfo));
@@ -336,6 +389,8 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
             }
             finally
             {
+                if (environmentBlock != IntPtr.Zero)
+                    Marshal.FreeHGlobal(environmentBlock);
                 if (attributeListInitialized)
                     DeleteProcThreadAttributeList(attributeList);
                 if (attributeList != IntPtr.Zero)
@@ -481,16 +536,17 @@ public sealed class WindowsConPtyTerminal : IInteractiveTerminal
             _process.Dispose();
         }
 
-        private static string GetPowerShellPath()
+        private static string GetShellPath(LocalShellKind shellKind)
         {
-            var path = Path.Combine(
-                Environment.SystemDirectory,
-                "WindowsPowerShell",
-                "v1.0",
-                "powershell.exe");
+            // Resolve only the Windows installation's executables. Neither PATH nor
+            // COMSPEC can redirect a local shell to a different executable.
+            var path = shellKind == LocalShellKind.CommandPrompt
+                ? Path.Combine(Environment.SystemDirectory, "cmd.exe")
+                : Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+            var shellName = shellKind == LocalShellKind.CommandPrompt ? "Command Prompt" : "Windows PowerShell";
             return File.Exists(path)
                 ? path
-                : throw new FileNotFoundException("Windows PowerShell was not found.", path);
+                : throw new FileNotFoundException($"{shellName} was not found.", path);
         }
 
         private static COORD ToCoord(TerminalSize size) => new()

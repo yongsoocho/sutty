@@ -16,7 +16,6 @@
             <Setter Property="Foreground" Value="{ThemeResource TextFaint}" />
         </Style>
         <Style x:Key="FormInput" TargetType="TextBox">
-            <Setter Property="Height" Value="36" />
             <Setter Property="MinHeight" Value="36" />
             <Setter Property="Padding" Value="10,5" />
             <Setter Property="Background" Value="{ThemeResource InputBg}" />
@@ -27,7 +26,6 @@
             <Setter Property="Foreground" Value="{ThemeResource TextPrimary}" />
         </Style>
         <Style x:Key="FormPassword" TargetType="PasswordBox">
-            <Setter Property="Height" Value="36" />
             <Setter Property="MinHeight" Value="36" />
             <Setter Property="Padding" Value="10,5" />
             <Setter Property="Background" Value="{ThemeResource InputBg}" />
@@ -54,7 +52,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="14">
                 <StackPanel Spacing="3">
                     <TextBlock
@@ -68,6 +66,105 @@
                         Text="{x:Bind h:Loc.T('SSH와 SFTP를 하나의 작업 공간에서 시작합니다.', 'Start SSH and SFTP in one workspace.')}"
                         TextWrapping="Wrap" />
                 </StackPanel>
+
+                <Border
+                    Padding="12"
+                    Background="{ThemeResource CardBg}"
+                    BorderBrush="{ThemeResource CardBorder}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <StackPanel Spacing="8">
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock
+                                    FontSize="13"
+                                    FontWeight="SemiBold"
+                                    Foreground="{ThemeResource TextPrimary}"
+                                    Text="{x:Bind h:Loc.T('한 줄 연결', 'One-line connection')}" />
+                                <TextBlock
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('ssh worker1 또는 multipass connect master를 로컬 터미널에서 바로 엽니다.', 'Open ssh worker1 or multipass connect master directly in a local terminal.')}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button
+                                x:Name="SaveCommandFavoriteButton"
+                                Grid.Column="1"
+                                MinWidth="84"
+                                Padding="10,4"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('명령 즐겨찾기 저장', 'Save command favorite')}"
+                                Click="SaveCommandFavorite_Click"
+                                Content="{x:Bind h:Loc.T('★ 저장', '★ Save')}"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('현재 명령을 즐겨찾기에 저장', 'Save the current command as a favorite')}" />
+                        </Grid>
+
+                        <Grid ColumnSpacing="7">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="78" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox
+                                x:Name="CommandLauncherBox"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('한 줄 연결 명령', 'One-line connection command')}"
+                                FontFamily="Cascadia Mono, Consolas"
+                                KeyDown="CommandLauncherBox_KeyDown"
+                                MaxLength="2048"
+                                PlaceholderText="ssh worker1"
+                                TextChanged="CommandLauncherBox_TextChanged"
+                                Style="{StaticResource FormInput}" />
+                            <Button
+                                x:Name="CommandLauncherRunButton"
+                                Grid.Column="1"
+                                Height="36"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('명령 연결 실행', 'Run connection command')}"
+                                Click="RunCommandLauncher_Click"
+                                Content="{x:Bind h:Loc.T('열기', 'Open')}"
+                                FontWeight="SemiBold" />
+                        </Grid>
+
+                        <TextBlock
+                            x:Name="CommandLauncherStatusText"
+                            AutomationProperties.LiveSetting="Assertive"
+                            FontSize="10.5"
+                            Foreground="{ThemeResource StatusRed}"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
+
+                        <StackPanel x:Name="CommandFavoritesSection" Spacing="5" Visibility="Collapsed">
+                            <TextBlock
+                                CharacterSpacing="55"
+                                FontSize="10"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextFaint}"
+                                Text="{x:Bind h:Loc.T('명령 즐겨찾기', 'COMMAND FAVORITES')}" />
+                            <ScrollViewer MaxHeight="208" VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="CommandFavoritesPanel" Spacing="4" />
+                            </ScrollViewer>
+                        </StackPanel>
+
+                        <StackPanel x:Name="CommandHistorySection" Spacing="5" Visibility="Collapsed">
+                            <TextBlock
+                                CharacterSpacing="55"
+                                FontSize="10"
+                                FontWeight="SemiBold"
+                                Foreground="{ThemeResource TextFaint}"
+                                Text="{x:Bind h:Loc.T('최근 명령', 'RECENT COMMANDS')}" />
+                            <ScrollViewer MaxHeight="208" VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="CommandHistoryPanel" Spacing="4" />
+                            </ScrollViewer>
+                        </StackPanel>
+
+                        <TextBlock
+                            FontSize="10"
+                            Foreground="{ThemeResource TextMuted}"
+                            Text="{x:Bind h:Loc.T('비밀번호·토큰은 명령에 넣지 마세요. SSH는 기존 .ssh/config와 Agent를 사용합니다. 출력은 저장하지 않습니다.', 'Keep passwords and tokens out of commands. SSH uses your existing .ssh/config and Agent. Output is not stored.')}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
 
                 <StackPanel>
                     <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('주소', 'ADDRESS')}" />
@@ -115,13 +212,17 @@
 
                 <StackPanel>
                     <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('인증', 'AUTHENTICATION')}" />
-                    <Grid ColumnSpacing="6">
+                    <Grid x:Name="AuthenticationChoices" ColumnSpacing="6" RowSpacing="6" SizeChanged="AuthenticationChoices_SizeChanged">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
                         <Button
                             x:Name="AuthPasswordBtn"
                             Click="AuthButton_Click"
@@ -259,29 +360,25 @@
                             BorderThickness="1"
                             CornerRadius="8">
                             <StackPanel Spacing="9">
-                                <CheckBox
-                                    x:Name="SaveProfileCheck"
+                                <CheckBox x:Name="SaveProfileCheck"
                                     Checked="SaveProfileCheck_Changed"
-                                    Content="{x:Bind h:Loc.T('이 연결을 저장된 호스트로 보관', 'Save this connection as a host')}"
                                     Foreground="{ThemeResource TextPrimary}"
-                                    Unchecked="SaveProfileCheck_Changed" />
-                                <CheckBox
-                                    x:Name="RememberCredentialCheck"
-                                    Content="{x:Bind h:Loc.T('자격 증명을 이 Windows 사용자에게 암호화하여 저장', 'Encrypt and save the credential for this Windows user')}"
+                                    Unchecked="SaveProfileCheck_Changed">
+                                        <TextBlock Text="{x:Bind h:Loc.T('이 연결을 저장된 호스트로 보관', 'Save this connection as a host')}" TextWrapping="Wrap" />
+                                    </CheckBox>
+                                <CheckBox x:Name="RememberCredentialCheck"
                                     Foreground="{ThemeResource TextMuted}"
-                                    IsEnabled="False" />
+                                    IsEnabled="False">
+                                        <TextBlock Text="{x:Bind h:Loc.T('자격 증명을 이 Windows 사용자에게 암호화하여 저장', 'Encrypt and save the credential for this Windows user')}" TextWrapping="Wrap" />
+                                    </CheckBox>
 
                                 <StackPanel x:Name="ProfileOptionsPanel" Spacing="9" Visibility="Collapsed">
-                                    <Grid ColumnSpacing="8">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="8">
                                         <StackPanel>
                                             <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('그룹', 'GROUP')}" />
                                             <TextBox x:Name="GroupBox" MaxLength="64" Style="{StaticResource FormInput}" />
                                         </StackPanel>
-                                        <StackPanel Grid.Column="1">
+                                        <StackPanel>
                                             <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('환경', 'ENVIRONMENT')}" />
                                             <ComboBox x:Name="EnvironmentCombo" Height="36" SelectedIndex="0">
                                                 <ComboBoxItem Content="{x:Bind h:Loc.T('미분류', 'Unclassified')}" Tag="Unclassified" />
@@ -290,11 +387,11 @@
                                                 <ComboBoxItem Content="{x:Bind h:Loc.T('운영', 'Production')}" Tag="Production" />
                                             </ComboBox>
                                         </StackPanel>
-                                    </Grid>
-                                    <CheckBox
-                                        x:Name="FavoriteCheck"
-                                        Content="{x:Bind h:Loc.T('즐겨찾기에 표시', 'Show in favorites')}"
-                                        Foreground="{ThemeResource TextMuted}" />
+                                    </StackPanel>
+                                    <CheckBox x:Name="FavoriteCheck"
+                                        Foreground="{ThemeResource TextMuted}">
+                                            <TextBlock Text="{x:Bind h:Loc.T('즐겨찾기에 표시', 'Show in favorites')}" TextWrapping="Wrap" />
+                                        </CheckBox>
                                 </StackPanel>
 
                                 <TextBlock
@@ -439,10 +536,10 @@
                                 Text="{x:Bind h:Loc.T('%h=대상 호스트, %p=포트, %r=사용자 · 명령은 숨김 창에서 실행됩니다.', '%h=target host, %p=port, %r=user · the command runs in a hidden process.')}"
                                 TextWrapping="Wrap" />
                         </StackPanel>
-                        <CheckBox
-                            x:Name="StrictRouteCheck"
-                            Content="{x:Bind h:Loc.T('엄격 경로: 직접 연결 및 자동 우회 금지', 'Strict route: block direct connection and fallback')}"
-                            Foreground="{ThemeResource TextMuted}" />
+                        <CheckBox x:Name="StrictRouteCheck"
+                            Foreground="{ThemeResource TextMuted}">
+                                <TextBlock Text="{x:Bind h:Loc.T('엄격 경로: 직접 연결 및 자동 우회 금지', 'Strict route: block direct connection and fallback')}" TextWrapping="Wrap" />
+                            </CheckBox>
                         <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('연결 유지 간격 (초)', 'KEEP-ALIVE (SECONDS)')}" />
                         <NumberBox
                             x:Name="KeepAliveBox"
@@ -531,7 +628,7 @@
                 CornerRadius="8"
                 FontSize="13"
                 FontWeight="SemiBold"
-                Foreground="#FFFFFF" />
+                Foreground="{ThemeResource AccentForeground}" />
         </StackPanel>
     </Grid>
 </UserControl>

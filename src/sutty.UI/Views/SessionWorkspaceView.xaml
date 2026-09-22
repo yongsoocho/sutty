@@ -3,15 +3,17 @@
     x:Class="sutty.UI.Views.SessionWorkspaceView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:sutty.UI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:h="using:sutty.UI.Helpers"
     xmlns:local="using:sutty.UI.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    SizeChanged="Workspace_SizeChanged"
     mc:Ignorable="d">
 
     <Grid Background="{ThemeResource PanelBg}">
         <Grid.RowDefinitions>
-            <RowDefinition Height="52" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -21,25 +23,29 @@
             Background="{ThemeResource AppBg}"
             BorderBrush="{ThemeResource ShellBorder}"
             BorderThickness="0,0,0,1">
-            <Grid ColumnSpacing="16">
+            <Grid x:Name="WorkspaceHeader" ColumnSpacing="12" RowSpacing="6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <StackPanel VerticalAlignment="Center" Spacing="1">
                     <TextBlock
                         FontSize="13"
                         FontWeight="SemiBold"
                         Foreground="{ThemeResource TextPrimary}"
-                        Text="{x:Bind ViewModel.DisplayName}" />
+                        Text="{x:Bind ViewModel.DisplayName}" TextTrimming="CharacterEllipsis" />
                     <TextBlock
                         AutomationProperties.Name="{x:Bind ViewModel.ConnectionIdentity}"
                         FontFamily="Cascadia Mono, Consolas"
                         FontSize="10.5"
                         Foreground="{ThemeResource TextMuted}"
-                        Text="{x:Bind ViewModel.ConnectionIdentity}" />
+                        Text="{x:Bind ViewModel.ConnectionIdentity}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <controls:WrapPanel x:Name="WorkspaceNavigation" Grid.Column="1" Spacing="4">
                     <ToggleButton
                         x:Name="TerminalButton"
                         MinHeight="34"
@@ -72,33 +78,25 @@
                         Click="TunnelsButton_Click"
                         Content="{x:Bind h:Loc.T('터널', 'Tunnels')}"
                         ToolTipService.ToolTip="{x:Bind h:Loc.T('포트 포워딩 목록, 시작, 중지와 오류', 'Port forwarding list, start, stop and errors')}" />
-                </StackPanel>
+                </controls:WrapPanel>
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1">
+        <Grid x:Name="WorkspaceBody" Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.4*" />
+                <ColumnDefinition x:Name="AuxiliaryColumn" Width="0" MaxWidth="640" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition x:Name="ShellRow" Height="*" />
+                <RowDefinition x:Name="AuxiliaryRow" Height="0" />
+            </Grid.RowDefinitions>
             <Grid x:Name="InteractivePane">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="CommandLibraryColumn" Width="0" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Border
-                    x:Name="CommandLibraryHost"
-                    Grid.RowSpan="2"
-                    Grid.Column="0"
-                    Padding="14"
-                    Background="{ThemeResource SidePanelBg}"
-                    BorderBrush="{ThemeResource ShellBorder}"
-                    BorderThickness="0,0,1,0"
-                    Visibility="Collapsed">
-                    <local:CommandPanel x:Name="CommandLibrary" />
-                </Border>
                 <Button
-                    Grid.Column="1"
                     Margin="12,5"
                     HorizontalAlignment="Right"
                     AutomationProperties.Name="{x:Bind h:Loc.T('같은 서버의 원격 경로를 Files에서 열기', 'Open a remote path in Files on this server')}"
@@ -108,59 +106,87 @@
                 <ContentControl
                     x:Name="SessionContent"
                     Grid.Row="1"
-                    Grid.Column="1"
                     HorizontalContentAlignment="Stretch"
                     VerticalContentAlignment="Stretch" />
             </Grid>
 
-            <local:FileTreePanel
-                x:Name="FilesPanel"
-                Padding="16"
-                Visibility="Collapsed" />
+            <Border x:Name="AuxiliaryBorder" Grid.Column="1" Visibility="Collapsed"
+                Background="{ThemeResource SidePanelBg}"
+                BorderBrush="{ThemeResource ShellBorder}"
+                BorderThickness="1,0,0,0">
+                <Grid x:Name="AuxiliaryPane" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Button Margin="12,6" HorizontalAlignment="Right"
+                        Click="TerminalButton_Click"
+                        AutomationProperties.Name="{x:Bind h:Loc.T('보조 패널 닫기', 'Close tool panel')}"
+                        Content="{x:Bind h:Loc.T('패널 닫기', 'Close panel')}" />
+                    <Grid x:Name="CommandsPane" Grid.Row="1" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="2*" />
+                            <RowDefinition Height="3*" />
+                        </Grid.RowDefinitions>
+                        <Border Padding="14"
+                            BorderBrush="{ThemeResource ShellBorder}" BorderThickness="0,0,0,1">
+                            <local:CommandPanel x:Name="CommandLibrary" />
+                        </Border>
+                        <ContentControl x:Name="CommandResultsHost" Grid.Row="1"
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch" />
+                    </Grid>
 
-            <ScrollViewer x:Name="TunnelsPane" Visibility="Collapsed">
-                <StackPanel MaxWidth="840" Padding="28" Spacing="14">
-                    <TextBlock FontSize="18" FontWeight="SemiBold"
-                        Text="{x:Bind h:Loc.T('세션 터널', 'Session tunnels')}" />
-                    <TextBlock Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
-                        Text="{x:Bind h:Loc.T('Local / SOCKS는 이 PC에서, Remote는 SSH 서버에서 수신합니다. 세션 종료 시 모두 해제됩니다. 여기서 추가한 터널은 이번 세션에만 유지됩니다.', 'Local / SOCKS listen on this PC; Remote listens on the SSH server. All close with the session. Tunnels added here last only for this session.')}" />
-                    <Button x:Name="AddTunnelButton" Click="AddTunnel_Click"
-                        AutomationProperties.Name="{x:Bind h:Loc.T('이번 세션에 터널 추가', 'Add a tunnel to this session')}"
-                        Content="{x:Bind h:Loc.T('터널 추가…', 'Add tunnel…')}" />
-                    <TextBlock x:Name="TunnelOperationMessage" TextWrapping="Wrap"
-                        AutomationProperties.LiveSetting="Polite" />
-                    <ItemsControl x:Name="TunnelsList" ItemsSource="{x:Bind Tunnels}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Margin="0,0,0,8" Padding="14,11"
-                                    Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
-                                    BorderThickness="1" CornerRadius="8">
-                                    <StackPanel Spacing="8">
-                                        <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="12"
-                                            IsTextSelectionEnabled="True" Text="{Binding Description}" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding Status}" AutomationProperties.LiveSetting="Polite" />
-                                        <TextBlock Text="{Binding Error}" Visibility="{Binding ErrorVisibility}"
-                                            Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap" />
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <Button Click="TunnelStart_Click" Tag="{Binding Id}"
-                                                IsEnabled="{Binding CanStart}"
-                                                AutomationProperties.Name="{Binding StartName}"
-                                                Content="{x:Bind h:Loc.T('시작 / 다시 시도', 'Start / retry')}" />
-                                            <Button Click="TunnelStop_Click" Tag="{Binding Id}"
-                                                IsEnabled="{Binding CanStop}"
-                                                AutomationProperties.Name="{Binding StopName}"
-                                                Content="{x:Bind h:Loc.T('중지', 'Stop')}" />
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock x:Name="NoTunnelsState" Margin="0,24,0,0" HorizontalAlignment="Center"
-                        Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
-                        Text="{x:Bind h:Loc.T('터널이 없습니다. 로컬 서비스, 데이터베이스 또는 SOCKS 연결을 추가하세요.', 'No tunnels. Add a local service, database, or SOCKS connection.')}" />
-                </StackPanel>
-            </ScrollViewer>
+                    <ContentControl x:Name="FilesPanelHost" Grid.Row="1" Visibility="Collapsed"
+                                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                        <local:FileTreePanel x:Name="FilesPanel" Padding="12" />
+                    </ContentControl>
+
+                    <ScrollViewer x:Name="TunnelsPane" Grid.Row="1" Visibility="Collapsed" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel MaxWidth="840" Padding="12" Spacing="14">
+                            <TextBlock FontSize="18" FontWeight="SemiBold"
+                                Text="{x:Bind h:Loc.T('세션 터널', 'Session tunnels')}" />
+                            <TextBlock Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                                Text="{x:Bind h:Loc.T('Local / SOCKS는 이 PC에서, Remote는 SSH 서버에서 수신합니다. 세션 종료 시 모두 해제됩니다. 여기서 추가한 터널은 이번 세션에만 유지됩니다.', 'Local / SOCKS listen on this PC; Remote listens on the SSH server. All close with the session. Tunnels added here last only for this session.')}" />
+                            <Button x:Name="AddTunnelButton" Click="AddTunnel_Click"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('이번 세션에 터널 추가', 'Add a tunnel to this session')}"
+                                Content="{x:Bind h:Loc.T('터널 추가…', 'Add tunnel…')}" />
+                            <TextBlock x:Name="TunnelOperationMessage" TextWrapping="Wrap"
+                                AutomationProperties.LiveSetting="Polite" />
+                            <ItemsControl x:Name="TunnelsList" ItemsSource="{x:Bind Tunnels}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,8" Padding="14,11"
+                                            Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
+                                            BorderThickness="1" CornerRadius="8">
+                                            <StackPanel Spacing="8">
+                                                <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                                                    IsTextSelectionEnabled="True" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Status}" AutomationProperties.LiveSetting="Polite" />
+                                                <TextBlock Text="{Binding Error}" Visibility="{Binding ErrorVisibility}"
+                                                    Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap" />
+                                                <controls:WrapPanel Spacing="8">
+                                                    <Button Click="TunnelStart_Click" Tag="{Binding Id}"
+                                                        IsEnabled="{Binding CanStart}"
+                                                        AutomationProperties.Name="{Binding StartName}"
+                                                        Content="{x:Bind h:Loc.T('시작 / 다시 시도', 'Start / retry')}" />
+                                                    <Button Click="TunnelStop_Click" Tag="{Binding Id}"
+                                                        IsEnabled="{Binding CanStop}"
+                                                        AutomationProperties.Name="{Binding StopName}"
+                                                        Content="{x:Bind h:Loc.T('중지', 'Stop')}" />
+                                                </controls:WrapPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock x:Name="NoTunnelsState" Margin="0,24,0,0" HorizontalAlignment="Center"
+                                Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                                Text="{x:Bind h:Loc.T('터널이 없습니다. 로컬 서비스, 데이터베이스 또는 SOCKS 연결을 추가하세요.', 'No tunnels. Add a local service, database, or SOCKS connection.')}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </UserControl>

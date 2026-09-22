@@ -11,6 +11,7 @@
     <Compile Include="..\..\src\sutty.UI\Helpers\VtScreenBuffer.cs" Link="VtScreenBuffer.cs" />
     <Compile Include="..\..\src\sutty.UI\Helpers\TerminalBroadcastCapture.cs" Link="TerminalBroadcastCapture.cs" />
     <Compile Include="..\..\src\sutty.UI\Helpers\InstalledFontCatalog.cs" Link="InstalledFontCatalog.cs" />
+    <Compile Include="..\..\src\sutty.Core\Terminal\LocalWorkingDirectoryTracker.cs" Link="LocalWorkingDirectoryTracker.cs" />
     <ProjectReference Include="..\..\src\sutty.Core\sutty.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

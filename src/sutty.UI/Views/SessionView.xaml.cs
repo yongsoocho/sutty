@@ -27,8 +27,8 @@ namespace sutty.UI.Views
 {
     /// <summary>
     /// 탭 하나에 대응하는 세션 화면 (Deep Field 리디자인).
-    /// - REPL: ❯ N 명령 + 타임스탬프·소요시간, 들여쓴 출력 (플랫)
-    /// - TERMINAL: persistent ShellStream PTY + bounded VT screen buffer
+    /// - Persistent ShellStream PTY + bounded VT screen buffer, always visible.
+    /// - Structured commands are hosted separately in the workspace's tool panel.
     /// - 헤더의 CONNECTED 필은 업타임을 실시간 카운트
     /// </summary>
     public sealed partial class SessionView : UserControl
@@ -75,7 +75,6 @@ namespace sutty.UI.Views
         private bool _terminalBacklogResetPending;
         private int _cellIndex;
         private string _cwd = "~"; // 현재 원격 작업 디렉터리 (cd로 갱신)
-        private bool _isTerminal;
         private int _terminalDrainQueued;
         private bool _terminalResizeInProgress;
         private bool _reconnectPending;
@@ -97,7 +96,6 @@ namespace sutty.UI.Views
             ApplyTerminalSettings();
             ActualThemeChanged += (_, _) =>
             {
-                ApplyViewMode();
                 UpdateStatusPill(Session.State);
                 UpdateSftpPill(Session.SftpState);
             };
@@ -123,6 +121,10 @@ namespace sutty.UI.Views
             TerminalSurface.AppShortcutRequested += (_, request) =>
                 AppShortcutRequested?.Invoke(this, request);
             TerminalSurface.TerminalSizeChanged += TerminalSurface_TerminalSizeChanged;
+            TerminalSurface.OutputCopyCompleted += (_, copied) =>
+                ToolTipService.SetToolTip(CopyOutputButton, copied
+                    ? Loc.T("마지막 출력을 복사했습니다.", "Last output copied.")
+                    : Loc.T("클립보드에 복사하지 못했습니다. 다시 눌러 주세요.", "Could not copy to the clipboard. Try again."));
             TerminalSurface.RendererFailed += (_, message) =>
                 DispatcherQueue.TryEnqueue(() =>
                 {
@@ -153,11 +155,8 @@ namespace sutty.UI.Views
             Controls.TerminalHighlight.Refresh(CellsList);
             UpdateCommandSuggestion();
 
-            var modeChanged = _isTerminal != (settings.TerminalMode == "Terminal");
-            _isTerminal = settings.TerminalMode == "Terminal";
-            ApplyViewMode();
-            if (modeChanged)
-                ScrollToBottom();
+            if (Session.State == SessionState.Connected && TerminalSurface.IsLoaded)
+                _ = EnsureTerminalStartedAsync();
         }
 
         /// <summary>Refresh one-time localized bindings without recreating the session.</summary>
@@ -170,52 +169,26 @@ namespace sutty.UI.Views
             SetReconnectPending(_reconnectPending);
         }
 
-        // ── TERMINAL ↔ REPL 세그먼트 토글 ──
-
-        private void ReplBtn_Click(object sender, RoutedEventArgs e) => SetViewMode(isTerminal: false);
-        private void TerminalBtn_Click(object sender, RoutedEventArgs e) => SetViewMode(isTerminal: true);
-
         /// <summary>
-        /// Hides the legacy in-session switcher when the app shell owns Terminal/Commands
-        /// navigation. The persisted setting remains compatible with existing installs.
+        /// Transfers the structured runner to the workspace's adjacent tool panel once.
+        /// It stays bound to this session while the PTY remains mounted in this view.
         /// </summary>
-        public void UseWorkspaceNavigation() => ViewModeSwitcher.Visibility = Visibility.Collapsed;
-
-        /// <summary>Shows the PTY without changing the user's persisted default.</summary>
-        public void ShowTerminalWorkspace() => SetViewMode(isTerminal: true, persist: false);
-
-        /// <summary>Shows structured command output without changing the persisted default.</summary>
-        public void ShowCommandsWorkspace() => SetViewMode(isTerminal: false, persist: false);
-
-        private void SetViewMode(bool isTerminal, bool persist = true)
+        internal FrameworkElement TakeCommandRunner()
         {
-            if (_isTerminal == isTerminal) return;
-            _isTerminal = isTerminal;
-            if (persist)
-            {
-                // "Repl" is an existing serialized value. Keep it stable while the
-                // visible product label becomes Commands.
-                SettingsService.Current.TerminalMode = _isTerminal ? "Terminal" : "Repl";
-                SettingsService.Save();
-            }
-            ApplyViewMode();
-            ScrollToBottom();
+            SessionLayout.Children.Remove(CommandRunnerPane);
+            CommandRunnerPane.Visibility = Visibility.Visible;
+            return CommandRunnerPane;
         }
 
-        private void ApplyViewMode()
+        public void FocusCommandRunner()
         {
-            ReplView.Visibility = _isTerminal ? Visibility.Collapsed : Visibility.Visible;
-            TerminalView.Visibility = _isTerminal ? Visibility.Visible : Visibility.Collapsed;
-            InputBar.Visibility = _isTerminal ? Visibility.Collapsed : Visibility.Visible;
+            ScrollToBottom();
+            CommandBox.Focus(FocusState.Programmatic);
+        }
 
-            var active = ThemeResources.Brush(this, "AccentTint");
-            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            ReplBtn.Background = _isTerminal ? transparent : active;
-            TerminalBtn.Background = _isTerminal ? active : transparent;
-            ReplBtn.Foreground = ThemeResources.Brush(this, _isTerminal ? "TextFaint" : "TextPrimary");
-            TerminalBtn.Foreground = ThemeResources.Brush(this, _isTerminal ? "TextPrimary" : "TextFaint");
-
-            if (_isTerminal && Session.State == SessionState.Connected && TerminalSurface.IsLoaded)
+        public void FocusTerminal()
+        {
+            if (Session.State == SessionState.Connected && TerminalSurface.IsLoaded)
             {
                 _ = EnsureTerminalStartedAsync();
                 TerminalSurface.FocusTerminal();
@@ -241,7 +214,7 @@ namespace sutty.UI.Views
                     TerminalSurface.Reset();
                 }
                 UpdateTerminalStatus(state);
-                if (state == TerminalState.Open && _isTerminal)
+                if (state == TerminalState.Open)
                     TerminalSurface.FocusTerminal();
             });
 
@@ -289,7 +262,9 @@ namespace sutty.UI.Views
             }
         }
 
-        private void DrainTerminalOutput()
+        private void DrainTerminalOutput() => DrainTerminalOutput(allOutput: false);
+
+        private void DrainTerminalOutput(bool allOutput)
         {
             List<byte[]> batch = [];
             long droppedBytes;
@@ -297,7 +272,7 @@ namespace sutty.UI.Views
             lock (_terminalOutputGate)
             {
                 var batchBytes = 0;
-                while (_terminalOutputQueue.Count > 0 && batchBytes < MaxTerminalDrainBytes)
+                while (_terminalOutputQueue.Count > 0 && (allOutput || batchBytes < MaxTerminalDrainBytes))
                 {
                     var data = _terminalOutputQueue.Dequeue();
                     _terminalQueuedBytes -= data.Length;
@@ -518,7 +493,7 @@ namespace sutty.UI.Views
 
                 case SessionState.Connected:
                     AddSystemCell("Connected.");
-                    if (_isTerminal && TerminalSurface.IsLoaded)
+                    if (TerminalSurface.IsLoaded)
                         _ = EnsureTerminalStartedAsync();
                     break;
 
@@ -826,6 +801,9 @@ namespace sutty.UI.Views
             => UpdateCommandSuggestion();
 
         private void CommandBox_GotFocus(object sender, RoutedEventArgs e)
+            => RefreshSavedCommandSuggestions();
+
+        public void RefreshSavedCommandSuggestions()
         {
             ReloadSavedCommandSuggestions();
             UpdateCommandSuggestion();
@@ -909,13 +887,10 @@ namespace sutty.UI.Views
             return true;
         }
 
-        private async void SessionView_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+        private async void CommandRunner_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
             // xterm owns terminal clipboard shortcuts so bracketed paste and selection are
             // handled in the renderer. This handler only serves native REPL controls.
-            if (_isTerminal)
-                return;
-
             var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
             var shiftDown = IsKeyDown(Windows.System.VirtualKey.Shift);
             if (e.Key != Windows.System.VirtualKey.Insert || (!controlDown && !shiftDown))
@@ -1034,11 +1009,17 @@ namespace sutty.UI.Views
             }
         }
 
+        private void CopyOutput_Click(object sender, RoutedEventArgs e)
+        {
+            DrainTerminalOutput(allOutput: true);
+            TerminalSurface.CopyLatestOutput();
+        }
+
         private void TerminalSurface_Loaded(object sender, RoutedEventArgs e)
         {
             _requestedTerminalSize = TerminalSurface.ViewportSize;
 
-            if (_isTerminal && Session.State == SessionState.Connected)
+            if (Session.State == SessionState.Connected)
                 _ = EnsureTerminalStartedAsync();
         }
 
@@ -1109,7 +1090,7 @@ namespace sutty.UI.Views
 
         private void ScrollToBottom()
         {
-            if (!_isTerminal)
+            if (CommandRunnerPane.IsLoaded)
             {
                 CellsScroll.UpdateLayout();
                 CellsScroll.ChangeView(null, CellsScroll.ScrollableHeight, null, true);

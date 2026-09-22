@@ -36,6 +36,7 @@
   terminal.loadAddon(fitAddon);
   terminal.loadAddon(searchAddon);
   terminal.open(terminalElement);
+  const outputCapture = new window.SuttyOutputCapture(terminal);
 
   let fitTimer = 0;
   let lastColumns = 0;
@@ -161,7 +162,7 @@
 
   function handleAppShortcut(event) {
     if (event.altKey && !event.ctrlKey && !event.shiftKey) {
-      const navigationMatch = /^Digit([1-7])$/.exec(event.code);
+      const navigationMatch = /^Digit([1-8])$/.exec(event.code);
       if (navigationMatch) {
         event.preventDefault();
         event.stopPropagation();
@@ -229,6 +230,7 @@
 
   terminal.onData(function (data) {
     if (typeof data === 'string' && data.length <= 4 * 1024 * 1024) {
+      outputCapture.input(data);
       post({ type: 'input', data: data });
     }
   });
@@ -239,6 +241,7 @@
   });
 
   function applyOptions(message) {
+    outputCapture.shell = message.outputShell;
     const theme = message.theme || {};
     terminal.options.fontFamily = typeof message.fontFamily === 'string'
       ? message.fontFamily.slice(0, 256)
@@ -286,17 +289,31 @@
           }
           const bytes = decodeBase64(message.data);
           terminal.write(bytes, function () {
+            outputCapture.parsed();
             post({ type: 'writeComplete', id: message.id });
           });
           break;
         }
         case 'reset':
+          outputCapture.reset();
           terminal.reset();
           terminal.clear();
           if (typeof message.text === 'string' && message.text.length > 0) {
             terminal.write(message.text.slice(0, 4096));
           }
           break;
+        case 'copyLatestOutput': {
+          const text = outputCapture.snapshot();
+          // Preserve the complete output, including an empty result. Split bridge
+          // messages instead of silently truncating at the selection-copy limit.
+          post({ type: 'outputCopyStart', id: message.id });
+          for (const chunk of window.SuttyOutputCapture.copyChunks(text)) {
+            post({ type: 'outputCopyChunk', id: message.id,
+              text: chunk });
+          }
+          post({ type: 'outputCopyEnd', id: message.id });
+          break;
+        }
         case 'options':
           applyOptions(message);
           break;

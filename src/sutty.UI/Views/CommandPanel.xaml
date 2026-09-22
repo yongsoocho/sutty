@@ -11,12 +11,13 @@
     VerticalAlignment="Stretch"
     mc:Ignorable="d">
 
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <Grid RowSpacing="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!--  헤더  -->
@@ -78,7 +79,7 @@
                     CornerRadius="7"
                     FontSize="12"
                     FontWeight="SemiBold"
-                    Foreground="#FFFFFF">
+                    Foreground="{ThemeResource AccentForeground}">
                     <Button.Resources>
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
                         <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
@@ -88,7 +89,7 @@
         </Expander>
 
         <!--  저장된 playbook 목록 (자주 쓰는 순)  -->
-        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Padding="0,0,0,12">
                 <ItemsControl x:Name="CommandsList" ItemsSource="{x:Bind Items}">
                     <ItemsControl.ItemTemplate>
@@ -184,7 +185,7 @@
                                             CornerRadius="6"
                                             FontSize="11.5"
                                             FontWeight="SemiBold"
-                                            Foreground="#FFFFFF">
+                                            Foreground="{ThemeResource AccentForeground}">
                                             <Button.Resources>
                                                 <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
                                                 <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
@@ -208,4 +209,5 @@
             </StackPanel>
         </ScrollViewer>
     </Grid>
+    </ScrollViewer>
 </UserControl>

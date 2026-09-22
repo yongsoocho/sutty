@@ -8,7 +8,7 @@ using System.Linq;
 
 namespace sutty.UI.Views
 {
-    /// <summary>Multi command의 4×4 세션 그리드 (16칸 고정, 화면을 꽉 채우는 반응형).</summary>
+    /// <summary>Sixteen selectable session cards, flowing into one to four columns.</summary>
     public sealed partial class MultiSessionGrid : UserControl
     {
         public const int SlotCount = 16;
@@ -28,24 +28,24 @@ namespace sutty.UI.Views
             SetSessions(_views);
         }
 
-        // 셀 크기를 가용 영역의 정확히 1/4로 → 4×4가 가로·세로 꽉 찬다
         private void Cells_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            var cellWidth = (e.NewSize.Width - 3 * CellSpacing) / 4.0 - 1;
-            var cellHeight = (e.NewSize.Height - 3 * CellSpacing) / 4.0 - 1;
-
-            if (cellWidth > 60) GridLayout.MinItemWidth = cellWidth;
-            if (cellHeight > 60) GridLayout.MinItemHeight = cellHeight;
+            var width = Math.Max(1, e.NewSize.Width - 16);
+            var columns = Math.Clamp((int)((width + CellSpacing) / (220 + CellSpacing)), 1, 4);
+            GridLayout.MaximumRowsOrColumns = columns;
+            GridLayout.MinItemWidth = Math.Max(1, (width - (columns - 1) * CellSpacing) / columns);
+            GridLayout.MinItemHeight = 180;
         }
 
-        /// <summary>열린 세션들로 슬롯을 다시 채운다. 세션별 체크 상태와 결과 미리보기는 유지.</summary>
+        /// <summary>Refresh cards while retaining the slot objects held by running broadcasts.</summary>
         public void SetSessions(IReadOnlyList<FrameworkElement> views)
         {
             _views = views.ToArray();
-            // 이전 상태 기억 (세션 기준)
+            // Keep the object, not only its current values: an in-flight command
+            // still writes its eventual result to this same slot instance.
             var previous = Slots
                 .Where(s => s.SessionKey is not null)
-                .ToDictionary(s => s.SessionKey!, s => (s.IsSelected, s.LastOutput, s.ResultText));
+                .ToDictionary(s => s.SessionKey!);
 
             Slots.Clear();
             for (var i = 0; i < SlotCount; i++)
@@ -54,16 +54,19 @@ namespace sutty.UI.Views
                 var sessionView = tabContent as SessionView;
                 var localView = tabContent as LocalTerminalView;
                 var key = (object?)sessionView ?? localView;
-                var known = key is not null && previous.TryGetValue(key, out var prev);
-                Slots.Add(new MultiSlotVm
-                {
-                    View = sessionView,
-                    LocalView = localView,
-                    // 운영 안전: 새 로컬/SSH 탭은 사용자가 명시적으로 체크하기 전까지 대상이 아니다.
-                    IsSelected = known && previous[key!].IsSelected,
-                    LastOutput = known ? previous[key!].LastOutput : "",
-                    ResultText = known ? previous[key!].ResultText : "",
-                });
+                var slot = key is not null && previous.TryGetValue(key, out var existing)
+                    ? existing
+                    : new MultiSlotVm
+                    {
+                        View = sessionView,
+                        LocalView = localView,
+                        // New/replacement sessions require an explicit target selection.
+                        IsSelected = false,
+                    };
+                // Closed sessions are simply absent from the new collection. Never
+                // retarget their slot: an old command may still be finishing on it.
+                slot.RefreshSessionDetails();
+                Slots.Add(slot);
             }
 
             CountText.Text = Helpers.Loc.T(

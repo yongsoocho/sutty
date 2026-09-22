@@ -132,15 +132,50 @@ try
     workspace = WorkspaceStateStore.Load();
     Assert(workspace.Tabs.All(tab => tab.Kind != "UnknownTabKind"),
         "unknown workspace kind rejection");
+    Assert(workspace.Tabs.All(tab => tab.LocalShell ==
+                                     (tab.Kind == WorkspaceTabKinds.LocalTerminal
+                                         ? WorkspaceLocalShells.PowerShell
+                                         : "")),
+        "workspace default local shell and Saved Host shell clearing");
+
+    File.WriteAllText(WorkspaceStateStore.WorkspacePath, """
+        {
+          "Tabs": [
+            { "Kind": "LocalTerminal" },
+            { "Kind": "LocalTerminal", "LocalShell": "CommandPrompt" },
+            { "Kind": "LocalTerminal", "LocalShell": "commandprompt" },
+            { "Kind": "LocalTerminal", "LocalShell": "cmd.exe /c injected" },
+            { "Kind": "LocalTerminal", "LocalShell": null },
+            { "Kind": "SavedHost", "SavedHostId": "host-1", "LocalShell": "CommandPrompt" }
+          ],
+          "SelectedIndex": 1
+        }
+        """);
+    workspace = WorkspaceStateStore.Load();
+    Assert(workspace.Tabs.Select(tab => tab.LocalShell).SequenceEqual([
+        WorkspaceLocalShells.PowerShell,
+        WorkspaceLocalShells.CommandPrompt,
+        WorkspaceLocalShells.CommandPrompt,
+        WorkspaceLocalShells.PowerShell,
+        WorkspaceLocalShells.PowerShell,
+        "",
+    ]), "workspace local-shell migration and allowlist");
+    Assert(WorkspaceStateStore.Save(workspace).Succeeded, "workspace local-shell save");
+    workspace = WorkspaceStateStore.Load();
+    Assert(workspace.Tabs[1].LocalShell == WorkspaceLocalShells.CommandPrompt &&
+           workspace.Tabs[0].LocalShell == WorkspaceLocalShells.PowerShell &&
+           workspace.SelectedIndex == 1,
+        "workspace shell selection round trip");
     var workspaceJson = File.ReadAllText(WorkspaceStateStore.WorkspacePath);
-    Assert(!workspaceJson.Contains("Password", StringComparison.OrdinalIgnoreCase) &&
-           !workspaceJson.Contains("Passphrase", StringComparison.OrdinalIgnoreCase) &&
-           !workspaceJson.Contains("DisplayName", StringComparison.OrdinalIgnoreCase) &&
-           !workspaceJson.Contains("Command", StringComparison.OrdinalIgnoreCase),
-        "workspace schema excludes credential fields");
+    var workspaceTabJson = JsonNode.Parse(workspaceJson)!["Tabs"]!.AsArray();
+    Assert(workspaceTabJson.All(tab => tab!.AsObject().All(property =>
+            property.Key is "Kind" or "SavedHostId" or "LocalShell")),
+        "workspace tab schema excludes credentials and arbitrary commands");
     Assert(WorkspaceStateStore.Clear().Succeeded && !File.Exists(WorkspaceStateStore.WorkspacePath),
         "workspace clear");
 
+    ThemeCatalogSelfTests.Run();
+    SettingsResetSelfTests.Run(scratch);
     ShellStateSelfTests.Run();
     await LocalFileBrowserSelfTests.RunAsync(scratch);
 

@@ -116,6 +116,9 @@ public static class SettingsService
     /// <summary>Current를 직접 수정한 뒤 저장할 때 쓰는 축약형.</summary>
     public static SettingsSaveResult Save() => Save(Current);
 
+    /// <summary>Atomically restore defaults; a failed write preserves the current settings.</summary>
+    public static SettingsSaveResult ResetToDefaults() => Save(new AppSettings());
+
     internal static void ResetForTests() => _current = null;
 
     private static AppSettings Normalize(AppSettings settings)
@@ -130,7 +133,7 @@ public static class SettingsService
             ? "Cascadia Mono"
             : settings.TerminalFontFamily.Trim()[..Math.Min(settings.TerminalFontFamily.Trim().Length, 128)];
         settings.TerminalFontSize = Math.Clamp(settings.TerminalFontSize, 8, 32);
-        settings.TerminalTheme = NormalizeTerminalTheme(settings.TerminalTheme);
+        settings.TerminalTheme = ThemeCatalog.NormalizeTerminalId(settings.TerminalTheme);
         settings.TerminalCursorStyle = settings.TerminalCursorStyle?.ToLowerInvariant() switch
         {
             "block" => "block",
@@ -174,25 +177,6 @@ public static class SettingsService
         settings.RecentPrivateKeyPaths = NormalizeList(settings.RecentPrivateKeyPaths, 12, 2_048);
         settings.RecentConnectionTags = NormalizeList(settings.RecentConnectionTags, 20, 32);
         return settings;
-    }
-
-    private static string NormalizeTerminalTheme(string? value)
-    {
-        string[] allowed =
-        [
-            "FollowApplication",
-            "DeepField",
-            "Ubuntu",
-            "AtomOneDark",
-            "Dracula",
-            "GitHubDark",
-            "GitHubLight",
-            "SolarizedDark",
-            "SolarizedLight",
-        ];
-        return allowed.FirstOrDefault(item =>
-                   string.Equals(item, value, StringComparison.OrdinalIgnoreCase))
-               ?? "FollowApplication";
     }
 
     private static List<string> NormalizeList(IEnumerable<string>? values, int limit, int maxLength) =>

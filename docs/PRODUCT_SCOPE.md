@@ -21,17 +21,26 @@ Local-first is a product boundary, not a temporary implementation detail:
 
 ### App navigation and core execution surfaces
 
-The global navigation is **Home**, **Hosts**, **Transfers**, **Commands**, and **Settings**.
-Each selected SSH tab owns **Terminal**, **Files**, **Commands**, and **Tunnels** for one exact
-host context. Local PowerShell is an explicit new-tab choice, and Multi is an advanced action
-under Commands rather than a primary destination.
+The selected local or SSH shell anchors the workspace. A fresh start and closing the last tab
+open PowerShell; the `+` menu also offers CMD. Global **Home**, **Hosts**, **Transfers**, and
+**Commands** keep the terminal visible, opening on the right in wide windows and below it under
+1100 logical pixels. **Settings** is a full-page view that covers the shell while sessions stay
+alive. Each selected SSH tab opens **Files**, **Commands**, and **Tunnels** beside or, in narrow
+layouts, below its terminal for the exact host context. Cards, controls, and file panes adapt to
+available width. Multi is an advanced action under Commands rather than a primary destination.
+
+The clipboard icon beside `CONPTY` / `PTY` dimensions copies the latest rendered command output,
+including errors. PowerShell/CMD prompt markers are session-local and do not edit profile files;
+custom or unmarked SSH command boundaries are best effort. The result reflects terminal tab,
+control-sequence, and newline rendering, not a byte-for-byte stdout/stderr capture. App and
+terminal appearance includes [36 named palettes](THEMES.md) with Sutty's gradient accents.
 
 The following execution surfaces remain part of the Alpha capability contract; this table is a
 capability classification, not the visual navigation hierarchy.
 
 | Surface | Alpha contract |
 | --- | --- |
-| Local | Tabbed Windows shell sessions through ConPTY. |
+| Local | Tabbed PowerShell and Windows Command Prompt (`cmd.exe`) sessions through ConPTY; workspace restoration preserves the selected shell. |
 | Terminal | Persistent interactive SSH PTY with resize, keyboard, mouse, Unicode/IME, search, and clipboard handling. |
 | Commands runner | Structured non-interactive commands with distinct input/output blocks, status, timing, and cancellation. The legacy persisted value `Repl` remains internal for compatibility. |
 | Files | Session-bound Local ↔ Remote panes and safe multi-selection upload/download workflows with explicit collision handling. |
@@ -93,17 +102,26 @@ Local-first는 임시 구현 방식이 아니라 제품 경계입니다.
 
 ### 앱 내비게이션과 핵심 실행 화면
 
-전역 내비게이션은 **Home**, **Hosts**, **Transfers**, **Commands**, **Settings**입니다.
-선택한 SSH 탭은 하나의 정확한 Host 문맥에서 **Terminal**, **Files**, **Commands**,
-**Tunnels**를 소유합니다. Local PowerShell은 새 탭 메뉴에서 명시적으로 선택하며,
+선택한 로컬 또는 SSH 셸을 중심으로 작업합니다. 새로 시작하거나 마지막 탭을 닫으면
+PowerShell을 열며, `+` 메뉴에서 CMD도 선택할 수 있습니다. 전역 **Home**, **Hosts**,
+**Transfers**, **Commands**는 터미널을 유지한 채 넓은 창의 오른쪽이나 논리 픽셀 1100 미만
+창의 아래 패널에 엽니다. **Settings**는 셸을 가리는 전체 페이지이며 기존 세션은 계속
+실행됩니다. 선택한 SSH 탭의 **Files**, **Commands**, **Tunnels**는 같은 Host의 터미널 옆이나
+좁은 화면의 아래에 엽니다. 카드·컨트롤·파일 패널은 사용 가능한 너비에 맞춥니다.
 Multi는 주 이동 목적지가 아니라 Commands 아래의 고급 작업입니다.
+
+`CONPTY` / `PTY` 크기 옆의 클립보드 아이콘은 오류를 포함한 마지막 명령의 표시 출력을
+복사합니다. PowerShell/CMD 프롬프트 표시자는 이번 세션에만 적용하며 프로필 파일은
+편집하지 않습니다. 사용자 정의 또는 표시자가 없는 SSH 명령 경계는 최선 방식으로
+판별합니다. 결과는 원본 stdout/stderr 바이트가 아닌 터미널의 탭·제어 문자·줄바꿈 처리
+결과입니다. 앱·터미널에는 Sutty의 그라데이션 강조를 유지하는 [이름 있는 팔레트 36개](THEMES.md)를 제공합니다.
 
 아래 실행 화면은 Alpha 기능 계약에 계속 포함됩니다. 이 표는 기능 분류이며 화면의
 내비게이션 계층을 뜻하지 않습니다.
 
 | 화면 | Alpha 계약 |
 | --- | --- |
-| Local | ConPTY 기반 탭형 Windows shell 세션 |
+| Local | ConPTY 기반 탭형 PowerShell·Windows 명령 프롬프트(`cmd.exe`) 세션. 작업 공간 복원 시 선택한 셸 유지 |
 | Terminal | 크기 변경, 키보드, 마우스, Unicode/IME, 검색, clipboard를 처리하는 지속형 SSH PTY |
 | Commands runner | 입력·출력 블록, 상태, 실행 시간, 취소를 구분하는 구조화 비대화형 명령. 호환성을 위해 기존 저장값 `Repl`은 내부에만 유지 |
 | Files | 세션에 연결된 Local ↔ Remote pane과 명시적 충돌 정책을 사용하는 안전한 다중 선택 업로드·다운로드 |

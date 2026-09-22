@@ -7,13 +7,19 @@ namespace sutty.UI.Helpers;
 
 internal static class ClipboardHelper
 {
-    public static bool CopyText(string? text)
+    public static bool CopyText(string? text, bool allowEmpty = false)
     {
-        if (string.IsNullOrEmpty(text))
+        if (text is null || (!allowEmpty && text.Length == 0))
             return false;
 
         try
         {
+            if (text.Length == 0)
+            {
+                Clipboard.Clear();
+                return true;
+            }
+
             var package = new DataPackage
             {
                 RequestedOperation = DataPackageOperation.Copy,

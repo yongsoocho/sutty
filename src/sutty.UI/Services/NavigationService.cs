@@ -9,6 +9,7 @@ namespace sutty.UI.Services;
 public sealed class NavigationService
 {
     private readonly AppShellViewModel _shell;
+    private SessionWorkspaceSection _sessionSection = SessionWorkspaceSection.Terminal;
 
     public NavigationService(AppShellViewModel shell)
     {
@@ -16,6 +17,19 @@ public sealed class NavigationService
     }
 
     public AppShellViewModel Shell => _shell;
+
+    public SessionWorkspaceSection SessionSection =>
+        _shell.ActiveWorkspace?.CurrentSection ?? _sessionSection;
+
+    /// <summary>Changes the selected shell while keeping the visible tool/page open.</summary>
+    public void SwitchSession(SessionWorkspaceViewModel? workspace)
+    {
+        if (_shell.Mode == AppShellMode.Session)
+            _sessionSection = SessionSection;
+        _shell.ActiveWorkspace = workspace;
+        if (_shell.Mode == AppShellMode.Session && workspace is not null)
+            workspace.SelectSection(_sessionSection);
+    }
 
     public void NavigateGlobal(AppGlobalPage page)
     {
@@ -31,6 +45,7 @@ public sealed class NavigationService
     /// </summary>
     public void ActivateSession(SessionWorkspaceViewModel? workspace)
     {
+        _sessionSection = workspace?.CurrentSection ?? SessionWorkspaceSection.Terminal;
         _shell.ActiveWorkspace = workspace;
         _shell.Mode = AppShellMode.Session;
     }
@@ -69,9 +84,10 @@ public sealed class NavigationService
             3 => AppGlobalPage.Transfers,
             4 => AppGlobalPage.Commands,
             5 => AppGlobalPage.Settings,
+            8 => AppGlobalPage.MultiCommand,
             _ => default,
         };
-        return number is >= 1 and <= 5;
+        return number is >= 1 and <= 5 or 8;
     }
 
     public static int GetAcceleratorNumber(AppGlobalPage page) => page switch
@@ -81,6 +97,7 @@ public sealed class NavigationService
         AppGlobalPage.Transfers => 3,
         AppGlobalPage.Commands => 4,
         AppGlobalPage.Settings => 5,
+        AppGlobalPage.MultiCommand => 8,
         _ => throw new ArgumentOutOfRangeException(nameof(page)),
     };
 

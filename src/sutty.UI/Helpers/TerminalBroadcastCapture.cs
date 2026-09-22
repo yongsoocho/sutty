@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace sutty.UI.Helpers;
@@ -12,6 +13,11 @@ namespace sutty.UI.Helpers;
 /// </summary>
 public sealed class TerminalBroadcastCapture
 {
+    // ConPTY may replace a newline with cursor addressing. Integrated prompts also
+    // provide an explicit boundary even when an application omits a final newline.
+    private static readonly Regex LogicalLineBoundary = new(
+        @"\r\n|[\r\n]|\x1b\](?:133|633);A(?:\x07|\x1b\\)|\x1b\[[0-9]+;1[Hf]|\x1b\[[0-9]*[BE]",
+        RegexOptions.CultureInvariant);
     private const int MaxCapturedCharacters = 256 * 1024;
     private readonly string _beginMarker;
     private readonly string _endMarker;
@@ -107,6 +113,7 @@ public sealed class TerminalBroadcastCapture
     private static int FindStandaloneMarker(StringBuilder buffer, string marker)
     {
         var text = buffer.ToString();
+        var boundaries = LogicalLineBoundary.Matches(text);
         var searchFrom = 0;
         while (searchFrom < text.Length)
         {
@@ -115,12 +122,18 @@ public sealed class TerminalBroadcastCapture
                 return -1;
 
             var afterIndex = index + marker.Length;
-            var lineStart = index;
-            while (lineStart > 0 && text[lineStart - 1] is not ('\r' or '\n'))
-                lineStart--;
-            var lineEnd = afterIndex;
-            while (lineEnd < text.Length && text[lineEnd] is not ('\r' or '\n'))
-                lineEnd++;
+            var lineStart = 0;
+            var lineEnd = text.Length;
+            foreach (Match boundary in boundaries)
+            {
+                if (boundary.Index + boundary.Length <= index)
+                    lineStart = boundary.Index + boundary.Length;
+                else if (boundary.Index >= afterIndex)
+                {
+                    lineEnd = boundary.Index;
+                    break;
+                }
+            }
 
             // PSReadLine and themed shells may wrap marker output in SGR sequences.
             // Compare the complete logical line after removing terminal controls so an
@@ -152,7 +165,7 @@ public sealed class TerminalBroadcastCapture
 
     private string CleanForPreview(string value)
     {
-        var normalized = StripTerminalControlSequences(value)
+        var normalized = StripTerminalControlSequences(LogicalLineBoundary.Replace(value, "\n"))
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
         return string.Join('\n', normalized

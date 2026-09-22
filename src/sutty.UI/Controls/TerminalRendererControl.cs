@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 
 namespace sutty.UI.Controls;
@@ -37,6 +38,10 @@ public sealed class TerminalRendererControl : UserControl
     private bool _initializing;
     private bool _failed;
     private TerminalBridgeMessage? _pendingOptions;
+    private bool _copyLatestOutputPending;
+    private int _copyWritesRemaining;
+    private long _outputCopyId;
+    private StringBuilder? _outputCopy;
 
     public TerminalRendererControl()
     {
@@ -54,8 +59,10 @@ public sealed class TerminalRendererControl : UserControl
     public event EventHandler<TerminalAppShortcutRequest>? AppShortcutRequested;
     public event EventHandler? RendererReady;
     public event EventHandler<string>? RendererFailed;
+    public event EventHandler<bool>? OutputCopyCompleted;
 
     public bool IsRendererReady => _rendererReady;
+    public string? OutputShell { get; set; }
     public TerminalSize ViewportSize { get; private set; } = new(120, 40);
 
     public void Write(ReadOnlyMemory<byte> data)
@@ -83,6 +90,7 @@ public sealed class TerminalRendererControl : UserControl
 
         _pendingWrites.Clear();
         _queuedOutputBytes = 0;
+        CancelOutputCopy();
         _resetPending = true;
         _resetText = notice;
         SendNextWrite();
@@ -97,8 +105,7 @@ public sealed class TerminalRendererControl : UserControl
         }
 
         var settings = SettingsService.Current;
-        var appIsDark = ActualTheme != ElementTheme.Light;
-        var preset = TerminalThemeCatalog.Resolve(settings.TerminalTheme, appIsDark);
+        var preset = TerminalThemeCatalog.Resolve(settings.TerminalTheme, settings.Theme);
         _pendingOptions = new TerminalBridgeMessage
         {
             Type = "options",
@@ -109,6 +116,7 @@ public sealed class TerminalRendererControl : UserControl
             Scrollback = Math.Clamp(settings.TerminalScrollbackLines, 100, 50_000),
             ScreenReaderMode = settings.TerminalScreenReaderMode,
             Language = settings.Language,
+            OutputShell = OutputShell,
             Theme = preset.Palette,
         };
 
@@ -121,6 +129,30 @@ public sealed class TerminalRendererControl : UserControl
         Focus(FocusState.Programmatic);
         if (_rendererReady)
             Post(new TerminalBridgeMessage { Type = "focus" });
+    }
+
+    /// <summary>Copy the entire latest rendered command output after pending PTY writes.</summary>
+    public void CopyLatestOutput()
+    {
+        if (!_rendererReady || _failed)
+        {
+            OutputCopyCompleted?.Invoke(this, false);
+            return;
+        }
+
+        _copyLatestOutputPending = true;
+        _copyWritesRemaining = _pendingWrites.Count + (_inFlightId == 0 ? 0 : 1);
+        SendNextWrite();
+    }
+
+    private void CancelOutputCopy()
+    {
+        ++_outputCopyId; // Reject late clipboard chunks from a previous terminal generation.
+        var pending = _copyLatestOutputPending || _outputCopy is not null;
+        _outputCopy = null;
+        _copyLatestOutputPending = false;
+        _copyWritesRemaining = 0;
+        if (pending) OutputCopyCompleted?.Invoke(this, false);
     }
 
     public void FindNext(string? text = null)
@@ -233,6 +265,8 @@ public sealed class TerminalRendererControl : UserControl
                     {
                         _inFlightId = 0;
                         _inFlightBytes = 0;
+                        if (_copyLatestOutputPending && _copyWritesRemaining > 0)
+                            --_copyWritesRemaining;
                         SendNextWrite();
                     }
                     break;
@@ -259,6 +293,28 @@ public sealed class TerminalRendererControl : UserControl
                         ClipboardHelper.CopyText(message.Text);
                     break;
 
+                case "outputCopyStart":
+                    if (message.Id == _outputCopyId)
+                        _outputCopy = new StringBuilder();
+                    break;
+
+                case "outputCopyChunk":
+                    if (message.Id == _outputCopyId && _outputCopy is not null &&
+                        message.Text is { Length: <= 256 * 1024 })
+                    {
+                        _outputCopy.Append(message.Text);
+                    }
+                    break;
+
+                case "outputCopyEnd":
+                    if (message.Id == _outputCopyId && _outputCopy is not null)
+                    {
+                        var copied = ClipboardHelper.CopyText(_outputCopy.ToString(), allowEmpty: true);
+                        _outputCopy = null;
+                        OutputCopyCompleted?.Invoke(this, copied);
+                    }
+                    break;
+
                 case "pasteRequest":
                     var text = await ClipboardHelper.GetTextAsync();
                     if (!string.IsNullOrEmpty(text) && text.Length <= 4 * 1024 * 1024)
@@ -268,7 +324,7 @@ public sealed class TerminalRendererControl : UserControl
                 case "appShortcut":
                     var shortcut = message.Action switch
                     {
-                        "navigate" when message.Number is >= 1 and <= 7 =>
+                        "navigate" when message.Number is >= 1 and <= 8 =>
                             new TerminalAppShortcutRequest(
                                 TerminalAppShortcutAction.Navigate,
                                 message.Number),
@@ -332,6 +388,7 @@ public sealed class TerminalRendererControl : UserControl
 
     private void RequestOverflowReset()
     {
+        CancelOutputCopy();
         _resetPending = true;
         _resetText = Loc.T(
             $"\r\n[sutty: 터미널 출력 대기열 한도를 초과하여 {_droppedOutputBytes:N0}바이트를 버리고 화면을 재설정했습니다.]\r\n",
@@ -349,6 +406,15 @@ public sealed class TerminalRendererControl : UserControl
             _resetPending = false;
             _resetText = null;
             _droppedOutputBytes = 0;
+        }
+
+        // Fence the request at the writes present when clicked. A continuously
+        // running program must not postpone copying until its output queue is empty.
+        if (_copyLatestOutputPending && _copyWritesRemaining == 0)
+        {
+            _copyLatestOutputPending = false;
+            _outputCopy = null;
+            Post(new TerminalBridgeMessage { Type = "copyLatestOutput", Id = ++_outputCopyId });
         }
 
         if (!_pendingWrites.TryDequeue(out var data))
@@ -384,6 +450,7 @@ public sealed class TerminalRendererControl : UserControl
 
         _failed = true;
         _rendererReady = false;
+        CancelOutputCopy();
         _pendingWrites.Clear();
         _queuedOutputBytes = 0;
         RendererFailed?.Invoke(this, message);
