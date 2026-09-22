@@ -9,7 +9,10 @@ namespace sutty.Core.Terminal;
 /// </summary>
 internal sealed class LocalWorkingDirectoryTracker
 {
-    private const int MaxPayloadBytes = 128 * 1024;
+    private const int MaxPathCharacters = 32767;
+    private const string Base64Prefix = "base64;";
+    // One UTF-16 code unit needs at most three UTF-8 bytes, or four base64 bytes.
+    private static readonly int MaxPayloadBytes = Base64Prefix.Length + 4 * MaxPathCharacters;
     private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, true);
     private readonly byte[] _prefix;
     private readonly Action<string> _report;
@@ -82,15 +85,26 @@ internal sealed class LocalWorkingDirectoryTracker
         try
         {
             path = StrictUtf8.GetString(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_payload));
+            if (path.StartsWith(Base64Prefix, StringComparison.Ordinal))
+            {
+                // Console.Write in Windows PowerShell uses its current legacy
+                // output encoding. ASCII base64 protects the path without
+                // changing that encoding for the user's commands. CMD writes
+                // its Unicode $P directly and retains the raw-path protocol.
+                var encoded = path[Base64Prefix.Length..];
+                if (encoded.Any(value => !char.IsAsciiLetterOrDigit(value) && value is not '+' and not '/' and not '='))
+                    return;
+                path = StrictUtf8.GetString(Convert.FromBase64String(encoded));
+            }
         }
-        catch (DecoderFallbackException)
+        catch (Exception error) when (error is DecoderFallbackException or FormatException)
         {
             return;
         }
 
         // An empty report explicitly means a non-filesystem PowerShell provider.
         // Never trim or unescape: spaces, semicolons, and Unicode belong to paths.
-        if (path.Length > 32767 || path.Any(char.IsControl) ||
+        if (path.Length > MaxPathCharacters || path.Any(char.IsControl) ||
             (path.Length != 0 && !Path.IsPathFullyQualified(path)))
             return;
         _report(path);

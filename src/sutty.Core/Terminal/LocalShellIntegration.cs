@@ -18,7 +18,8 @@ internal static class LocalShellIntegration
                 $suttyPromptText = [string[]]@(& $global:__SuttyOriginalPrompt)
                 $suttyLocation = $ExecutionContext.SessionState.Path.CurrentLocation
                 $suttyPath = if ($suttyLocation.Provider.Name -eq 'FileSystem') { $suttyLocation.ProviderPath } else { '' }
-                [Console]::Write([string][char]27 + ']777;sutty-cwd;{{directoryNonce}};' + $suttyPath + [char]7)
+                $suttyEncodedPath = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$suttyPath))
+                [Console]::Write([string][char]27 + ']777;sutty-cwd;{{directoryNonce}};base64;' + $suttyEncodedPath + [char]7)
                 [string]::Join('', $suttyPromptText) + [char]27 + ']133;B' + [char]7
             }
             """;

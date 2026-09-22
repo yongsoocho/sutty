@@ -31,16 +31,38 @@ internal static class LocalWorkingDirectorySelfTests
         Assert(received[^1] == "\\\\server\\share\\한글 & space", "UNC paths remain intact after rejected reports");
         Feed($"\x1b]777;sutty-cwd;{nonce};\x07");
         Assert(received[^1] == string.Empty, "non-filesystem provider explicitly clears the reported directory");
+
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(location));
+        var asciiWire = Encoding.ASCII.GetBytes($"\x1b]777;sutty-cwd;{nonce};base64;{encoded}\x07");
+        foreach (var value in asciiWire)
+            tracker.Feed(new[] { value });
+        Assert(received[^1] == location, "ASCII-only split base64 reports retain Unicode under legacy output encodings");
+        before = received.Count;
+        Feed($"\x1b]777;sutty-cwd;{nonce};base64;not-base64!\x07");
+        Feed($"\x1b]777;sutty-cwd;{nonce};base64; {encoded}\x07");
+        Feed($"\x1b]777;sutty-cwd;{nonce};base64;/w==\x07");
+        EncodedReport("relative\\path");
+        EncodedReport("C:\\bad\rpath");
+        EncodedReport("C:\\" + new string('x', 32765));
+        Assert(received.Count == before, "malformed base64, invalid decoded UTF-8 and invalid decoded paths are rejected");
+        var maximumPath = "C:\\" + new string('한', 32764);
+        EncodedReport(maximumPath);
+        Assert(received[^1] == maximumPath, "base64 framing accommodates the maximum UTF-8 Windows path length");
+        EncodedReport(string.Empty);
+        Assert(received[^1] == string.Empty, "an encoded non-filesystem provider report clears the directory");
         Console.WriteLine("Local working-directory parser self-tests passed.");
         return;
 
         void Feed(string text) => tracker.Feed(Encoding.UTF8.GetBytes(text));
+        void EncodedReport(string path) => Feed(
+            $"\x1b]777;sutty-cwd;{nonce};base64;{Convert.ToBase64String(Encoding.UTF8.GetBytes(path))}\x1b\\");
     }
 
     [SupportedOSPlatform("windows10.0.17763")]
-    public static async Task VerifyNativeAsync(LocalShellKind shell)
+    public static async Task VerifyNativeAsync(LocalShellKind shell, int? outputCodePage = null)
     {
-        Console.WriteLine($"Verifying actual {shell} current-directory reports...");
+        var encodingLabel = outputCodePage is { } codePage ? $" with output code page {codePage}" : "";
+        Console.WriteLine($"Verifying actual {shell} current-directory reports{encodingLabel}...");
         var root = Path.Combine(Path.GetTempPath(), "sutty-cwd-" + Guid.NewGuid().ToString("N"));
         var nested = Path.Combine(root, "space 한글 & semi;");
         Directory.CreateDirectory(nested);
@@ -70,6 +92,10 @@ internal static class LocalWorkingDirectorySelfTests
             await WaitForPromptAsync(1, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
             if (shell == LocalShellKind.PowerShell)
                 await RunAsync("Set-PSReadLineOption -HistorySaveStyle SaveNothing", terminal.WorkingDirectory);
+            if (outputCodePage is { } requestedCodePage)
+                await RunAsync(shell == LocalShellKind.PowerShell
+                    ? $"[Console]::OutputEncoding = [Text.Encoding]::GetEncoding({requestedCodePage})"
+                    : $"chcp {requestedCodePage} >nul", terminal.WorkingDirectory);
             await RunAsync(ChangeDirectory(nested), nested);
             await RunAsync(shell == LocalShellKind.PowerShell
                 ? $"Push-Location -LiteralPath '{QuotePowerShell(root)}'"
@@ -94,7 +120,7 @@ internal static class LocalWorkingDirectorySelfTests
             }
             await terminal.OpenTerminalAsync(new TerminalSize(100, 30));
             await WaitForPromptAsync(1, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-            Console.WriteLine($"Actual {shell} startup, cd, pushd/popd, Unicode paths and reopen directory reports passed.");
+            Console.WriteLine($"Actual {shell} startup, cd, pushd/popd, Unicode paths and reopen directory reports{encodingLabel} passed.");
         }
         finally
         {

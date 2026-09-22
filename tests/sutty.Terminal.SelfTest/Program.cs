@@ -174,6 +174,7 @@ if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
     {
         await VerifyLocalConPtyAsync(shellKind);
         await LocalWorkingDirectorySelfTests.VerifyNativeAsync(shellKind);
+        await LocalWorkingDirectorySelfTests.VerifyNativeAsync(shellKind, outputCodePage: 437);
         await VerifyCloseDuringHeavyOutputAsync(shellKind);
     }
 }
