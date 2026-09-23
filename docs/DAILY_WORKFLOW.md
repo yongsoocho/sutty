@@ -14,7 +14,9 @@ Settings → Appearance에서 [36개 앱 테마](THEMES.md)를 고를 수 있습
 
 글꼴 크기 등 숫자 설정은 증감 버튼 없이 직접 입력합니다. Settings → About 맨 아래의 **설정 초기화**와 **SQLite 초기화**는 서로 별개이며 기본 선택이 No인 Yes/No 확인 뒤에만 실행합니다. 설정 초기화는 기본값을 즉시 저장·반영합니다. SQLite 초기화는 저장 호스트·접속 기록·명령·로컬 연결 즐겨찾기와 최근 기록 등 DB 사용자 데이터를 지우며 스키마와 마이그레이션 정보를 보존합니다. 열린 세션, 설정, 키 신뢰, 암호화 금고, 전송 복구 파일은 유지됩니다. 열린 세션에서 나중에 새로 발생한 활동은 다시 기록될 수 있습니다.
 
-**Multi Command**는 왼쪽 메뉴나 `Alt+8`에서 독립적으로 엽니다. 기본 대상은 0개이며 실행할 세션을 체크한 뒤 입력 아래 실행 버튼을 누릅니다. PROD 태그가 있는 대상은 추가 확인을 거칩니다.
+**Multi Command**는 왼쪽 메뉴나 `Alt+8`에서 독립적으로 엽니다. 이 화면에서는 중앙 셸을 가리고 **3×3 세션 그리드**를 표시하며, 열린 셸은 계속 실행됩니다. 각 칸에 열린 SSH·PowerShell·CMD 세션 하나를 표시하고, 최대 16개 세션을 9개씩 나누어 이전/다음 페이지로 이동합니다. 좁은 화면에서도 세 열을 유지하며 스크롤할 수 있습니다.
+
+오른쪽은 기존 **명령 모음집**을 재사용하므로 검색·추가·삭제·`$1`, `$2` 값 입력을 그대로 사용할 수 있습니다. 위쪽에 직접 입력한 명령과 저장 명령 모두 **체크한 세션에만** 전송합니다. **전체 선택 / 전체 해제**는 현재 페이지뿐 아니라 모든 페이지에 적용하며, 다른 페이지에서 체크한 세션도 방송 대상에 포함됩니다. 새로 연 세션은 항상 미선택이고 기본 대상은 0개입니다. 페이지나 셸 탭·메뉴를 바꾸어도 같은 열린 세션의 선택·마지막 결과·진행 상태를 유지합니다. 각 칸에서 세션 상태와 마지막 결과를 확인하고 최대 16,384자의 출력 미리보기를 스크롤해 읽을 수 있습니다. PROD 태그가 있는 대상은 추가 확인을 거칩니다.
 
 ## 접속과 파일 탐색
 
@@ -87,7 +89,9 @@ Settings → Appearance offers [36 app themes](THEMES.md), including VS Code Dar
 
 Numeric settings use direct input without spin buttons. Settings → About provides separate **Reset settings** and **Reset SQLite data** actions, each requiring a Yes/No dialog defaulting to No. Settings reset immediately saves and applies defaults. SQLite reset deletes database user data, including saved hosts, history, commands, and launcher favorites/history, while preserving schema and migration metadata. Open sessions and separate settings, trusted keys, vault, and transfer-recovery files remain. Later activity from an open session can create new records.
 
-Open **Multi Command** from the left navigation or `Alt+8`. It starts with zero selected targets; check the intended sessions and use the run button below the input. PROD-tagged targets require an additional confirmation.
+Open **Multi Command** from the left navigation or `Alt+8`. It covers the central shell with a **3×3 session grid** while open shells keep running. Each occupied cell represents one open SSH, PowerShell, or CMD session. Up to 16 sessions are shown nine per page, with previous/next controls. Narrow windows retain three columns with scrolling.
+
+The right side reuses the existing **command library**, including search, add/delete, and `$1`, `$2` parameter inputs. Both free-form commands entered above it and saved commands run **only on checked sessions**. **Select all / Clear all** applies to every page, and checked sessions on other pages are also broadcast targets. New sessions always start unchecked, with zero targets selected initially. Page, shell-tab, and navigation changes preserve selection, last results, and running state for the same open sessions. Each cell shows session state and the last result, with a scrollable output preview of up to 16,384 characters. PROD-tagged targets require an additional confirmation.
 
 Transfers and `Alt+7` follow the selected shell: the same SSH session's Local/Remote Files or the current directory reported by a PowerShell/CMD prompt. Missing shells or unknown paths show an explanation without choosing another server. Browsing locally does not change the shell directory; **Current shell folder** resumes following it. Directly launched SSH/Multipass programs may not report a local directory.
 

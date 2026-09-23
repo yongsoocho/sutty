@@ -2,7 +2,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using sutty.Command;
 using sutty.Core.Sftp;
 using sutty.Setting;
 using sutty.UI.ViewModels;
@@ -19,7 +18,7 @@ namespace sutty.UI.Views
 
     /// <summary>
     /// Multi command 오른쪽 패널.
-    /// 위: 브로드캐스트 입력(멀티라인, Enter=실행), 아래: 저장된 playbook 목록.
+    /// 브로드캐스트 입력과 공용 CommandPanel의 저장 명령 UI를 제공한다.
     /// 실행되는 모든 명령은 BroadcastRequested로 나가 체크된 모든 세션에 전송된다.
     /// </summary>
     public sealed partial class MultiCommandPanel : UserControl
@@ -27,11 +26,12 @@ namespace sutty.UI.Views
         public void RefreshLanguage()
         {
             Bindings.Update();
+            CommandLibrary.RefreshLanguage();
             foreach (var target in SftpTargets)
                 target.RefreshLanguage();
         }
 
-        public ObservableCollection<CommandItemVm> Items { get; } = [];
+        private bool _isBroadcastRunning;
         public ObservableCollection<MultiSftpTargetVm> SftpTargets { get; } = [];
         public IntPtr OwnerWindowHandle { get; set; }
 
@@ -49,16 +49,16 @@ namespace sutty.UI.Views
             var settings = SettingsService.Current;
             BroadcastBox.FontFamily = new FontFamily(settings.TerminalFontFamily + ", Consolas");
 
-            foreach (var template in CommandStore.GetAll())
-                Items.Add(new CommandItemVm(template));
-            EmptyText.Visibility = Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            CommandLibrary.SetBroadcastMode(true);
+            CommandLibrary.RunRequested += (_, command) => RequestBroadcast(command);
         }
 
         public void SetBroadcastRunning(bool isRunning, string? status = null)
         {
+            _isBroadcastRunning = isRunning;
             BroadcastBox.IsEnabled = !isRunning;
             RunBroadcastButton.IsEnabled = !isRunning;
-            CommandsList.IsEnabled = !isRunning;
+            CommandLibrary.IsEnabled = !isRunning;
             BroadcastProgress.IsActive = isRunning;
             BroadcastProgress.Visibility = isRunning ? Visibility.Visible : Visibility.Collapsed;
             BroadcastStatusText.Text = status ?? (isRunning
@@ -153,42 +153,20 @@ namespace sutty.UI.Views
 
         private void RunBroadcastFromBox()
         {
+            if (_isBroadcastRunning)
+                return;
+
             var command = NormalizeNewlines(BroadcastBox.Text).Trim();
             if (command.Length == 0) return;
 
             BroadcastBox.Text = "";
-            BroadcastRequested?.Invoke(this, command);
+            RequestBroadcast(command);
         }
 
-        // ── 저장된 커맨드 실행 ──
-
-        private void Run_Click(object sender, RoutedEventArgs e)
+        private void RequestBroadcast(string command)
         {
-            if ((sender as FrameworkElement)?.DataContext is not CommandItemVm vm) return;
-
-            if (vm.ParamNumbers.Count > 0)
-            {
-                vm.PrepareParams();
-                vm.ShowParams = !vm.ShowParams;
-            }
-            else
-            {
-                Execute(vm);
-            }
-        }
-
-        private void Execute_Click(object sender, RoutedEventArgs e)
-        {
-            if ((sender as FrameworkElement)?.DataContext is CommandItemVm vm)
-                Execute(vm);
-        }
-
-        private void Execute(CommandItemVm vm)
-        {
-            var command = vm.BuildCommand();
-            CommandStore.IncrementUsage(vm.Template.Id);
-            vm.ShowParams = false;
-            BroadcastRequested?.Invoke(this, command);
+            if (!_isBroadcastRunning && !string.IsNullOrWhiteSpace(command))
+                BroadcastRequested?.Invoke(this, command);
         }
 
         private async void UploadFile_Click(object sender, RoutedEventArgs e)

@@ -2,7 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace sutty.UI.ViewModels;
 
-/// <summary>Navigation focus; only full-page settings cover the selected shell.</summary>
+/// <summary>Navigation focus; Settings and the Multi Command grid cover the selected shell.</summary>
 public enum AppShellMode
 {
     Global,
@@ -42,6 +42,7 @@ public sealed class AppShellViewModel : ObservableObject
             OnPropertyChanged(nameof(IsGlobalContentVisible));
             OnPropertyChanged(nameof(IsSessionContentVisible));
             OnPropertyChanged(nameof(IsFullPageVisible));
+            OnPropertyChanged(nameof(IsMultiCommandVisible));
         }
     }
 
@@ -54,6 +55,7 @@ public sealed class AppShellViewModel : ObservableObject
                 return;
             OnPropertyChanged(nameof(IsSessionContentVisible));
             OnPropertyChanged(nameof(IsFullPageVisible));
+            OnPropertyChanged(nameof(IsMultiCommandVisible));
         }
     }
 
@@ -83,7 +85,9 @@ public sealed class AppShellViewModel : ObservableObject
 
     public bool IsFullPageVisible => Mode == AppShellMode.Global && GlobalPage == AppGlobalPage.Settings;
 
-    public bool IsSessionContentVisible => !IsFullPageVisible;
+    public bool IsMultiCommandVisible => Mode == AppShellMode.Global && GlobalPage == AppGlobalPage.MultiCommand;
+
+    public bool IsSessionContentVisible => !IsFullPageVisible && !IsMultiCommandVisible;
 
     public bool HasActiveWorkspace => ActiveWorkspace is not null;
 }

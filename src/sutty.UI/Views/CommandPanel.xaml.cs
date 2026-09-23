@@ -10,17 +10,20 @@ namespace sutty.UI.Views
     /// <summary>
     /// 자주 쓰는 명령어 playbook (SQLite에 저장).
     /// $1, $2 자리표시자가 있으면 Run 시 값을 입력받아 치환한 뒤
-    /// 현재 선택된 세션 탭에 명령을 흘려보낸다 (RunRequested).
+    /// 호스트가 선택한 세션 또는 방송 대상에 전달한다 (RunRequested).
     /// </summary>
     public sealed partial class CommandPanel : UserControl
     {
         public void RefreshLanguage() => Bindings.Update();
 
+        public void SetBroadcastMode(bool enabled)
+            => RunTargetHint.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+
         private readonly System.Collections.Generic.List<CommandItemVm> _all = [];
         private bool _subscribed;
         public ObservableCollection<CommandItemVm> Items { get; } = [];
 
-        /// <summary>치환 완료된 최종 명령을 현재 세션에서 실행해 달라는 신호.</summary>
+        /// <summary>치환 완료된 최종 명령을 호스트가 정한 대상에서 실행해 달라는 신호.</summary>
         public event EventHandler<string>? RunRequested;
 
         public CommandPanel()

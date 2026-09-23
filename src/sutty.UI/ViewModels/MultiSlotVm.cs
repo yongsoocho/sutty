@@ -15,7 +15,7 @@ using System.Threading.Tasks;
 namespace sutty.UI.ViewModels;
 
 /// <summary>
-/// Multi command 4×4 그리드의 슬롯 하나.
+/// Multi command 3×3 그리드의 슬롯 하나.
 /// 세션이 있으면 사용자가 체크박스로 브로드캐스트 대상 여부를 명시하고, 없으면 빈 칸.
 /// LastOutput에 마지막 브로드캐스트 결과가 작게 표시된다.
 /// </summary>
@@ -25,11 +25,16 @@ public sealed class MultiSlotVm : ObservableObject
     public SessionView? View { get; set; }
     public LocalTerminalView? LocalView { get; set; }
 
+    private bool _isSelected;
     /// <summary>체크된 세션에만 명령이 전송된다. 새 대상은 안전을 위해 선택하지 않는다.</summary>
-    public bool IsSelected { get; set; }
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, HasSession && value);
+    }
 
     private string _lastOutput = "";
-    /// <summary>이 세션에서 실행한 마지막 브로드캐스트 명령의 출력(축약).</summary>
+    /// <summary>이 세션에서 실행한 마지막 브로드캐스트 명령의 출력.</summary>
     public string LastOutput
     {
         get => _lastOutput;

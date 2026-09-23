@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
-    Multi command: 열린 세션들을 4×4 그리드로 보여주고 브로드캐스트 대상을 체크로 고른다.
-    그리드는 화면 크기에 맞춰 가로·세로를 꽉 채우고(반응형),
-    각 셀에는 마지막 브로드캐스트 결과가 작은 글씨로 표시된다.
+    Multi command: 열린 세션들을 3×3 그리드에 표시한다.
+    선택은 모든 페이지에 걸쳐 유지되며 각 셀의 출력은 스크롤해서 읽을 수 있다.
 -->
 <UserControl
     x:Class="sutty.UI.Views.MultiSessionGrid"
@@ -19,6 +18,7 @@
 
     <Grid Padding="16,12" RowSpacing="10">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
@@ -48,18 +48,61 @@
                 Text="{x:Bind h:Loc.T('· 체크된 세션에만 명령이 전송됩니다', '· commands go only to checked sessions')}" />
         </controls:WrapPanel>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled" SizeChanged="Cells_SizeChanged">
+        <controls:WrapPanel Grid.Row="1" Spacing="8">
+            <Button
+                x:Name="SelectAllButton"
+                Padding="10,6"
+                Click="SelectAll_Click"
+                Content="{x:Bind h:Loc.T('전체 선택', 'Select all')}"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('모든 페이지의 세션을 선택합니다', 'Select sessions on every page')}" />
+            <Button
+                x:Name="ClearSelectionButton"
+                Padding="10,6"
+                Click="ClearSelection_Click"
+                Content="{x:Bind h:Loc.T('전체 해제', 'Clear all')}"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('모든 페이지의 세션 선택을 해제합니다', 'Clear session selection on every page')}" />
+            <Button
+                x:Name="PreviousPageButton"
+                Padding="10,6"
+                Click="PreviousPage_Click"
+                AutomationProperties.Name="{x:Bind h:Loc.T('이전 세션 페이지', 'Previous session page')}"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('이전 페이지', 'Previous page')}">
+                <FontIcon Glyph="&#xE76B;" FontSize="12" />
+            </Button>
+            <TextBlock
+                x:Name="PageText"
+                VerticalAlignment="Center"
+                FontSize="12"
+                Foreground="{ThemeResource TextMuted}" />
+            <Button
+                x:Name="NextPageButton"
+                Padding="10,6"
+                Click="NextPage_Click"
+                AutomationProperties.Name="{x:Bind h:Loc.T('다음 세션 페이지', 'Next session page')}"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('다음 페이지', 'Next page')}">
+                <FontIcon Glyph="&#xE76C;" FontSize="12" />
+            </Button>
+        </controls:WrapPanel>
+
+        <ScrollViewer x:Name="CellsScrollViewer" Grid.Row="2"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                      HorizontalScrollMode="Enabled" VerticalScrollMode="Enabled"
+                      SizeChanged="Cells_SizeChanged">
         <ItemsRepeater
+            x:Name="CellsRepeater"
+            Width="586"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            ElementPrepared="Cells_ElementPrepared"
             ItemsSource="{x:Bind Slots}">
             <ItemsRepeater.Layout>
                 <UniformGridLayout
                     x:Name="GridLayout"
                     ItemsStretch="Fill"
-                    MaximumRowsOrColumns="1"
+                    MaximumRowsOrColumns="3"
                     MinColumnSpacing="8"
-                    MinItemHeight="180"
-                    MinItemWidth="220"
+                    MinItemHeight="160"
+                    MinItemWidth="190"
                     MinRowSpacing="8" />
             </ItemsRepeater.Layout>
             <ItemsRepeater.ItemTemplate>
@@ -79,7 +122,7 @@
                                 Text="{x:Bind h:Loc.T('비어 있음', 'empty')}" />
                         </Border>
 
-                            <!--  세션 슬롯  -->
+                        <!--  세션 슬롯  -->
                         <Border
                             Padding="10"
                             Background="{ThemeResource CardBg}"
@@ -110,16 +153,20 @@
                                     Text="{x:Bind HostText, Mode=OneWay}"
                                     TextTrimming="CharacterEllipsis" />
 
-                                <!--  마지막 브로드캐스트 결과 (작은 글씨, 넘치면 잘림)  -->
-                                <TextBlock
+                                <!--  마지막 브로드캐스트 결과: 긴 출력도 스크롤해서 읽는다.  -->
+                                <ScrollViewer
                                     Grid.Row="2"
-                                    FontFamily="Cascadia Mono, Consolas"
-                                    FontSize="10"
-                                    Foreground="{ThemeResource TextMuted}"
-                                    Text="{x:Bind LastOutput, Mode=OneWay}"
-                                    MaxLines="5"
-                                    TextTrimming="CharacterEllipsis"
-                                    TextWrapping="Wrap" />
+                                    MinHeight="24"
+                                    HorizontalScrollBarVisibility="Disabled"
+                                    VerticalScrollBarVisibility="Auto">
+                                    <TextBlock
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="11"
+                                        Foreground="{ThemeResource TextMuted}"
+                                        Text="{x:Bind LastOutput, Mode=OneWay}"
+                                        IsTextSelectionEnabled="True"
+                                        TextWrapping="Wrap" />
+                                </ScrollViewer>
 
                                 <controls:WrapPanel
                                     Grid.Row="3"
@@ -132,11 +179,13 @@
                                     <TextBlock
                                         FontSize="10.5"
                                         Foreground="{ThemeResource TextMuted}"
+                                        TextWrapping="Wrap"
                                         Text="{x:Bind StateText, Mode=OneWay}" />
                                     <TextBlock
                                         FontFamily="Cascadia Mono, Consolas"
                                         FontSize="10"
                                         Foreground="{ThemeResource TextMuted}"
+                                        TextWrapping="Wrap"
                                         Text="{x:Bind ResultText, Mode=OneWay}" />
                                 </controls:WrapPanel>
                             </Grid>

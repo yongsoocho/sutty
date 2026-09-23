@@ -27,7 +27,11 @@ open PowerShell; the `+` menu also offers CMD. Global **Home**, **Hosts**, **Tra
 1100 logical pixels. **Settings** is a full-page view that covers the shell while sessions stay
 alive. Each selected SSH tab opens **Files**, **Commands**, and **Tunnels** beside or, in narrow
 layouts, below its terminal for the exact host context. Cards, controls, and file panes adapt to
-available width. Multi is an advanced action under Commands rather than a primary destination.
+available width. **Multi Command** is a separate navigation destination (`Alt+8`) that covers
+the central shell with a 3×3 session grid while open shells keep running. It shows up to 16
+local/SSH sessions nine per page and reuses the existing command library on the right. Narrow
+windows retain the 3×3 layout with scrolling. Free-form and saved commands go only to checked
+sessions across all pages; Select all / Clear all also applies to every page.
 
 The clipboard icon beside `CONPTY` / `PTY` dimensions copies the latest rendered command output,
 including errors. PowerShell/CMD prompt markers are session-local and do not edit profile files;
@@ -108,7 +112,11 @@ PowerShell을 열며, `+` 메뉴에서 CMD도 선택할 수 있습니다. 전역
 창의 아래 패널에 엽니다. **Settings**는 셸을 가리는 전체 페이지이며 기존 세션은 계속
 실행됩니다. 선택한 SSH 탭의 **Files**, **Commands**, **Tunnels**는 같은 Host의 터미널 옆이나
 좁은 화면의 아래에 엽니다. 카드·컨트롤·파일 패널은 사용 가능한 너비에 맞춥니다.
-Multi는 주 이동 목적지가 아니라 Commands 아래의 고급 작업입니다.
+**Multi Command**는 별도 이동 탭(`Alt+8`)이며 중앙 셸을 가리고 3×3 세션 그리드를 표시합니다.
+열린 셸은 계속 실행되고, 최대 16개 로컬/SSH 세션을 한 페이지에 9개씩 표시하며 오른쪽에는
+기존 명령 모음집 UI를 재사용합니다. 좁은 화면에서도 3×3 배치를 유지하고 스크롤할 수 있습니다.
+직접 입력·저장 명령은 모든 페이지에서 체크한 세션에만 전송하며 전체 선택 / 전체 해제도
+모든 페이지에 적용합니다.
 
 `CONPTY` / `PTY` 크기 옆의 클립보드 아이콘은 오류를 포함한 마지막 명령의 표시 출력을
 복사합니다. PowerShell/CMD 프롬프트 표시자는 이번 세션에만 적용하며 프로필 파일은

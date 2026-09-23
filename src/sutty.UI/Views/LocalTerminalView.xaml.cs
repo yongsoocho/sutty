@@ -359,6 +359,9 @@ public sealed partial class LocalTerminalView : UserControl
         }
     }
 
+    /// <summary>Start the tab even while the Multi Command grid covers its renderer.</summary>
+    public Task StartAsync() => EnsureTerminalStartedAsync();
+
     private async Task EnsureTerminalStartedAsync()
     {
         if (Volatile.Read(ref _closed) != 0 ||

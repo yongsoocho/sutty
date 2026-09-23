@@ -21,11 +21,20 @@
         </Grid.RowDefinitions>
 
         <!--  헤더  -->
-        <TextBlock
-            FontSize="15"
-            FontWeight="SemiBold"
-            Foreground="{ThemeResource TextPrimary}"
-            Text="Commands" />
+        <StackPanel Spacing="5">
+            <TextBlock
+                FontSize="15"
+                FontWeight="SemiBold"
+                Foreground="{ThemeResource TextPrimary}"
+                Text="{x:Bind h:Loc.T('명령 모음집', 'Command library')}" />
+            <TextBlock
+                x:Name="RunTargetHint"
+                FontSize="11"
+                Foreground="{ThemeResource TextMuted}"
+                Text="{x:Bind h:Loc.T('저장 명령도 체크한 세션에만 전송합니다.', 'Saved commands also run only on checked sessions.')}"
+                TextWrapping="Wrap"
+                Visibility="Collapsed" />
+        </StackPanel>
 
         <!--  검색  -->
         <AutoSuggestBox
@@ -55,7 +64,7 @@
                     x:Name="NewNameBox"
                     FontSize="12"
                     MinHeight="34"
-                    PlaceholderText="Name (e.g. Create LV)"
+                    PlaceholderText="{x:Bind h:Loc.T('이름 (예: 디스크 사용량)', 'Name (e.g. Disk usage)')}"
                     Style="{StaticResource DarkInput}" />
                 <TextBox
                     x:Name="NewTextBox"
@@ -75,7 +84,7 @@
                     Background="{ThemeResource AccentGradient}"
                     BorderThickness="0"
                     Click="Add_Click"
-                    Content="Add"
+                    Content="{x:Bind h:Loc.T('추가', 'Add')}"
                     CornerRadius="7"
                     FontSize="12"
                     FontWeight="SemiBold"
@@ -125,7 +134,7 @@
                                             BorderThickness="0"
                                             Click="Run_Click"
                                             CornerRadius="5"
-                                            ToolTipService.ToolTip="Run in current session">
+                                            ToolTipService.ToolTip="{x:Bind h:Loc.T('명령 실행', 'Run command')}">
                                             <FontIcon
                                                 FontSize="11"
                                                 Foreground="{ThemeResource AccentBlue}"
@@ -139,7 +148,7 @@
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Click="Delete_Click"
-                                            ToolTipService.ToolTip="Delete">
+                                            ToolTipService.ToolTip="{x:Bind h:Loc.T('삭제', 'Delete')}">
                                             <FontIcon
                                                 FontSize="11"
                                                 Foreground="{ThemeResource TextFaint}"
@@ -181,7 +190,7 @@
                                             Background="{ThemeResource AccentGradient}"
                                             BorderThickness="0"
                                             Click="Execute_Click"
-                                            Content="Run"
+                                            Content="{x:Bind h:Loc.T('실행', 'Run')}"
                                             CornerRadius="6"
                                             FontSize="11.5"
                                             FontWeight="SemiBold"
@@ -204,6 +213,7 @@
                     HorizontalAlignment="Center"
                     FontSize="12"
                     Foreground="{ThemeResource TextMuted}"
+                    TextWrapping="Wrap"
                     Text="{x:Bind h:Loc.T('저장된 명령이 없습니다', 'No saved commands yet')}"
                     Visibility="Collapsed" />
             </StackPanel>

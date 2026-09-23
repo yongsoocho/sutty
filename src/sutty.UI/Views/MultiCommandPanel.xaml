@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
-    Multi command 오른쪽 패널: 위 25% = 브로드캐스트 입력, 아래 75% = 저장된 커맨드.
+    Multi command 오른쪽 패널: 브로드캐스트 입력과 공용 명령 라이브러리.
     여기서 실행하는 모든 명령은 그리드에서 체크된 모든 세션으로 전송된다.
 -->
 <UserControl
@@ -10,6 +10,7 @@
     xmlns:controls="using:sutty.UI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:h="using:sutty.UI.Helpers"
+    xmlns:local="using:sutty.UI.Views"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:sutty.UI.ViewModels"
     HorizontalAlignment="Stretch"
@@ -17,14 +18,14 @@
     mc:Ignorable="d">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <Grid RowSpacing="12" Padding="0,0,0,12">
+    <Grid RowSpacing="12" Padding="16,8,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!--  ── 위 25%: 브로드캐스트 입력 ──  -->
+        <!--  ── 체크한 세션에 명령 입력 ──  -->
         <Grid RowSpacing="8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -35,7 +36,7 @@
                 FontSize="15"
                 FontWeight="SemiBold"
                 Foreground="{ThemeResource TextPrimary}"
-                Text="Broadcast" />
+                Text="{x:Bind h:Loc.T('명령 일괄 실행', 'Broadcast command')}" />
 
             <Grid Grid.Row="1" RowSpacing="6">
                 <Grid.RowDefinitions>
@@ -62,12 +63,12 @@
                     Background="{ThemeResource AccentGradient}"
                     BorderThickness="0"
                     Click="RunBroadcast_Click"
-                    Content="Run on checked sessions"
+                    Content="{x:Bind h:Loc.T('체크한 세션에서 실행', 'Run on checked sessions')}"
                     CornerRadius="7"
                     FontSize="12"
                     FontWeight="SemiBold"
                     Foreground="{ThemeResource AccentForeground}"
-                    ToolTipService.ToolTip="Run on all checked sessions">
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('체크한 모든 세션에서 실행', 'Run on all checked sessions')}">
                     <Button.Resources>
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
                         <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
@@ -93,12 +94,16 @@
             </Grid>
         </Grid>
 
+        <local:CommandPanel
+            x:Name="CommandLibrary"
+            Grid.Row="1" />
+
         <!--  ── 체크된 SSH 세션 대상 다중 SFTP ──  -->
         <Expander
-            Grid.Row="1"
+            Grid.Row="2"
             HorizontalAlignment="Stretch"
             HorizontalContentAlignment="Stretch"
-                    Header="{x:Bind h:Loc.T('다중 SFTP 전송', 'Multi-server SFTP transfer')}">
+            Header="{x:Bind h:Loc.T('다중 SFTP 전송', 'Multi-server SFTP transfer')}">
             <StackPanel Padding="0,8,0,2" Spacing="7">
                 <TextBox
                     x:Name="SftpRemoteDirectoryBox"
@@ -230,121 +235,6 @@
             </StackPanel>
         </Expander>
 
-        <!--  ── 아래: 저장된 커맨드 (실행 = 브로드캐스트) ──  -->
-        <Grid Grid.Row="2" RowSpacing="8">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <TextBlock
-                CharacterSpacing="80"
-                FontSize="10.5"
-                FontWeight="SemiBold"
-                Foreground="{ThemeResource TextMuted}"
-                TextWrapping="Wrap"
-                Text="{x:Bind h:Loc.T('SAVED COMMANDS · 실행하면 체크된 모든 세션으로', 'SAVED COMMANDS · runs on all checked sessions')}" />
-
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                <StackPanel Padding="0,0,0,10">
-                    <ItemsControl x:Name="CommandsList" ItemsSource="{x:Bind Items}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:CommandItemVm">
-                                <Border
-                                    Margin="0,0,0,6"
-                                    Padding="11,9"
-                                    Background="{ThemeResource CardBg}"
-                                    BorderBrush="{ThemeResource CardBorder}"
-                                    BorderThickness="1"
-                                    CornerRadius="8">
-                                    <StackPanel Spacing="6">
-                                        <Grid ColumnSpacing="6">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock
-                                                VerticalAlignment="Center"
-                                                FontSize="12"
-                                                FontWeight="SemiBold"
-                                                Foreground="{ThemeResource TextPrimary}"
-                                                Text="{x:Bind Name}"
-                                                TextTrimming="CharacterEllipsis" />
-                                            <Button
-                                                Grid.Column="1"
-                                                Width="22"
-                                                Height="22"
-                                                Padding="0"
-                                                Background="{ThemeResource AccentTint}"
-                                                BorderThickness="0"
-                                                Click="Run_Click"
-                                                CornerRadius="5"
-                                                ToolTipService.ToolTip="Run on all checked sessions">
-                                                <FontIcon
-                                                    FontSize="11"
-                                                    Foreground="{ThemeResource AccentBlue}"
-                                                    Glyph="&#xE768;" />
-                                            </Button>
-                                        </Grid>
-
-                                        <TextBlock
-                                            FontFamily="Cascadia Mono, Consolas"
-                                            FontSize="10.5"
-                                            Foreground="{ThemeResource TextMuted}"
-                                            Text="{x:Bind CommandText}"
-                                            TextWrapping="Wrap" />
-
-                                        <!--  $n 입력칸: Run을 누르면 펼쳐진다  -->
-                                        <StackPanel Spacing="6" Visibility="{x:Bind ShowParams, Mode=OneWay}">
-                                            <ItemsControl ItemsSource="{x:Bind Params}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:CommandParamVm">
-                                                    <TextBox
-                                                            Margin="0,0,0,6"
-                                                            MinHeight="32"
-                                                            CornerRadius="6"
-                                                            FontFamily="Cascadia Mono, Consolas"
-                                                            FontSize="11.5"
-                                                            PlaceholderText="{x:Bind Label}"
-                                                            Text="{x:Bind Value, Mode=TwoWay}" />
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                            <Button
-                                                Height="30"
-                                                HorizontalAlignment="Stretch"
-                                                Background="{ThemeResource AccentGradient}"
-                                                BorderThickness="0"
-                                                Click="Execute_Click"
-                                                Content="Run"
-                                                CornerRadius="6"
-                                                FontSize="11.5"
-                                                FontWeight="SemiBold"
-                                                Foreground="{ThemeResource AccentForeground}">
-                                                <Button.Resources>
-                                                    <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
-                                                    <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
-                                                </Button.Resources>
-                                            </Button>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock
-                        x:Name="EmptyText"
-                        Margin="0,24,0,0"
-                        HorizontalAlignment="Center"
-                        FontSize="12"
-                        Foreground="{ThemeResource TextMuted}"
-                        TextWrapping="Wrap"
-                        Text="{x:Bind h:Loc.T('저장된 명령이 없습니다 — Command 탭에서 추가하세요', 'No saved commands — add them in the Command tab')}"
-                        Visibility="Collapsed" />
-                </StackPanel>
-            </ScrollViewer>
-        </Grid>
     </Grid>
     </ScrollViewer>
 </UserControl>
