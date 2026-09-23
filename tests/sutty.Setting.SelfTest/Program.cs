@@ -177,6 +177,7 @@ try
     ThemeCatalogSelfTests.Run();
     SettingsResetSelfTests.Run(scratch);
     ShellStateSelfTests.Run();
+    MultiSessionSelectionSelfTests.Run();
     await LocalFileBrowserSelfTests.RunAsync(scratch);
 
     File.WriteAllText(SettingsService.SettingsPath, "{broken");

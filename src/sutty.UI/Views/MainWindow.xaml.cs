@@ -33,6 +33,7 @@ namespace sutty.UI.Views
 
         /// <summary>동시에 열 수 있는 로컬/SSH 작업 탭 최대 개수.</summary>
         private const int MaxSessions = 16;
+        private const int BroadcastOutputPreviewLimit = 16_384;
         private static readonly TimeSpan BroadcastCommandTimeout = TimeSpan.FromSeconds(60);
 
         private readonly SessionManager _sessions = new();
@@ -529,7 +530,9 @@ namespace sutty.UI.Views
             _updatingDetailsLayout = true;
             try
             {
-                _isBottomDetailsPane = Root.ActualWidth > 0 && Root.ActualWidth < 1100;
+                // Multi Command owns the center grid and always keeps its command
+                // library on the right. Other supporting tools may stack below.
+                _isBottomDetailsPane = !_isMultiView && Root.ActualWidth > 0 && Root.ActualWidth < 1100;
                 Grid.SetRow(RightPanelHost, _isBottomDetailsPane ? 1 : 0);
                 Grid.SetColumn(RightPanelHost, _isBottomDetailsPane ? 1 : 2);
                 Grid.SetColumnSpan(RightPanelHost, _isBottomDetailsPane ? 2 : 1);
@@ -547,12 +550,15 @@ namespace sutty.UI.Views
                 }
                 else
                 {
-                    var maximum = Math.Min(800, Math.Max(360, Root.ActualWidth - 48 - 520));
+                    var available = Math.Max(1, Root.ActualWidth - 48);
+                    var minimum = _isMultiView ? Math.Min(280, available * 0.45) : 360;
+                    var maximum = _isMultiView
+                        ? Math.Min(600, Math.Max(minimum, available * 0.4))
+                        : Math.Min(800, Math.Max(360, available - 520));
                     RightPanelColumn.MaxWidth = maximum;
-                    RightPanelColumn.MinWidth = 360;
-                    RightPanelColumn.Width = new GridLength(Math.Clamp(_detailsPaneWidth, 360, maximum));
+                    RightPanelColumn.MinWidth = minimum;
+                    RightPanelColumn.Width = new GridLength(Math.Clamp(_detailsPaneWidth, minimum, maximum));
                 }
-                UpdateMultiToolLayout();
             }
             finally { _updatingDetailsLayout = false; }
         }
@@ -569,17 +575,6 @@ namespace sutty.UI.Views
             ShellRow.Height = new GridLength(1, GridUnitType.Star);
             RightPanel.Content = null;
             _navigation.SetDetailsPaneOpen(false);
-        }
-
-        private void UpdateMultiToolLayout()
-        {
-            var sideBySide = _isMultiView && _isBottomDetailsPane;
-            MultiCommandsColumn.Width = sideBySide
-                ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-            MultiTargetsRow.Height = _isMultiView ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-            ToolContentRow.Height = sideBySide ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-            Grid.SetColumn(RightPanel, sideBySide ? 1 : 0);
-            Grid.SetRow(RightPanel, sideBySide ? 1 : 2);
         }
 
         private void CloseDetailsPane_Click(object sender, RoutedEventArgs e)
@@ -1795,7 +1790,8 @@ namespace sutty.UI.Views
                         : result.Succeeded
                             ? Helpers.Loc.T("(출력 없음)", "(no output)")
                             : Helpers.Loc.T("(출력 없이 실패)", "(failed with no output)")
-                    : output.Length > 400 ? output[..400] + "…" : output;
+                    : output.Length > BroadcastOutputPreviewLimit
+                        ? output[..BroadcastOutputPreviewLimit] + "…" : output;
             }
             catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested)
             {
@@ -2132,6 +2128,7 @@ namespace sutty.UI.Views
             TitleTabs.SelectedItem = tab;
             SwitchSelectedSession();
             UpdateSessionArea();
+            await view.StartAsync();
             QueueWorkspaceSnapshot();
             return true;
         }
@@ -3641,12 +3638,11 @@ namespace sutty.UI.Views
             EmptyTabHeader.Visibility = TitleTabs.TabItems.Count == 0
                 ? Visibility.Visible
                 : Visibility.Collapsed;
-            var fullPage = !_isMultiView && _shellState.IsFullPageVisible;
+            var fullPage = _shellState.IsFullPageVisible;
             FullPageOverlay.Visibility = fullPage ? Visibility.Visible : Visibility.Collapsed;
-            SessionHost.Visibility = fullPage ? Visibility.Collapsed : Visibility.Visible;
+            SessionHost.Visibility = _shellState.IsSessionContentVisible ? Visibility.Visible : Visibility.Collapsed;
             MultiGrid.Visibility = _isMultiView ? Visibility.Visible : Visibility.Collapsed;
-            UpdateMultiToolLayout();
-            NoSessionState.Visibility = !fullPage && TitleTabs.SelectedItem is null
+            NoSessionState.Visibility = _shellState.IsSessionContentVisible && TitleTabs.SelectedItem is null
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 

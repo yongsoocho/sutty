@@ -11,6 +11,7 @@ internal static class ShellStateSelfTests
         ConnectionPersistenceRequiresSuccessAndConsent();
         SessionSectionsFollowTheActiveWorkspace();
         SwitchingTabsPreservesOpenTools();
+        MultiCommandOwnsTheCenterWhileRetainingSessionState();
         InvalidEnumValuesAreRejected();
         ForgettingOnlyClearsTheActiveWorkspace();
         Console.WriteLine("Shell state and navigation self-tests passed.");
@@ -159,10 +160,11 @@ internal static class ShellStateSelfTests
         foreach (var page in Enum.GetValues<AppGlobalPage>())
         {
             navigation.NavigateGlobal(page);
-            Assert(shell.IsSessionContentVisible == (page != AppGlobalPage.Settings) &&
+            Assert(shell.IsSessionContentVisible == (page is not (AppGlobalPage.Settings or AppGlobalPage.MultiCommand)) &&
                    shell.IsFullPageVisible == (page == AppGlobalPage.Settings) && shell.IsGlobalContentVisible &&
+                   shell.IsMultiCommandVisible == (page == AppGlobalPage.MultiCommand) &&
                    ReferenceEquals(shell.ActiveWorkspace, workspace),
-                $"{page} preserves the active session and only Settings covers the shell");
+                $"{page} preserves the active session and selects the appropriate central content");
         }
 
         navigation.NavigateWorkspace(workspace, SessionWorkspaceSection.Files);
@@ -218,6 +220,43 @@ internal static class ShellStateSelfTests
         navigation.ActivateSession(null);
         Assert(navigation.SessionSection == SessionWorkspaceSection.Terminal,
             "explicit return to local shell closes the supporting tool");
+    }
+
+    private static void MultiCommandOwnsTheCenterWhileRetainingSessionState()
+    {
+        var shell = new AppShellViewModel();
+        var navigation = new NavigationService(shell);
+        var workspace = CreateWorkspace();
+        var notifications = new HashSet<string>();
+        shell.PropertyChanged += (_, args) => notifications.Add(args.PropertyName ?? "");
+
+        navigation.ActivateSession(workspace);
+        navigation.NavigateGlobal(AppGlobalPage.MultiCommand);
+        navigation.SetDetailsPaneOpen(true);
+        Assert(shell.IsMultiCommandVisible && !shell.IsSessionContentVisible && !shell.IsFullPageVisible,
+            "Multi Command replaces the central shell with the grid");
+        Assert(ReferenceEquals(shell.ActiveWorkspace, workspace) && shell.IsDetailsPaneOpen,
+            "Multi Command retains the active session and right command pane");
+
+        navigation.SwitchSession(null);
+        Assert(shell.IsMultiCommandVisible && !shell.IsSessionContentVisible && shell.IsDetailsPaneOpen,
+            "switching to a local tab leaves the grid and command pane open");
+        navigation.SwitchSession(workspace);
+        Assert(shell.IsMultiCommandVisible && !shell.IsSessionContentVisible && shell.IsDetailsPaneOpen,
+            "switching back to SSH leaves the grid and command pane open");
+
+        navigation.NavigateGlobal(AppGlobalPage.Settings);
+        Assert(shell.IsFullPageVisible && !shell.IsMultiCommandVisible && !shell.IsSessionContentVisible,
+            "Settings replaces the grid with its full page");
+        navigation.NavigateGlobal(AppGlobalPage.MultiCommand);
+        notifications.Clear();
+        navigation.ActivateSession(workspace);
+        Assert(shell.IsSessionContentVisible && !shell.IsMultiCommandVisible &&
+               ReferenceEquals(shell.ActiveWorkspace, workspace),
+            "returning to the shell restores the existing session");
+        Assert(notifications.Contains(nameof(AppShellViewModel.IsSessionContentVisible)) &&
+               notifications.Contains(nameof(AppShellViewModel.IsMultiCommandVisible)),
+            "returning to the shell notifies both central-content bindings");
     }
 
     private static void InvalidEnumValuesAreRejected()

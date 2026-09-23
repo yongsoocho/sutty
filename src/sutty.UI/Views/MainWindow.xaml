@@ -299,12 +299,13 @@
                 </TabView.TabStripHeader>
             </TabView>
 
-            <!--  The selected shell stays mounted while auxiliary tools open beside it.  -->
+            <!-- The shell stays mounted; Multi Command uses this same central area for its session grid. -->
             <Grid Grid.Row="1" Background="{ThemeResource PanelBg}">
                 <ContentControl
                     x:Name="SessionHost"
                     HorizontalContentAlignment="Stretch"
                     VerticalContentAlignment="Stretch" />
+                <local:MultiSessionGrid x:Name="MultiGrid" Visibility="Collapsed" />
                 <StackPanel
                     x:Name="NoSessionState"
                     HorizontalAlignment="Center"
@@ -370,17 +371,11 @@
                 BorderBrush="{ThemeResource ShellBorder}"
                 BorderThickness="1,0,0,0">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition x:Name="MultiCommandsColumn" Width="0" />
-                    </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition x:Name="MultiTargetsRow" Height="0" />
-                        <RowDefinition x:Name="ToolContentRow" Height="*" />
+                        <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <Button
-                        Grid.ColumnSpan="2"
                         Margin="8,4"
                         HorizontalAlignment="Right"
                         AutomationProperties.Name="{x:Bind h:Loc.T('보조 패널 닫기', 'Close side panel')}"
@@ -388,10 +383,9 @@
                         Click="CloseDetailsPane_Click">
                         <FontIcon Glyph="&#xE711;" FontSize="12" />
                     </Button>
-                        <local:MultiSessionGrid x:Name="MultiGrid" Grid.Row="1" Visibility="Collapsed" />
                         <ContentControl
                             x:Name="RightPanel"
-                            Grid.Row="2"
+                            Grid.Row="1"
                             HorizontalContentAlignment="Stretch"
                             VerticalContentAlignment="Stretch" />
                 </Grid>
