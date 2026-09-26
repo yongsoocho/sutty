@@ -79,6 +79,14 @@
                             FontSize="14"
                             Glyph="&#xE734;" />
                     </Button>
+                    <Button
+                        x:Name="DeleteButton"
+                        Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        Background="Transparent" BorderThickness="0"
+                        Click="DeleteMenuItem_Click" Tapped="DeleteButton_Tapped">
+                        <FontIcon FontSize="11" Glyph="&#xE711;" Foreground="{ThemeResource TextFaint}" />
+                    </Button>
                 </StackPanel>
             </Grid>
             <TextBlock

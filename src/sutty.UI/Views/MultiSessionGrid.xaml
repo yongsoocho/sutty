@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
     Multi command: 열린 세션들을 3×3 그리드에 표시한다.
-    선택은 모든 페이지에 걸쳐 유지되며 각 셀의 출력은 스크롤해서 읽을 수 있다.
+    현재는 첫 9개 탭만 선택할 수 있으며 각 셀의 출력은 스크롤해서 읽을 수 있다.
 -->
 <UserControl
     x:Class="sutty.UI.Views.MultiSessionGrid"
@@ -48,19 +48,21 @@
                 Text="{x:Bind h:Loc.T('· 연결된 Sutty SSH만 선택 · 터미널 상태와 별도 실행', '· connected Sutty SSH only · execution is separate from terminal state')}" />
         </controls:WrapPanel>
 
-        <controls:WrapPanel Grid.Row="1" Spacing="8">
+        <StackPanel Grid.Row="1" Spacing="6">
+        <controls:WrapPanel Spacing="8">
             <Button
                 x:Name="SelectAllButton"
                 Padding="10,6"
                 Click="SelectAll_Click"
-                Content="{x:Bind h:Loc.T('전체 선택', 'Select all')}"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('모든 페이지의 연결된 Sutty SSH를 선택합니다', 'Select connected Sutty SSH sessions on every page')}" />
+                Content="{x:Bind h:Loc.T('SSH 전체 선택', 'Select all SSH')}"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('표시된 카드 중 연결된 Sutty SSH만 선택합니다', 'Select connected Sutty SSH among the visible cards')}" />
             <Button
                 x:Name="ClearSelectionButton"
                 Padding="10,6"
                 Click="ClearSelection_Click"
                 Content="{x:Bind h:Loc.T('전체 해제', 'Clear all')}"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('모든 페이지의 세션 선택을 해제합니다', 'Clear session selection on every page')}" />
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('숨겨진 카드를 포함한 모든 선택을 해제합니다', 'Clear every selection, including hidden cards')}" />
+            <StackPanel x:Name="PaginationControls" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
             <Button
                 x:Name="PreviousPageButton"
                 Padding="10,6"
@@ -82,28 +84,23 @@
                 ToolTipService.ToolTip="{x:Bind h:Loc.T('다음 페이지', 'Next page')}">
                 <FontIcon Glyph="&#xE76C;" FontSize="12" />
             </Button>
+            </StackPanel>
         </controls:WrapPanel>
+        <TextBlock x:Name="SelectionNoticeText" FontSize="11" Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap" />
+        </StackPanel>
 
         <ScrollViewer x:Name="CellsScrollViewer" Grid.Row="2"
                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                      HorizontalScrollMode="Enabled" VerticalScrollMode="Enabled"
-                      SizeChanged="Cells_SizeChanged">
+                      HorizontalScrollMode="Enabled" VerticalScrollMode="Enabled">
         <ItemsRepeater
             x:Name="CellsRepeater"
             Width="586"
+            Height="646"
             HorizontalAlignment="Left"
             VerticalAlignment="Top"
-            ElementPrepared="Cells_ElementPrepared"
             ItemsSource="{x:Bind Slots}">
             <ItemsRepeater.Layout>
-                <UniformGridLayout
-                    x:Name="GridLayout"
-                    ItemsStretch="Fill"
-                    MaximumRowsOrColumns="3"
-                    MinColumnSpacing="8"
-                    MinItemHeight="210"
-                    MinItemWidth="190"
-                    MinRowSpacing="8" />
+                <controls:MultiSessionFixedGridLayout />
             </ItemsRepeater.Layout>
             <ItemsRepeater.ItemTemplate>
                 <DataTemplate x:DataType="vm:MultiSlotVm">
@@ -144,7 +141,9 @@
                                     Foreground="{ThemeResource TextPrimary}"
                                     IsEnabled="{x:Bind CanBroadcast, Mode=OneWay}"
                                     ToolTipService.ToolTip="{x:Bind SelectionHelp, Mode=OneWay}"
-                                    IsChecked="{x:Bind IsSelected, Mode=TwoWay}">
+                                    Tag="{x:Bind}"
+                                    Click="SessionSelection_Click"
+                                    IsChecked="{x:Bind IsSelected, Mode=OneWay}">
                                     <TextBlock Text="{x:Bind Title, Mode=OneWay}" TextWrapping="Wrap" MaxLines="2" />
                                 </CheckBox>
                                 <StackPanel Grid.Row="1" Spacing="2">

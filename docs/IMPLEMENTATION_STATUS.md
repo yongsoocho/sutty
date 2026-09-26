@@ -62,7 +62,7 @@ changes. This is Alpha 4 development work, not an exact published or signed cand
 | Terminal/Files linkage | Files previews and copies a safely quoted POSIX directory command without a newline; it never injects it into a running TUI or executes it. Terminal → Files uses an explicit absolute path. Automatic shell-output parsing/current-directory tracking is not implemented. |
 | Multi SFTP | Explicitly checked SFTP sessions support 1→N upload and N→1 download. A preflight dialog reviews the targets, source, destination, and conflict policy; server results are isolated, name collisions use deterministic server folders, successful targets remain complete, and retry addresses only failed/incomplete targets with the original policy. New, retry, and restored batches hold a target lease for every executing server until that batch ends; batch-wide global Pause/Cancel remains unavailable. |
 | Saved Hosts | Explicit SQLite profiles support create/update, credential-free duplicate, delete, search, tags, groups, environments, favorites, and authentication aliases. Existing format imports now preview per-item additions, changes, duplicates, and errors with Add/Skip/Copy/Update choices; local credentials are not copied to a different endpoint. |
-| Definition sharing | Selected hosts, routes, tunnels, groups/tags, and commands can be previewed and exported as schemaVersion 1 JSON, then selectively imported (4 MiB / 1,000 definitions). Credentials, vault IDs, private-key paths, trust, and histories are omitted; imported external ProxyCommand routes are blocked. Each PC supplies its own authentication. Server identifiers and tokens embedded in user-authored command text still need manual review. |
+| Definition sharing | The Hosts/History entry point is removed. Retained sharing/preview code supports selected hosts, routes, tunnels, groups/tags, and commands can be previewed and exported as schemaVersion 1 JSON, then selectively imported (4 MiB / 1,000 definitions). Credentials, vault IDs, private-key paths, trust, and histories are omitted; imported external ProxyCommand routes are blocked. Each PC supplies its own authentication. Server identifiers and tokens embedded in user-authored command text still need manual review. |
 | Saved Host launcher | `sutty.UI.exe --host <id or exact name>` resolves an existing Saved Host and enters the same secure connection flow. It rejects credential arguments and does not replace the normal window's Workspace snapshot. |
 | Credential vault | Opt-in AES-256-GCM records use a random master key protected for the current Windows user. Plaintext secrets are excluded from settings, SQLite, history, and crash messages. |
 | Connection history | Every completed attempt appends success, failure, or cancellation, bounded diagnostic code, and duration. Duplicate attempts remain separate rows. Retention and frequent-host count are settings. |
@@ -98,6 +98,20 @@ changes. This is Alpha 4 development work, not an exact published or signed cand
 - A credential-free atomic transfer queue survives process restart, converts abandoned running work to interrupted state, preserves completed targets, and exposes explicit restore/resume actions in Files and Multi. Focused tests also cover competing store instances and queue writers, a 32-contender single-winner claim, stale/idempotent lease disposal, completed-target rejection, eligible cancelled-target retry, and cross-process target exclusion.
 - A credentialed live-server harness now covers isolated connection-information/reconnect checks, smoke, disconnect/resume fault injection, configurable 100 GB/100,000-file scale, and 16-session soak modes. These modes have not been run without an approved server, and their candidate writer cannot promote a successful automated subset beyond `Blocked` until the full gate coverage is recorded.
 - A manual signed-MSIX workflow validates the production PFX, signs and verifies separate x64 and ARM64 outputs, and emits architecture-specific App Installer descriptors that support controlled update and rollback. A production certificate and deployment endpoint are still required.
+
+## Usability follow-up — 2026-09-27
+
+Saved/favorite and recent-host cards have an upper-right X with contextual confirmation. Recent deletion removes one connection_log id and preserves all saved profiles and other attempts. The Hosts/History sharing shortcut was removed; underlying sharing code and Settings host imports remain. Successful one-line Open clears its submitted draft without clearing newer input. Files names its real SFTP endpoint and explains using a destination connection through SSH Jump for another server.
+
+Multi uses explicit three-column placement rather than adaptive maximum-column wrapping. Previous/next/page controls are hidden but internal paging remains. The current screen exposes the first nine tabs; bulk and individual selection target visible connected Sutty SSH only, with explicit excluded counts. Hidden selections cannot enter a broadcast and Clear all removes stale selections. These changes do not extend raw terminal broadcasting or infer a nested SSH target.
+
+Validation: x64 Debug/Release and ARM64 Debug UI builds passed with zero warnings/errors in
+isolated `artifacts/usability-*` outputs. Command and Setting self-tests passed, including exact
+history deletion isolation, mixed 16-tab selection, hidden/stale/disconnected targets, reorder
+retention, and fractional/unbounded viewport geometry. Product-scope, live-evidence/history,
+XML and whitespace checks passed. Read-only review found no remaining concrete defect. These
+checks do not establish actual WinUI rendering/click timing or live SSH Jump acceptance; no new
+manual UI/server/install validation or live evidence was performed.
 
 ## Local verification — 2026-09-27
 

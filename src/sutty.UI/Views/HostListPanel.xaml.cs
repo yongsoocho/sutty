@@ -24,6 +24,7 @@ public sealed partial class HostListPanel : UserControl
     private readonly List<HostInfoModel> _allRecent = [];
     private string _currentQuery = "";
     private bool _storeUnavailable;
+    private bool _deleteActionInProgress;
     public IntPtr OwnerWindowHandle { get; set; }
 
     public ObservableCollection<HostInfoModel> SavedHosts { get; } = [];
@@ -115,24 +116,37 @@ public sealed partial class HostListPanel : UserControl
 
     private async void OnDeleteRequested(object? sender, HostInfoModel host)
     {
-        if (!host.IsSavedProfile || string.IsNullOrWhiteSpace(host.ProfileId)) return;
-
-        var dialog = new ContentDialog
-        {
-            Title = Helpers.Loc.T("저장 호스트 삭제", "Delete saved host"),
-            Content = Helpers.Loc.T(
-                $"'{host.Alias}' 저장 호스트를 삭제할까요? 접속 기록은 유지됩니다.",
-                $"Delete the saved host '{host.Alias}'? Connection history will be kept."),
-            PrimaryButtonText = Helpers.Loc.T("삭제", "Delete"),
-            CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = XamlRoot,
-        };
-
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (_deleteActionInProgress ||
+            (!host.IsHistoryEntry && (!host.IsSavedProfile || string.IsNullOrWhiteSpace(host.ProfileId)))) return;
+        _deleteActionInProgress = true;
         try
         {
-            if (!HostProfileStore.Delete(host.ProfileId)) return;
+            var dialog = new ContentDialog
+            {
+                Title = host.IsHistoryEntry
+                    ? Helpers.Loc.T("접속 기록 삭제", "Delete connection history entry")
+                    : Helpers.Loc.T("저장 호스트 삭제", "Delete saved host"),
+                Content = host.IsHistoryEntry
+                    ? Helpers.Loc.T(
+                        $"'{host.Alias}'의 이 접속 기록만 삭제할까요? 저장 호스트와 즐겨찾기, 다른 접속 기록은 유지됩니다.",
+                        $"Delete only this connection history entry for '{host.Alias}'? Saved hosts, favorites, and other connection history will be kept.")
+                    : Helpers.Loc.T(
+                        $"'{host.Alias}' 저장 호스트를 삭제할까요? 접속 기록은 유지됩니다.",
+                        $"Delete the saved host '{host.Alias}'? Connection history will be kept."),
+                PrimaryButtonText = Helpers.Loc.T("삭제", "Delete"),
+                CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+            if (host.IsHistoryEntry)
+            {
+                HostHistoryStore.DeleteEntry(host.HistoryEntryId!.Value);
+                RefreshFromStore();
+                return;
+            }
+            if (!HostProfileStore.Delete(host.ProfileId!)) { RefreshFromStore(); return; }
 
             if (!string.IsNullOrWhiteSpace(host.CredentialId))
             {
@@ -157,12 +171,12 @@ public sealed partial class HostListPanel : UserControl
             System.Diagnostics.Debug.WriteLine($"Saved-host delete failed: {error.GetType().Name}");
             await ShowStorageActionErrorAsync();
         }
-    }
-
-    private async void ShareDefinitions_Click(object sender, RoutedEventArgs e)
-    {
-        await SharedDefinitionsDialog.ShowAsync(XamlRoot, OwnerWindowHandle);
-        RefreshFromStore();
+        catch (Exception error) when (error is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        {
+            // A competing dialog must not turn a failed confirmation into consent.
+            System.Diagnostics.Debug.WriteLine($"Host removal dialog unavailable: {error.GetType().Name}");
+        }
+        finally { _deleteActionInProgress = false; }
     }
 
     private async void OnDuplicateRequested(object? sender, HostInfoModel host)
@@ -213,8 +227,8 @@ public sealed partial class HostListPanel : UserControl
         {
             Title = Helpers.Loc.T("호스트 저장소 오류", "Host storage error"),
             Content = Helpers.Loc.T(
-                "저장 호스트 변경을 완료하지 못했습니다. 저장소 접근 권한과 디스크 상태를 확인하세요.",
-                "The saved-host change could not be completed. Check storage permissions and disk health."),
+                "호스트 또는 접속 기록 변경을 완료하지 못했습니다. 저장소 접근 권한과 디스크 상태를 확인하세요.",
+                "The host or connection history change could not be completed. Check storage permissions and disk health."),
             CloseButtonText = "OK",
             XamlRoot = XamlRoot,
         };
@@ -281,6 +295,7 @@ public sealed partial class HostListPanel : UserControl
     private static HostInfoModel FromHistory(HostHistoryEntry entry, HostProfile? profile) => new()
     {
         Id = entry.Id,
+        HistoryEntryId = entry.Id,
         ProfileId = profile?.Id,
         CredentialId = profile?.CredentialId,
         Alias = entry.Alias,

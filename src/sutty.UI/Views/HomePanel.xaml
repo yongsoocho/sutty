@@ -374,7 +374,7 @@
                                     <ColumnDefinition Width="88" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock x:Name="RouteHostLabel" Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('프록시 주소', 'PROXY HOST')}" />
+                                    <TextBlock x:Name="RouteHostLabel" Style="{StaticResource FormLabel}" />
                                     <TextBox x:Name="ProxyHostBox" Style="{StaticResource FormInput}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1">
@@ -389,13 +389,16 @@
                             </Grid>
                             <TextBox
                                 x:Name="ProxyUsernameBox"
-                                Header="{x:Bind h:Loc.T('프록시 사용자 (선택)', 'Proxy user (optional)')}"
                                 Style="{StaticResource FormInput}" />
                             <PasswordBox
                                 x:Name="ProxyPasswordBox"
-                                Header="{x:Bind h:Loc.T('프록시 비밀번호 (선택)', 'Proxy password (optional)')}"
                                 Style="{StaticResource FormPassword}" />
                             <StackPanel x:Name="JumpOptionsPanel" Spacing="8" Visibility="Collapsed">
+                                <TextBlock
+                                    FontSize="10.5"
+                                    Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('연결 폼 상단의 호스트·사용자·인증은 목적지 서버, 점프 호스트는 경유 서버입니다. Terminal과 Files 모두 목적지 서버에 연결됩니다.', 'The main host, user, and authentication fields specify the destination; the jump host is the relay. Terminal and Files both connect to the destination.')}"
+                                    TextWrapping="Wrap" />
                                 <ComboBox
                                     x:Name="JumpAuthCombo"
                                     Header="{x:Bind h:Loc.T('점프 호스트 인증', 'Jump-host authentication')}"

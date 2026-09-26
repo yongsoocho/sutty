@@ -257,12 +257,17 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Grid ColumnSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
                             <FontIcon FontSize="13" Foreground="{ThemeResource AccentTeal}" Glyph="&#xE968;" />
-                            <TextBlock VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{ThemeResource TextPrimary}"
-                                       Text="{x:Bind h:Loc.T('원격', 'REMOTE')}" />
-                        </StackPanel>
+                            <TextBlock x:Name="RemoteTargetText" Grid.Column="1"
+                                       VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis"
+                                       Foreground="{ThemeResource TextPrimary}" />
+                        </Grid>
                         <TextBlock x:Name="RemoteSelectionText" Grid.Column="1" VerticalAlignment="Center"
                                    FontSize="10" Foreground="{ThemeResource TextMuted}"
                                    Text="{x:Bind h:Loc.T('선택 없음', 'No selection')}" />
