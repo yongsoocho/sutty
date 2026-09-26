@@ -51,6 +51,9 @@ public sealed partial class HostCard : UserControl
     private void PrimaryActionButton_Tapped(object sender, TappedRoutedEventArgs e)
         => e.Handled = true;
 
+    private void DeleteButton_Tapped(object sender, TappedRoutedEventArgs e)
+        => e.Handled = true;
+
     private void PrimaryActionButton_Click(object sender, RoutedEventArgs e)
     {
         if (Host is not null)
@@ -92,8 +95,15 @@ public sealed partial class HostCard : UserControl
         ToolTipService.SetToolTip(PrimaryActionButton, targetLabel);
         AutomationProperties.SetName(PrimaryActionButton, targetLabel);
 
-        DeleteMenuItem.Visibility = Host.IsSavedProfile ? Visibility.Visible : Visibility.Collapsed;
-        DeleteMenuItem.Text = Helpers.Loc.T("저장 호스트 삭제", "Delete saved host");
+        var canDelete = Host.IsHistoryEntry || Host.IsSavedProfile && hasSavedProfile;
+        var deleteLabel = Host.IsHistoryEntry
+            ? Helpers.Loc.T("이 접속 기록 삭제", "Delete this connection history entry")
+            : Helpers.Loc.T("저장 호스트 삭제", "Delete saved host");
+        DeleteMenuItem.Visibility = DeleteButton.Visibility = canDelete ? Visibility.Visible : Visibility.Collapsed;
+        DeleteMenuItem.Text = deleteLabel;
+        var deleteTargetLabel = $"{deleteLabel}: {Host.Alias} ({Host.Hostname})";
+        ToolTipService.SetToolTip(DeleteButton, deleteTargetLabel);
+        AutomationProperties.SetName(DeleteButton, deleteTargetLabel);
         DuplicateMenuItem.Visibility = Host.IsSavedProfile && !Host.IsExternalCommand ? Visibility.Visible : Visibility.Collapsed;
         DuplicateMenuItem.Text = Helpers.Loc.T("저장 호스트 복제", "Duplicate saved host");
         AuthenticationAliasMenuItem.Visibility = Host.IsSavedProfile && !Host.IsExternalCommand ? Visibility.Visible : Visibility.Collapsed;

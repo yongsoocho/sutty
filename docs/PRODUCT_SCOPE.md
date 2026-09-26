@@ -32,12 +32,13 @@ open PowerShell; the `+` menu also offers CMD. Global **Home**, **Hosts**, **Tra
 alive. Each selected SSH tab opens **Files**, **Commands**, and **Tunnels** beside or, in narrow
 layouts, below its terminal for the exact host context. Cards, controls, and file panes adapt to
 available width. **Multi Command** is a separate navigation destination (`Alt+8`) that covers
-the central shell with a 3×3 session grid while open shells keep running. It shows up to 16
-local/SSH sessions nine per page and reuses the existing command library on the right. Narrow
+the central shell with a 3×3 session grid while open shells keep running. It shows the first nine
+of up to 16 local/SSH tabs and reuses the existing command library on the right. Pagination controls
+are hidden; their internal implementation remains. Narrow
 windows retain the 3×3 layout with scrolling. Free-form and saved commands go only to checked,
-connected Sutty SSH sessions across all pages after an exact-target/command preview. Local
+connected Sutty SSH sessions in the visible grid after an exact-target/command preview. Local
 and external terminals cannot receive Multi command input. Select all / Clear all applies to
-every page. Structured SSH exec does not share the visible terminal's directory, environment,
+the visible grid; hidden tabs never become execution targets. Structured SSH exec does not share the visible terminal's directory, environment,
 or sudo state. A finite wait and cancellation leave unconfirmed remote outcomes explicit.
 
 The clipboard icon beside `CONPTY` / `PTY` dimensions copies the latest rendered command output,
@@ -124,11 +125,11 @@ PowerShell을 열며, `+` 메뉴에서 CMD도 선택할 수 있습니다. 전역
 실행됩니다. 선택한 SSH 탭의 **Files**, **Commands**, **Tunnels**는 같은 Host의 터미널 옆이나
 좁은 화면의 아래에 엽니다. 카드·컨트롤·파일 패널은 사용 가능한 너비에 맞춥니다.
 **Multi Command**는 별도 이동 탭(`Alt+8`)이며 중앙 셸을 가리고 3×3 세션 그리드를 표시합니다.
-열린 셸은 계속 실행되고, 최대 16개 로컬/SSH 세션을 한 페이지에 9개씩 표시하며 오른쪽에는
+열린 셸은 계속 실행되고, 최대 16개 로컬/SSH 탭 중 첫 9개를 표시하며 오른쪽에는
 기존 명령 모음집 UI를 재사용합니다. 좁은 화면에서도 3×3 배치를 유지하고 스크롤할 수 있습니다.
-직접 입력·저장 명령은 모든 페이지에서 체크한 연결된 Sutty SSH만 대상으로 하며 정확한 대상·명령을
+페이지 이동 UI는 숨기고 내부 구현을 유지합니다. 직접 입력·저장 명령은 보이는 연결된 Sutty SSH만 대상으로 하며 정확한 대상·명령을
 확인한 뒤 실행합니다. 로컬·외부 터미널에는 Multi 입력을 보내지 않습니다. 전체 선택 / 전체 해제도
-모든 페이지에 적용합니다. SSH exec는 보이는 터미널의 경로·환경변수·sudo 상태를 공유하지 않으며
+보이는 그리드에 적용하며 숨겨진 탭은 실행하지 않습니다. SSH exec는 보이는 터미널의 경로·환경변수·sudo 상태를 공유하지 않으며
 유한 대기와 취소 뒤에도 확인되지 않은 원격 결과를 명시합니다.
 
 `CONPTY` / `PTY` 크기 옆의 클립보드 아이콘은 오류를 포함한 마지막 명령의 표시 출력을

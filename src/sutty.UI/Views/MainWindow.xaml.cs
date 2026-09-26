@@ -1814,8 +1814,12 @@ namespace sutty.UI.Views
             review.Children.Add(new TextBlock
             {
                 Text = Helpers.Loc.T(
-                    $"전체 선택 {targets.Length}개 · 다른 페이지 {offPage}개\nSutty SSH {targets.Length} · 로컬/외부 터미널 0",
-                    $"{targets.Length} selected in total · {offPage} on other pages\nSutty SSH {targets.Length} · local/external terminals 0"),
+                    MultiGrid.IsPaginationEnabled
+                        ? $"전체 선택 {targets.Length}개 · 다른 페이지 {offPage}개\nSutty SSH {targets.Length} · 로컬/외부 터미널 0"
+                        : $"화면에서 선택한 Sutty SSH {targets.Length}개\n로컬/외부 터미널 0 · 숨겨진 탭 0",
+                    MultiGrid.IsPaginationEnabled
+                        ? $"{targets.Length} selected in total · {offPage} on other pages\nSutty SSH {targets.Length} · local/external terminals 0"
+                        : $"{targets.Length} visible Sutty SSH sessions selected\nLocal/external terminals 0 · hidden tabs 0"),
                 TextWrapping = TextWrapping.Wrap,
             });
             review.Children.Add(new TextBlock

@@ -7,6 +7,9 @@ internal static class MultiSessionSelectionSelfTests
         PagesRetainEveryTarget();
         RefreshRetainsRunningSlotsWithoutRetargeting();
         EmptyAndDuplicateSessionsAreSafe();
+        HiddenPaginationLimitsMixedSelectionToVisibleSsh();
+        SelectionTracksScopeAndConnectionChanges();
+        FixedGridKeepsThreeColumnsAtFractionalWidths();
         DraftIsClearedOnlyAfterExactApproval();
         Console.WriteLine("Multi-session selection and paging self-tests passed.");
     }
@@ -15,7 +18,8 @@ internal static class MultiSessionSelectionSelfTests
         session => new Slot(session) { IsSelected = true },
         slot => slot.Session,
         slot => slot.IsSelected,
-        (slot, selected) => slot.IsSelected = selected);
+        (slot, selected) => slot.IsSelected = selected,
+        slot => slot.IsEligible);
 
     private static void PagesRetainEveryTarget()
     {
@@ -108,6 +112,98 @@ internal static class MultiSessionSelectionSelfTests
             "a duplicate session reference cannot receive the same broadcast twice");
     }
 
+    private static void HiddenPaginationLimitsMixedSelectionToVisibleSsh()
+    {
+        var state = CreateState();
+        var sessions = Enumerable.Range(0, 16).Select(_ => new object()).ToArray();
+        state.SetSessions(sessions);
+        // Simulate a mix of integrated SSH, external/local tabs, and disconnected SSH.
+        state.AllSlots[1].IsEligible = false;
+        state.AllSlots[4].IsEligible = false;
+        state.AllSlots[8].IsEligible = false;
+        state.SetAllSelected(true);
+        state.MovePage(1);
+        Assert(state.GetSelectedSlots().Count == 13,
+            "future paging mode can still select eligible SSH across every page");
+
+        state.SetPaginationEnabled(false);
+        Assert(state.PageIndex == 0 && state.PageCount == 2 && state.HiddenSessionCount == 7,
+            "hiding pagination resets the visible page without discarding future paging state");
+        Assert(state.EligibleCount == 6 && state.GetSelectedSlots().Count == 6 &&
+               state.AllSlots.Skip(9).All(slot => !slot.IsSelected),
+            "hiding pagination clears old off-page selections and counts only visible eligible SSH");
+        state.SetAllSelected(false);
+        state.SetAllSelected(true);
+        Assert(state.GetSelectedSlots().Select(slot => slot.Session).SequenceEqual(
+                new[] { sessions[0], sessions[2], sessions[3], sessions[5], sessions[6], sessions[7] }),
+            "Select all with mixed tabs selects every eligible visible SSH and no external/local or hidden tab");
+        state.SetSelected(state.AllSlots[1], true);
+        state.SetSelected(state.AllSlots[12], true);
+        Assert(!state.AllSlots[1].IsSelected && !state.AllSlots[12].IsSelected,
+            "individual selection cannot bypass type eligibility or select an invisible target");
+        state.AllSlots[12].IsSelected = true;
+        Assert(state.GetSelectedSlots().Count == 6,
+            "the execution target snapshot excludes a stale hidden checkbox even before cleanup");
+        state.SetAllSelected(false);
+        Assert(state.AllSlots.All(slot => !slot.IsSelected),
+            "Clear all resets raw flags on eligible, ineligible and invisible slots");
+        state.MovePage(1);
+        Assert(state.PageIndex == 0 && ReferenceEquals(state.GetPageSlots()[0]!.Session, sessions[0]),
+            "hidden navigation cannot switch the execution scope away from the first nine cards");
+    }
+
+    private static void SelectionTracksScopeAndConnectionChanges()
+    {
+        var state = CreateState();
+        state.SetPaginationEnabled(false);
+        var sessions = Enumerable.Range(0, 16).Select(_ => new object()).ToArray();
+        state.SetSessions(sessions);
+        state.SetAllSelected(true);
+        var disconnected = state.AllSlots[2];
+        disconnected.IsEligible = false;
+        Assert(state.GetSelectedSlots().Count == 8,
+            "a disconnect excludes the target immediately without requiring a checkbox refresh");
+        state.SetAllSelected(false);
+        Assert(!disconnected.IsSelected && state.AllSlots.All(slot => !slot.IsSelected),
+            "Clear all removes a selected flag after the slot becomes ineligible");
+        disconnected.IsEligible = true;
+        Assert(!disconnected.IsSelected,
+            "reconnection does not restore a previously cleared target selection");
+
+        state.SetSelected(state.AllSlots[0], true);
+        var selectedMovedOut = state.AllSlots[0];
+        state.SetSessions(sessions.Skip(1).Append(sessions[0]).ToArray());
+        Assert(ReferenceEquals(state.AllSlots[15], selectedMovedOut) && !selectedMovedOut.IsSelected,
+            "moving a selected tab out of the visible nine clears its selection without replacing its running slot");
+        Assert(state.GetSelectedSlots().Count == 0 && !state.AllSlots[8].IsSelected,
+            "a newly visible tab never inherits an outgoing selection");
+    }
+
+    private static void FixedGridKeepsThreeColumnsAtFractionalWidths()
+    {
+        var minimumWidth = 3 * MultiSessionGridGeometry.MinimumCellWidth + 2 * MultiSessionGridGeometry.Spacing;
+        var minimumHeight = 3 * MultiSessionGridGeometry.MinimumCellHeight + 2 * MultiSessionGridGeometry.Spacing;
+        foreach (var width in new[] { 0d, 1d, 585d, 586d, 587d, 923.5d, 1000d, double.NaN, double.PositiveInfinity })
+        foreach (var height in new[] { 0d, 400d, 646d, 801.75d, double.PositiveInfinity })
+        {
+            var geometry = MultiSessionGridGeometry.FromViewport(width, height);
+            var positions = Enumerable.Range(0, 9).Select(geometry.Position).ToArray();
+            Assert(double.IsFinite(geometry.Width) && double.IsFinite(geometry.Height) &&
+                   geometry.Width >= minimumWidth && geometry.Height >= minimumHeight,
+                "initial, narrow and unbounded measurements retain readable finite cell dimensions");
+            Assert(positions.Select(position => position.X).Distinct().Count() == 3 &&
+                   positions.Select(position => position.Y).Distinct().Count() == 3 &&
+                   positions[0].Y == positions[2].Y && positions[3].X == positions[0].X &&
+                   positions[8].X + geometry.CellWidth == geometry.Width &&
+                   positions[8].Y + geometry.CellHeight == geometry.Height,
+                "all nine cards occupy exactly three columns and three rows regardless of fractional viewport size");
+            Assert(!double.IsFinite(width) || width < minimumWidth || geometry.Width <= width,
+                "three columns including both gaps fit the usable viewport when it meets the minimum width");
+            Assert(!double.IsFinite(height) || height < minimumHeight || geometry.Height <= height,
+                "three rows including both gaps fit the usable viewport when it meets the minimum height");
+        }
+    }
+
     private static void DraftIsClearedOnlyAfterExactApproval()
     {
         var draft = new BroadcastCommandDraft();
@@ -137,6 +233,7 @@ internal static class MultiSessionSelectionSelfTests
     {
         public object Session { get; } = session;
         public bool IsSelected { get; set; }
+        public bool IsEligible { get; set; } = true;
         public string Output { get; set; } = "";
     }
 }

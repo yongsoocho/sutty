@@ -48,6 +48,7 @@ public sealed partial class OneLineConnectionPanel : UserControl
 {
     private bool _commandLauncherInFlight;
     private bool _commandLauncherStoreSubscribed;
+    private long _commandDraftRevision;
     public event LocalCommandLaunchRequestedEventHandler? LocalCommandLaunchRequested;
 
     public OneLineConnectionPanel()
@@ -93,7 +94,10 @@ public sealed partial class OneLineConnectionPanel : UserControl
     }
 
     private void CommandLauncherBox_TextChanged(object sender, TextChangedEventArgs e)
-        => ClearCommandLauncherStatus();
+    {
+        _commandDraftRevision++;
+        ClearCommandLauncherStatus();
+    }
 
     private async void CommandLauncherBox_KeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -192,6 +196,8 @@ public sealed partial class OneLineConnectionPanel : UserControl
         if (!TryCreateCommandLaunchPlan(commandText, focusTarget, out var plan))
             return;
 
+        var launchedFromInput = ReferenceEquals(focusTarget, CommandLauncherBox);
+        var draftRevision = _commandDraftRevision;
         _commandLauncherInFlight = true;
         SetCommandLauncherBusy(true);
         try
@@ -207,9 +213,10 @@ public sealed partial class OneLineConnectionPanel : UserControl
                 return;
             }
 
-            // Preserve a canonical, re-parseable form in the input after a
-            // successful one-click favorite or history launch.
-            CommandLauncherBox.Text = plan.CanonicalCommand;
+            // Clear only the successfully submitted draft. A new draft typed while
+            // opening, or an unrelated draft when reopening history, stays intact.
+            if (launchedFromInput && draftRevision == _commandDraftRevision)
+                CommandLauncherBox.Text = string.Empty;
             ClearCommandLauncherStatus();
         }
         catch (Exception error) when (error is not OutOfMemoryException and not AccessViolationException)

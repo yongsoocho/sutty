@@ -12,15 +12,10 @@ using System.Linq;
 
 namespace sutty.UI.Views
 {
-    /// <summary>Nine session cards per page; checked targets can span every page.</summary>
+    /// <summary>Fixed nine-card display; pagination remains available for a future enabled mode.</summary>
     public sealed partial class MultiSessionGrid : UserControl
     {
         public const int SlotCount = 9;
-        private const int ColumnCount = 3;
-        private const double CellSpacing = 8;
-        private const double MinimumCellWidth = 190;
-        private const double MinimumCellHeight = 210;
-        private double _cellHeight = MinimumCellHeight;
         private IReadOnlyList<FrameworkElement> _views = [];
         private bool _watchSessionStates;
         private readonly MultiSessionSelectionState<FrameworkElement, MultiSlotVm> _selection = new(
@@ -31,7 +26,10 @@ namespace sutty.UI.Views
             },
             slot => slot.SessionKey as FrameworkElement,
             slot => slot.IsSelected,
-            (slot, selected) => slot.IsSelected = selected);
+            (slot, selected) => slot.IsSelected = selected,
+            slot => slot.CanBroadcast);
+
+        public bool IsPaginationEnabled => _selection.IsPaginationEnabled;
 
         /// <summary>The current nine cards, including non-selectable placeholders.</summary>
         public ObservableCollection<MultiSlotVm> Slots { get; } = [];
@@ -39,8 +37,10 @@ namespace sutty.UI.Views
         public MultiSessionGrid()
         {
             InitializeComponent();
+            _selection.SetPaginationEnabled(false);
             Loaded += Grid_Loaded;
             Unloaded += Grid_Unloaded;
+            CellsScrollViewer.LayoutUpdated += Cells_LayoutUpdated;
             ShowPage();
         }
 
@@ -50,30 +50,14 @@ namespace sutty.UI.Views
             SetSessions(_views);
         }
 
-        private void Cells_SizeChanged(object sender, SizeChangedEventArgs e)
+        private void Cells_LayoutUpdated(object? sender, object e)
         {
-            // Keep three columns in a narrow window. Scrolling provides access
-            // instead of squeezing text or silently dropping session cards.
-            var width = Math.Max(ColumnCount * MinimumCellWidth + 2 * CellSpacing,
-                e.NewSize.Width - 16);
-            var height = Math.Max(ColumnCount * MinimumCellHeight + 2 * CellSpacing,
-                e.NewSize.Height - 16);
-            CellsRepeater.Width = width;
-            GridLayout.MinItemWidth = Math.Floor((width - 2 * CellSpacing) / ColumnCount);
-            _cellHeight = (height - 2 * CellSpacing) / ColumnCount;
-            GridLayout.MinItemHeight = _cellHeight;
-            for (var index = 0; index < Slots.Count; index++)
-            {
-                if (CellsRepeater.TryGetElement(index) is FrameworkElement card)
-                    card.Height = _cellHeight;
-            }
-        }
-
-        private void Cells_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
-        {
-            // A finite height also constrains the output ScrollViewer inside each card.
-            if (args.Element is FrameworkElement card)
-                card.Height = _cellHeight;
+            // Viewport dimensions already exclude the ScrollViewer's actual chrome.
+            // Fixed cell coordinates never drop a column at fractional widths or DPI.
+            var geometry = MultiSessionGridGeometry.FromViewport(
+                CellsScrollViewer.ViewportWidth, CellsScrollViewer.ViewportHeight);
+            if (CellsRepeater.Width != geometry.Width) CellsRepeater.Width = geometry.Width;
+            if (CellsRepeater.Height != geometry.Height) CellsRepeater.Height = geometry.Height;
         }
 
         /// <summary>Refresh cards while retaining the slot objects held by running broadcasts.</summary>
@@ -155,18 +139,30 @@ namespace sutty.UI.Views
         {
             var total = _selection.AllSlots.Count;
             var selected = _selection.GetSelectedSlots().Count;
-            var available = _selection.AllSlots.Count(slot => slot.CanBroadcast);
+            var available = _selection.EligibleCount;
             var offPage = _selection.GetSelectedSlots().Count(slot => !Slots.Contains(slot));
             CountText.Text = Helpers.Loc.T(
-                $"전체 {total}개 · SSH {selected}개 선택 · 다른 페이지 {offPage}개",
-                $"{total} sessions · {selected} SSH selected · {offPage} on other pages");
+                $"SSH {selected} / {available}개 선택 · 열린 탭 {total}개",
+                $"SSH {selected} / {available} selected · {total} open tabs");
+            var localCount = Slots.Count(slot => slot.LocalView is not null);
+            var disconnectedCount = Slots.Count(slot => slot.View is not null && !slot.CanBroadcast);
+            SelectionNoticeText.Text = Helpers.Loc.T(
+                $"선택 가능: 연결된 Sutty SSH {available}개. 로컬·외부 터미널 {localCount}개, 미연결 SSH {disconnectedCount}개는 제외됩니다.",
+                $"Eligible: {available} connected Sutty SSH. Excludes {localCount} local/external terminals and {disconnectedCount} disconnected SSH.");
+            if (_selection.HiddenSessionCount > 0)
+                SelectionNoticeText.Text += "\n" + Helpers.Loc.T(
+                    $"처음 9개 탭만 표시합니다. 나머지 {_selection.HiddenSessionCount}개는 전체 선택과 실행 대상에서 제외됩니다.",
+                    $"Only the first 9 tabs are shown. The remaining {_selection.HiddenSessionCount} are excluded from Select all and execution.");
+            else if (IsPaginationEnabled && offPage > 0)
+                SelectionNoticeText.Text += "\n" + Helpers.Loc.T($"다른 페이지에서 {offPage}개 선택됨.", $"{offPage} selected on other pages.");
             PageText.Text = Helpers.Loc.T(
                 $"{_selection.PageIndex + 1} / {_selection.PageCount} 페이지",
                 $"Page {_selection.PageIndex + 1} / {_selection.PageCount}");
             PreviousPageButton.IsEnabled = _selection.PageIndex > 0;
             NextPageButton.IsEnabled = _selection.PageIndex + 1 < _selection.PageCount;
+            PaginationControls.Visibility = IsPaginationEnabled ? Visibility.Visible : Visibility.Collapsed;
             SelectAllButton.IsEnabled = selected < available;
-            ClearSelectionButton.IsEnabled = selected > 0;
+            ClearSelectionButton.IsEnabled = _selection.AllSlots.Any(slot => slot.IsSelected);
         }
 
         private void Slot_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -177,7 +173,18 @@ namespace sutty.UI.Views
 
         private void SelectAll_Click(object sender, RoutedEventArgs e)
         {
+            foreach (var slot in _selection.AllSlots) slot.RefreshSessionDetails();
             _selection.SetAllSelected(true);
+            UpdateSummary();
+        }
+
+        private void SessionSelection_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not CheckBox { Tag: MultiSlotVm slot } checkBox) return;
+            _selection.SetSelected(slot, checkBox.IsChecked == true);
+            // A disconnect can occur between pointer input and the setter. Keep the
+            // checkbox consistent with the accepted model state even when rejected.
+            checkBox.IsChecked = slot.IsSelected;
             UpdateSummary();
         }
 
@@ -199,7 +206,7 @@ namespace sutty.UI.Views
             ShowPage();
         }
 
-        /// <summary>Checked broadcast targets from every page, never placeholder cards.</summary>
+        /// <summary>Checked eligible targets in the active display scope, never placeholders or hidden cards.</summary>
         public List<MultiSlotVm> GetTargetSlots() => _selection.GetSelectedSlots();
 
         public int GetOffPageTargetCount(IReadOnlyCollection<MultiSlotVm> targets) =>

@@ -48,6 +48,7 @@ public sealed partial class HomePanel : UserControl
     public HomePanel()
     {
         InitializeComponent();
+        RefreshRouteLabels();
 
         var settings = SettingsService.Current;
         ApplyConnectionDefaults();
@@ -83,6 +84,7 @@ public sealed partial class HomePanel : UserControl
     public void RefreshLanguage()
     {
         Bindings.Update();
+        RefreshRouteLabels();
         RefreshProxyCommandPreview();
     }
 
@@ -225,9 +227,7 @@ public sealed partial class HomePanel : UserControl
             : Visibility.Collapsed;
         if (type != ConnectionRouteType.SshJump)
             ProxyPasswordBox.Visibility = Visibility.Visible;
-        RouteHostLabel.Text = type == ConnectionRouteType.SshJump
-            ? Loc.T("점프 호스트", "JUMP HOST")
-            : Loc.T("프록시 주소", "PROXY HOST");
+        RefreshRouteLabels();
 
         if (usesHost && string.IsNullOrWhiteSpace(ProxyPortBox.Text))
             ProxyPortBox.Text = type switch
@@ -238,6 +238,20 @@ public sealed partial class HomePanel : UserControl
             };
 
         RefreshProxyCommandPreview();
+    }
+
+    private void RefreshRouteLabels()
+    {
+        var isJump = SelectedRouteType() == ConnectionRouteType.SshJump;
+        RouteHostLabel.Text = isJump
+            ? Loc.T("점프 호스트", "JUMP HOST")
+            : Loc.T("프록시 주소", "PROXY HOST");
+        ProxyUsernameBox.Header = isJump
+            ? Loc.T("점프 호스트 사용자", "Jump-host user")
+            : Loc.T("프록시 사용자 (선택)", "Proxy user (optional)");
+        ProxyPasswordBox.Header = isJump
+            ? Loc.T("점프 호스트 비밀번호", "Jump-host password")
+            : Loc.T("프록시 비밀번호 (선택)", "Proxy password (optional)");
     }
 
     /// <summary>Moves keyboard focus to the first Quick Connect field.</summary>

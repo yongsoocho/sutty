@@ -90,6 +90,7 @@ public sealed partial class FileTreePanel : UserControl
     public FileTreePanel()
     {
         InitializeComponent();
+        RefreshRemoteTargetIdentity();
         InitializeRemoteEditing();
         _transferCenterExecutor = new FileTreeTransferCenterExecutor(this);
         Loaded += (_, _) =>
@@ -112,6 +113,7 @@ public sealed partial class FileTreePanel : UserControl
     public void RefreshLanguage()
     {
         Bindings.Update();
+        RefreshRemoteTargetIdentity();
         RefreshRemoteEditingLanguage();
         foreach (var transfer in Transfers)
             transfer.RefreshLanguage();
@@ -129,6 +131,27 @@ public sealed partial class FileTreePanel : UserControl
                  string.IsNullOrWhiteSpace(session.LastSftpError))
             ShowStatus(Loc.T("서버에서 SFTP subsystem을 사용할 수 없습니다.",
                 "The SFTP subsystem is unavailable on this server."));
+    }
+
+    private void RefreshRemoteTargetIdentity()
+    {
+        if (_session is not { } session)
+        {
+            RemoteTargetText.Text = Loc.T("원격", "REMOTE");
+            ToolTipService.SetToolTip(RemoteTargetText, null);
+            return;
+        }
+
+        var identity = $"{session.Info.Username}@{session.Info.Host}:{session.Info.Port}";
+        RemoteTargetText.Text = $"SFTP · {identity}";
+        ToolTipService.SetToolTip(RemoteTargetText, new TextBlock
+        {
+            MaxWidth = 380,
+            TextWrapping = TextWrapping.Wrap,
+            Text = $"SFTP · {identity}\n\n" + Loc.T(
+                "터미널 안에서 실행한 ssh는 Files 대상을 바꾸지 않습니다. 다른 서버의 파일은 새 연결에서 목적지 서버를 입력한 뒤, 고급 연결 옵션 → 연결 경로 → SSH Jump에 현재 서버를 경유 서버로 지정하세요.",
+                "Running ssh inside the terminal does not change the Files target. For another server's files, enter that destination in a new connection, then choose Advanced connection options → Connection route → SSH Jump and use the current server as the relay."),
+        });
     }
 
     public async Task LoadAsync(ISshSession? session)
@@ -157,6 +180,7 @@ public sealed partial class FileTreePanel : UserControl
             FileTree.IsEnabled = false;
         }
         _session = session;
+        RefreshRemoteTargetIdentity();
         ApplyBrowserNavigationState();
 
         if (session is null)

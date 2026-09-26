@@ -4,12 +4,13 @@ using System.Linq;
 
 namespace sutty.UI.Services;
 
-/// <summary>Keeps broadcast selection independent of the nine cards currently visible.</summary>
+/// <summary>Retains slot identity and limits selection to eligible sessions in the active display scope.</summary>
 internal sealed class MultiSessionSelectionState<TSession, TSlot>(
     Func<TSession, TSlot> createSlot,
     Func<TSlot, TSession?> getSession,
     Func<TSlot, bool> isSelected,
-    Action<TSlot, bool> setSelected)
+    Action<TSlot, bool> setSelected,
+    Func<TSlot, bool>? isEligible = null)
     where TSession : class
     where TSlot : class
 {
@@ -19,6 +20,16 @@ internal sealed class MultiSessionSelectionState<TSession, TSlot>(
     public IReadOnlyList<TSlot> AllSlots => _slots;
     public int PageIndex { get; private set; }
     public int PageCount => Math.Max(1, (_slots.Count + PageSize - 1) / PageSize);
+    public bool IsPaginationEnabled { get; private set; } = true;
+    public int HiddenSessionCount => IsPaginationEnabled ? 0 : Math.Max(0, _slots.Count - PageSize);
+    public int EligibleCount => InScopeSlots().Count(CanSelect);
+
+    public void SetPaginationEnabled(bool enabled)
+    {
+        IsPaginationEnabled = enabled;
+        if (!enabled) PageIndex = 0;
+        ClearUnavailableSelections();
+    }
 
     public void SetSessions(IReadOnlyList<TSession> sessions)
     {
@@ -44,7 +55,8 @@ internal sealed class MultiSessionSelectionState<TSession, TSlot>(
 
         // Retain actual slot instances: running commands still write to those objects.
         _slots = next;
-        PageIndex = Math.Min(PageIndex, PageCount - 1);
+        PageIndex = IsPaginationEnabled ? Math.Min(PageIndex, PageCount - 1) : 0;
+        ClearUnavailableSelections();
     }
 
     public IReadOnlyList<TSlot?> GetPageSlots()
@@ -57,13 +69,30 @@ internal sealed class MultiSessionSelectionState<TSession, TSlot>(
     }
 
     public void MovePage(int offset) =>
-        PageIndex = Math.Clamp(PageIndex + offset, 0, PageCount - 1);
+        PageIndex = IsPaginationEnabled ? Math.Clamp(PageIndex + offset, 0, PageCount - 1) : 0;
+
+    public void SetSelected(TSlot slot, bool selected)
+    {
+        if (!_slots.Contains(slot)) return;
+        setSelected(slot, selected && InScopeSlots().Contains(slot) && CanSelect(slot));
+    }
 
     public void SetAllSelected(bool selected)
     {
+        var scope = InScopeSlots().ToHashSet();
         foreach (var slot in _slots)
-            setSelected(slot, selected);
+            setSelected(slot, selected && scope.Contains(slot) && CanSelect(slot));
     }
 
-    public List<TSlot> GetSelectedSlots() => _slots.Where(isSelected).ToList();
+    public List<TSlot> GetSelectedSlots() => InScopeSlots().Where(slot => CanSelect(slot) && isSelected(slot)).ToList();
+
+    private IEnumerable<TSlot> InScopeSlots() => IsPaginationEnabled ? _slots : _slots.Take(PageSize);
+    private bool CanSelect(TSlot slot) => isEligible?.Invoke(slot) ?? true;
+
+    private void ClearUnavailableSelections()
+    {
+        var scope = InScopeSlots().ToHashSet();
+        foreach (var slot in _slots)
+            if (!scope.Contains(slot) || !CanSelect(slot)) setSelected(slot, false);
+    }
 }

@@ -17,6 +17,9 @@ public class HostInfoModel
         ? Helpers.Loc.T($"외부 터미널 · {LaunchCommand}", $"External terminal · {LaunchCommand}")
         : Hostname;
     public long Id { get; set; }
+    /// <summary>The exact connection_log row; independent of an optional matching saved profile.</summary>
+    public long? HistoryEntryId { get; set; }
+    public bool IsHistoryEntry => !IsSavedProfile && HistoryEntryId is > 0;
     public string? ProfileId { get; set; }
     public bool IsSavedProfile { get; set; }
     public string? CredentialId { get; set; }

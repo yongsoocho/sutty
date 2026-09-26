@@ -29,7 +29,7 @@ public sealed class HostHistoryEntry
 }
 
 /// <summary>
-/// SSH 접속 기록을 SQLite(connection_log)에 append-only로 저장한다.
+/// SSH 접속 기록을 SQLite(connection_log)에 누적하고 명시적인 개별 삭제를 지원한다.
 /// 비밀번호와 key passphrase는 저장하지 않으며, 재사용 가능한 비밀 아닌 연결 초안만 보관한다.
 /// </summary>
 public static class HostHistoryStore
@@ -172,6 +172,18 @@ public static class HostHistoryStore
         cmd.CommandText = "DELETE FROM connection_log WHERE connected_at < $cutoff";
         cmd.Parameters.AddWithValue("$cutoff", DateTime.Now.AddDays(-retentionDays).ToString("o"));
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Deletes exactly one connection attempt without changing profiles or pinned hosts.</summary>
+    public static bool DeleteEntry(long historyEntryId)
+    {
+        if (historyEntryId <= 0) return false;
+        EnsureInitialized();
+        using var connection = Db.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM connection_log WHERE id = $id";
+        command.Parameters.AddWithValue("$id", historyEntryId);
+        return command.ExecuteNonQuery() == 1;
     }
 
     /// <summary>Returns hosts explicitly pinned by the user, most recently pinned first.</summary>

@@ -43,7 +43,9 @@ for structured, non-interactive command cells; the internal persisted value `Rep
 compatibility and does not replace the central terminal. The new-tab menu offers both local
 PowerShell and CMD.
 
-Small teams can exchange selected host, group, tag, route, tunnel, and command definitions in one local JSON file. Export shows the exact content; import previews additions, changes, duplicates, and unsupported items before applying each choice. Each PC binds its own keys/accounts through an authentication alias. No accounts, shared credentials, RBAC, central administration, or live collaboration are added. See [Daily workflow](docs/DAILY_WORKFLOW.md).
+The source includes credential-free JSON sharing for selected host, group, tag, route, tunnel, and command definitions; its Hosts/History entry is currently removed. Export shows the exact content; import previews additions, changes, duplicates, and unsupported items before applying each choice. Each PC binds its own keys/accounts through an authentication alias. No accounts, shared credentials, RBAC, central administration, or live collaboration are added. See [Daily workflow](docs/DAILY_WORKFLOW.md).
+
+> The Hosts/History sharing/import shortcut has been removed. Sharing serialization and preview code remain in the source; legacy host imports remain in Settings. Saved host and recent-history cards now expose an X for individual removal.
 
 ### Implemented Alpha baseline
 
@@ -60,10 +62,10 @@ Small teams can exchange selected host, group, tag, route, tunnel, and command d
 - Transfers shows the active shell's browser above the live queue: the selected SSH session's Files or the PowerShell/CMD directory reported at the prompt. It never falls back to another server; missing shells or unknown paths show an explanation. Changing shell tabs keeps the selected supporting pane open. The live queue provides Pause, Resume, failed-target Retry, Cancel, completed-record removal, and state/direction/target filtering only when the exact connected Files executor can accept them. Multi batches remain visible without batch-wide global Pause/Cancel. Queue mutations and target execution leases are serialized across Sutty processes.
 - A compact per-panel transfer queue with queued/running state, an explicit `0%`–`100%` value, progress bar, speed, ETA, cancellation, and an eight-job cap. Transfers support resumable deterministic partial files, persisted non-secret checkpoints, configurable transient-failure retries, and user-selectable final-size or SHA-256 verification (safe SHA-256 by default).
 - Safe file-transfer staging. Uploads use a remote temporary name and preserve an existing destination during promotion; downloads use an adjacent local temporary file. Multi supports 1→N upload and N→1 download for explicitly checked sessions, with per-server progress/results, deterministic local isolation, and failed/incomplete-target-only retry. A credential-free atomic job queue restores incomplete single and Multi transfers after restart.
-- Append-only connection-attempt history plus explicit Saved Host profiles, duplication without credentials, groups, environments, favorites, and search in SQLite.
+- Per-attempt connection history with explicit individual deletion plus explicit Saved Host profiles, duplication without credentials, groups, environments, favorites, and search in SQLite.
 - Credential-free Saved Host launcher: `sutty.UI.exe --host <id or exact name>` opens an existing profile while rejecting password/passphrase arguments; `sutty.UI.exe --version` reports the Alpha build.
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
-- Up to 16 mixed local/SSH tabs and a separate **Multi Command** destination (`Alt+8`). It replaces the central shell view with a 3×3 session grid, nine sessions per page, and reuses the command library on the right. Free-form and saved commands run only on checked connected Sutty SSH sessions after an all-page target/command preview; local and external terminals are excluded; Select all / Clear all covers every page. New sessions start unchecked. Selection, last results, and running state stay with the same open sessions when switching pages, tabs, or navigation. Broadcasts that include PROD-tagged SSH sessions require an extra confirmation.
+- Up to 16 mixed local/SSH tabs and a separate **Multi Command** destination (`Alt+8`). A fixed 3×3 grid shows the first nine tabs, with horizontal scrolling when narrow. Pagination controls are hidden while their implementation is retained. Select all selects connected Sutty SSH among the visible cards; Clear all removes selection. Counts explain excluded local/external/disconnected and hidden tabs. Broadcast targets never include hidden tabs. New sessions start unchecked; exact-target/command and additional PROD confirmation remain required.
 - Optional restart-safe Workspace restoration remembers each local tab's PowerShell/CMD choice and opaque Saved Host ids. Older local entries default to PowerShell. SSH reconnection asks first by default, and previous commands are never stored or replayed.
 - Retained failed or disconnected SSH tabs expose an explicit Reconnect action that always creates a new shell. Saved Hosts are reloaded from the current profile and optional encrypted vault; one-off sessions return to Quick Connect with a credential-free draft. Previous commands, terminal input, transport objects, and trust-once decisions are never replayed. Automatic reconnect and automatic SFTP/tunnel recovery remain unimplemented.
 - Immediately applied Korean/English settings, atomic settings persistence, and [36 app and terminal themes](docs/THEMES.md), including VS Code Dark+/Light+, Dracula, Monokai, Nord, Tokyo Night, and Catppuccin. Each keeps gradient accents; **Follow application** applies the selected named palette and ANSI colors. Cursor/scrollback/accessibility controls and optional PowerShell profile loading remain available.
@@ -206,7 +208,9 @@ Multi Command는 중앙에 3×3 세션 그리드를 표시하고 오른쪽에 �
 호환성을 위해 내부 저장값 `Repl`을 유지하지만 중앙 터미널을 대체하지 않습니다.
 새 탭 메뉴에서 로컬 PowerShell과 CMD를 선택할 수 있습니다.
 
-소규모 팀은 선택한 Host·그룹·태그·route·tunnel·명령 정의를 로컬 JSON 파일 하나로 공유할 수 있습니다. 내보낼 원문과 가져올 추가·변경·중복·미지원 항목을 먼저 확인하고 항목별로 적용하며, 각 PC에서 인증 별칭에 맞는 자신의 키·계정을 연결합니다. 계정, 공유 자격증명, RBAC, 중앙 관리, 실시간 협업은 추가하지 않습니다. [일상 작업 안내](docs/DAILY_WORKFLOW.md)를 참고하세요.
+선택 Host·그룹·태그·route·tunnel·명령 정의의 비밀정보 없는 JSON 공유 코드는 유지하지만 Hosts/History의 진입 버튼은 현재 제거했습니다. 내보낼 원문과 가져올 추가·변경·중복·미지원 항목을 먼저 확인하고 항목별로 적용하며, 각 PC에서 인증 별칭에 맞는 자신의 키·계정을 연결합니다. 계정, 공유 자격증명, RBAC, 중앙 관리, 실시간 협업은 추가하지 않습니다. [일상 작업 안내](docs/DAILY_WORKFLOW.md)를 참고하세요.
+
+> Hosts/History의 공유·가져오기 버튼은 제거했습니다. 공유 저장·미리보기 코드는 남겨두며 기존 형식 호스트 가져오기는 설정에서 제공합니다. 저장 호스트와 최근 접속 카드의 X로 항목을 개별 삭제할 수 있습니다.
 
 ### 구현된 Alpha 기준선
 
@@ -223,10 +227,10 @@ Multi Command는 중앙에 3×3 세션 그리드를 표시하고 오른쪽에 �
 - 수동 새로 고침 없이 영속 큐를 투영하고 일시정지·재개·실패 대상 재시도·취소·완료 기록 제거와 상태·방향·대상 필터를 제공하는 전역 Transfer Center. 정확히 일치하는 연결된 Files 실행자가 요청을 받을 수 있을 때만 명령을 활성화합니다. Multi batch는 표시하지만 전역 일시정지·취소 완료를 주장하지 않습니다. 큐 변경과 대상 실행 lease는 여러 Sutty 프로세스 사이에서도 직렬화합니다.
 - 대기·실행 상태, 명시적인 `0%`–`100%` 숫자, 진행 막대, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. 결정적인 partial 파일, 비밀정보 없는 영속 체크포인트, 설정 가능한 일시 오류 재시도, 사용자가 선택하는 최종 크기 또는 SHA-256 검증(기본값은 안전한 SHA-256)으로 전송을 재개할 수 있습니다.
 - 안전한 파일 전송 준비 단계. 업로드는 원격 임시 이름을 사용하고 기존 대상을 보존한 채 승격하며, 다운로드는 같은 로컬 디렉터리의 임시 파일을 사용합니다. Multi는 명시적으로 체크한 세션의 1→N 업로드와 N→1 다운로드, 서버별 진행률·결과, 결정적인 로컬 경로 분리, 실패·미완료 대상만 재시도를 지원합니다. 자격증명 없는 atomic job queue가 재실행 후 Single·Multi 미완료 전송을 복원합니다.
-- SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·자격증명 없는 복제·그룹·환경·즐겨찾기·검색
+- SQLite 기반 개별 삭제 가능한 접속 시도 기록과 명시적인 저장 호스트·자격증명 없는 복제·그룹·환경·즐겨찾기·검색
 - 자격증명 없는 저장 Host 실행: `sutty.UI.exe --host <ID 또는 정확한 이름>`으로 기존 프로필을 열며 비밀번호·키 암호 인자는 거부하고, `sutty.UI.exe --version`으로 Alpha 버전을 확인
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
-- 로컬/SSH 혼합 최대 16개 탭과 독립 **Multi Command** 화면(`Alt+8`). 중앙 셸 화면을 3×3 세션 그리드로 바꾸어 한 페이지에 9개씩 표시하며 오른쪽에 기존 명령 모음집을 재사용합니다. 직접 입력·저장 명령은 전체 대상·명령 확인 후 체크한 연결된 Sutty SSH에만 실행하고 로컬·외부 터미널은 제외하며, 전체 선택 / 전체 해제도 모든 페이지에 적용합니다. 새 세션은 미선택으로 시작하며 페이지·탭·메뉴를 바꿔도 같은 열린 세션의 선택·마지막 결과·진행 상태를 유지합니다. PROD 태그 SSH 세션이 포함된 방송은 추가 확인을 거칩니다.
+- 로컬/SSH 혼합 최대 16개 탭과 독립 **Multi Command** 화면(`Alt+8`). 고정 3×3 그리드에 첫 9개 탭을 표시하며 좁으면 가로로 스크롤합니다. 페이지 이동 UI는 숨기고 내부 구현을 유지합니다. 전체 선택은 보이는 연결된 Sutty SSH만 선택하며 전체 해제는 선택을 지웁니다. 로컬·외부·미연결 탭과 숨겨진 탭은 제외 수를 표시하고 실행 대상에서도 제외합니다. 새 세션은 미선택이며 대상·명령 확인과 PROD 추가 확인은 유지합니다.
 - 선택형 Workspace 복원은 로컬 탭별 PowerShell/CMD 선택과 불투명 저장 Host ID를 기억합니다. 기존 로컬 항목은 PowerShell로 복원합니다. SSH 재연결은 기본적으로 먼저 확인하며 이전 명령은 저장하거나 재실행하지 않습니다.
 - 실패하거나 끊긴 SSH 세션은 항상 새 Shell을 만드는 명시적 재연결을 제공합니다. 저장 Host는 현재 profile과 선택형 암호화 Vault를 다시 읽고, 일회성 세션은 비밀값 없는 초안을 Quick Connect로 돌려보냅니다. 이전 명령·터미널 입력·transport 객체·이번만 신뢰 결정은 재실행하거나 재사용하지 않습니다. 자동 재연결과 SFTP·tunnel 자동 복구는 아직 구현하지 않았습니다.
 - 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장과 [앱·터미널 테마 36개](docs/THEMES.md). VS Code Dark+/Light+·Dracula·Monokai·Nord·Tokyo Night·Catppuccin 등을 지원하며 각 테마의 그라데이션 강조를 유지합니다. **앱 테마에 맞춤**은 선택한 이름의 팔레트와 ANSI 색상까지 반영합니다. 커서·스크롤백·접근성 설정과 선택형 PowerShell 프로필 로딩도 유지합니다.

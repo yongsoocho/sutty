@@ -354,6 +354,24 @@ try
     Assert(frequent[0].Hostname == "api.example", "frequent host ordering");
     Assert(frequent[0].ConnectionCount == 2, "frequent host counts successful attempts");
 
+    var historyToRemove = recent.Single(item => item.Hostname == "api.example" && item.Outcome == "Failed");
+    var remainingHistoryIds = recent.Where(item => item.Id != historyToRemove.Id).Select(item => item.Id).ToHashSet();
+    var savedProfileBeforeHistoryDelete = HostProfileStore.GetById(created.Id)!;
+    var pinnedBeforeHistoryDelete = HostHistoryStore.GetPinned().Select(item => item.Hostname).ToArray();
+    Assert(HostHistoryStore.DeleteEntry(historyToRemove.Id), "explicit history removal deletes the requested attempt");
+    Assert(HostHistoryStore.GetRecent(10).Select(item => item.Id).ToHashSet().SetEquals(remainingHistoryIds),
+        "history removal preserves every other attempt including duplicate server connections");
+    var savedProfileAfterHistoryDelete = HostProfileStore.GetById(created.Id)!;
+    Assert(savedProfileAfterHistoryDelete.IsFavorite &&
+           savedProfileAfterHistoryDelete.CredentialId == savedProfileBeforeHistoryDelete.CredentialId &&
+           savedProfileAfterHistoryDelete.UpdatedAtUtc == savedProfileBeforeHistoryDelete.UpdatedAtUtc &&
+           HostHistoryStore.GetPinned().Select(item => item.Hostname).SequenceEqual(pinnedBeforeHistoryDelete),
+        "history removal never edits the saved favorite, credential reference, or legacy pins");
+    Assert(!HostHistoryStore.DeleteEntry(historyToRemove.Id) && !HostHistoryStore.DeleteEntry(0) &&
+           !HostHistoryStore.DeleteEntry(-1) && !HostHistoryStore.DeleteEntry(long.MaxValue) &&
+           HostHistoryStore.GetRecent(10).Select(item => item.Id).ToHashSet().SetEquals(remainingHistoryIds),
+        "repeated, invalid, or stale history removal cannot delete another row");
+
     Assert(HostProfileStore.Delete(created.Id), "saved profile delete");
     Assert(HostProfileStore.GetById(created.Id) is null, "deleted profile stays deleted");
 
