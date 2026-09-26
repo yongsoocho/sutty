@@ -104,7 +104,7 @@ public sealed partial class LocalTerminalView : UserControl
             AppShortcutRequested?.Invoke(this, request);
         TerminalSurface.TerminalSizeChanged += TerminalSurface_TerminalSizeChanged;
         TerminalSurface.OutputCopyCompleted += (_, copied) =>
-            ToolTipService.SetToolTip(CopyOutputButton, copied
+            ClipboardHelper.ShowCopyFeedback(CopyOutputButton, copied
                 ? Loc.T("마지막 출력을 복사했습니다.", "Last output copied.")
                 : Loc.T("클립보드에 복사하지 못했습니다. 다시 눌러 주세요.", "Could not copy to the clipboard. Try again."));
         TerminalSurface.RendererFailed += (_, message) =>

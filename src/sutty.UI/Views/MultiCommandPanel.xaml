@@ -52,13 +52,13 @@
                     FontFamily="Cascadia Mono, Consolas"
                     FontSize="12"
                     Padding="10,9"
-                    PlaceholderText="{x:Bind h:Loc.T('Sutty SSH 선택 대상 · Enter=실행 확인', 'Selected Sutty SSH targets · Enter=review')}"
+                    PlaceholderText="{x:Bind h:Loc.T('선택한 SSH·터미널 대상 · Enter=실행 확인', 'Selected SSH/terminal targets · Enter=review')}"
                     PreviewKeyDown="BroadcastBox_PreviewKeyDown"
                     TextChanged="BroadcastBox_TextChanged"
                     TextWrapping="Wrap" />
                 <StackPanel Grid.Row="1" Spacing="6">
                 <TextBlock FontSize="11" Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
-                    Text="{x:Bind h:Loc.T('독립 SSH exec · 터미널의 cd·환경변수·sudo 상태를 공유하지 않습니다. 응답은 최대 60초 기다립니다.', 'Independent SSH exec · terminal cd, environment and sudo state are not shared. Waits up to 60 seconds.')}" />
+                    Text="{x:Bind h:Loc.T('Sutty SSH는 독립 exec로 실행합니다. 로컬·외부 터미널 입력은 실행 전 별도 승인이 필요합니다. 응답은 최대 60초 기다립니다.', 'Sutty SSH runs independent exec. Local/external terminal input requires separate approval before execution. Waits up to 60 seconds.')}" />
                 <Button
                     x:Name="RunBroadcastButton"
                     Height="32"
@@ -80,7 +80,7 @@
                 <Button x:Name="StopBroadcastButton" HorizontalAlignment="Stretch"
                     Visibility="Collapsed" Click="StopBroadcast_Click"
                     Content="{x:Bind h:Loc.T('취소 요청 · 대기 종료', 'Request cancellation · stop waiting')}"
-                    ToolTipService.ToolTip="{x:Bind h:Loc.T('원격 작업 종료는 보장되지 않습니다. 서버에서 결과를 확인하세요. 자동 재실행하지 않습니다.', 'Remote termination is not guaranteed. Check the server result. No automatic replay.')}" />
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('작업 종료는 보장되지 않습니다. 대상 서버·터미널에서 결과를 확인하세요. 자동 재실행하지 않습니다.', 'Termination is not guaranteed. Check the target server or terminal. No automatic replay.')}" />
                 </StackPanel>
                 <controls:WrapPanel
                     x:Name="BroadcastStatusPanel"

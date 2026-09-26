@@ -72,8 +72,8 @@
             Background="{ThemeResource AppBg}" />
 
         <!--
-            창 드래그 영역: 탭/버튼 같은 인터랙티브 컨트롤은 이 위에 그려지므로
-            빈 곳 어디서든 드래그로 창을 옮길 수 있다. (SetTitleBar 대상)
+            창 드래그 영역. 탭과 오버플로 버튼은 코드에서 Passthrough로 등록하고,
+            나머지 빈 공간은 창 이동과 제목 표시줄 더블클릭에 사용한다.
         -->
         <Grid
             x:Name="TitleBarDragRegion"
@@ -206,7 +206,7 @@
 
             <!--
                 세션 탭: Connect 할 때마다 코드에서 TabViewItem이 추가된다.
-                HorizontalAlignment=Left 로 탭 폭만큼만 차지 → 나머지는 드래그 영역.
+                실제 탭 목록과 + 버튼만 입력 영역으로 등록하고 빈 공간은 드래그 영역으로 둔다.
             -->
             <TabView
                 x:Name="TitleTabs"
@@ -221,6 +221,11 @@
                 TabCloseRequested="TitleTabs_TabCloseRequested"
                 TabWidthMode="SizeToContent">
                 <TabView.Resources>
+                    <!-- Reuse the current preset's mutable brushes so theme switches
+                         update both selected outlines and inactive tab separators. -->
+                    <StaticResource x:Key="TabViewItemBorderBrush" ResourceKey="ShellBorder" />
+                    <StaticResource x:Key="TabViewSelectedItemBorderBrush" ResourceKey="CardBorder" />
+                    <StaticResource x:Key="TabViewItemSeparator" ResourceKey="ShellBorder" />
                     <MenuFlyout x:Name="NewTabMenu" Placement="BottomEdgeAlignedLeft">
                         <MenuFlyoutItem
                             AutomationProperties.Name="{x:Bind h:Loc.T('새 SSH 연결', 'New SSH connection')}"
@@ -269,7 +274,7 @@
                         VerticalAlignment="Bottom"
                         AutomationProperties.Name="PowerShell"
                         Background="{ThemeResource PanelBg}"
-                        BorderBrush="Transparent"
+                        BorderBrush="{ThemeResource CardBorder}"
                         BorderThickness="1,1,1,0"
                         CornerRadius="8,8,0,0"
                         IsHitTestVisible="False">

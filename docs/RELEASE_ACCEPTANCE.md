@@ -27,8 +27,8 @@ UI·실서버·패키지 증거 미기록**이며 자동 테스트 성공으로 
 | A03 | SSH A/B, local and external tabs / SSH A/B·로컬·외부 탭 | Exact target, separate capabilities, stale responses ignored / 대상·기능 구분·늦은 응답 무시 |
 | A04 | Switch tabs during upload confirmation / 업로드 확인 중 탭 변경 | Only pinned original host/path or cancel / 고정된 원래 대상에만 반영 또는 취소 |
 | A05 | Multi zero targets and canceled confirmation / 대상 0개·확인 취소 | No send; retain draft / 미전송·초안 보존 |
-| A06 | 10–16 tabs, two pages, new tab during run / 10–16탭·2페이지·실행 중 탭 추가 | Preview every target; approved set only / 전체 대상 확인·승인 집합 고정 |
-| A07 | Local editor, nested SSH, password/OTP prompt / 로컬 편집기·중첩 SSH·인증 대기 | Excluded from ordinary Multi execution / 일반 Multi 실행 대상 제외 |
+| A06 | 10–16 tabs, hidden page controls, new tab during run / 10–16탭·페이지 이동 숨김·실행 중 탭 추가 | Only first nine visible tabs selectable; preview every target; approved set only / 첫 9개 표시 탭만 선택·전체 대상 확인·승인 집합 고정 |
+| A07 | Local editor, nested SSH, password/OTP prompt / 로컬 편집기·중첩 SSH·인증 대기 | Selection allowed; no terminal input without separate default-off advanced approval; uncertain outcomes explicit / 선택 가능·기본 해제된 고급 승인 없이는 입력 금지·결과 불확실성 표시 |
 | A08 | Hung command, disconnect, cancel / 무응답·단절·취소 | Bounded wait, uncertain remote outcome, no replay / 유한 대기·원격 종료 미확인·재실행 없음 |
 | A09 | Transfer drop/cancel/app exit/disk full / 전송 단절·취소·종료·디스크 부족 | Preserve destinations; incomplete recovery only / 기존 파일 보존·미완료 항목만 복구 |
 | A10 | Same-size/time remote change, save during upload / 같은 크기·시각 변경·업로드 중 재저장 | Detect or fail closed; retain local copy / 검출 또는 검증 불가 중지·로컬 보존 |

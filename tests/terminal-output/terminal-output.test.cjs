@@ -215,5 +215,17 @@ test('terminal reset clears all captures and integration state', async () => {
   f.capture.reset();
   f.terminal.reset();
   assert.equal(f.capture.snapshot(), '');
+  assert.equal(f.capture.hasSnapshot(), false);
+  f.terminal.dispose();
+});
+
+test('an unknown response differs from a confirmed empty command response', async () => {
+  const f = fixture();
+  await f.prompt();
+  assert.equal(f.capture.hasSnapshot(), false);
+  await f.command('no-output');
+  await f.prompt();
+  assert.equal(f.capture.snapshot(), '');
+  assert.equal(f.capture.hasSnapshot(), true);
   f.terminal.dispose();
 });

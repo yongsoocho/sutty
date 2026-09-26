@@ -20,7 +20,7 @@
     allowTransparency: false,
     convertEol: false,
     cursorBlink: true,
-    cursorStyle: 'underline',
+    cursorStyle: 'bar',
     drawBoldTextInBrightColors: true,
     fontFamily: 'Cascadia Mono, Consolas, monospace',
     fontSize: 13,
@@ -37,6 +37,10 @@
   terminal.loadAddon(searchAddon);
   terminal.open(terminalElement);
   const outputCapture = new window.SuttyOutputCapture(terminal);
+
+  // The cursor selected in Settings is authoritative. DECSCUSR otherwise leaves
+  // a shell-owned shape override in xterm even after its options are updated.
+  terminal.parser.registerCsiHandler({ intermediates: ' ', final: 'q' }, () => true);
 
   let fitTimer = 0;
   let lastColumns = 0;
@@ -251,7 +255,7 @@
       : terminal.options.fontSize;
     terminal.options.cursorStyle = ['block', 'bar', 'underline'].includes(message.cursorStyle)
       ? message.cursorStyle
-      : 'underline';
+      : 'bar';
     terminal.options.cursorBlink = message.cursorBlink !== false;
     terminal.options.scrollback = Number.isInteger(message.scrollback)
       ? Math.max(100, Math.min(50000, message.scrollback))
@@ -304,6 +308,10 @@
           break;
         case 'copyLatestOutput': {
           const text = outputCapture.snapshot();
+          if (!outputCapture.hasSnapshot()) {
+            post({ type: 'outputCopyUnavailable', id: message.id });
+            break;
+          }
           // Preserve the complete output, including an empty result. Split bridge
           // messages instead of silently truncating at the selection-copy limit.
           post({ type: 'outputCopyStart', id: message.id });

@@ -157,7 +157,7 @@ public sealed partial class SessionWorkspaceView : UserControl
         if (_detached) return Task.CompletedTask;
         if (_externalFilesHost is { } previousHost && !ReferenceEquals(previousHost, host))
             RestoreFileBrowser(previousHost);
-        if (!ReferenceEquals(_externalFilesHost, host))
+        if (!ReferenceEquals(_externalFilesHost, host) || !ReferenceEquals(host.Content, FilesPanel))
         {
             FilesPanelHost.Content = null;
             _externalFilesHost = host;

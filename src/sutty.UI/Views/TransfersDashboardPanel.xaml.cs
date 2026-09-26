@@ -10,10 +10,13 @@ namespace sutty.UI.Views;
 public sealed partial class TransfersDashboardPanel : UserControl
 {
     private readonly ConditionalWeakTable<LocalTerminalView, LocalBrowserPanel> _localBrowsers = new();
+    private LocalBrowserPanel? _standaloneBrowser;
     private SessionWorkspaceView? _activeWorkspace;
     private LocalTerminalView? _activeLocal;
     private bool _mounted;
     private int _selectionVersion;
+
+    public event EventHandler? ConnectSshRequested;
 
     public TransfersDashboardPanel()
     {
@@ -28,6 +31,7 @@ public sealed partial class TransfersDashboardPanel : UserControl
         if (ReferenceEquals(workspace, _activeWorkspace) && ReferenceEquals(local, _activeLocal))
         {
             UpdateIdentity();
+            if (_mounted && BrowserHost.Content is null) AttachBrowser();
             return;
         }
         DetachBrowser();
@@ -64,20 +68,16 @@ public sealed partial class TransfersDashboardPanel : UserControl
             ? $"Sutty SSH · {workspace.ViewModel.ConnectionIdentity} · {workspace.ViewModel.DisplayName}"
             : _activeLocal is { } local
                 ? $"{local.ConnectionKindText} · {local.DisplayTitle} · {local.ConnectionIdentity}"
-                : "";
-        var hasShell = _activeWorkspace is not null || _activeLocal is not null;
+                : Loc.T("이 PC · 로컬 파일", "This PC · local files");
         var isExternal = _activeLocal?.IsExternalCommand == true;
-        BrowserCard.Visibility = hasShell && !isExternal ? Visibility.Visible : Visibility.Collapsed;
+        BrowserCard.Visibility = Visibility.Visible;
         ExternalTerminalState.Visibility = isExternal ? Visibility.Visible : Visibility.Collapsed;
-        NoTargetState.Visibility = hasShell ? Visibility.Collapsed : Visibility.Visible;
+        NoTargetState.Visibility = _activeWorkspace is null && _activeLocal is null ? Visibility.Visible : Visibility.Collapsed;
         BrowserScopeText.Text = _activeWorkspace is not null
             ? Loc.T("선택한 Sutty SSH 연결의 원격 파일 · 아래 전송 큐는 모든 탭의 작업을 표시합니다.",
                 "Remote files for the selected Sutty SSH connection · the queue below includes all tabs.")
-            : _activeLocal is { IsExternalCommand: false }
-                ? Loc.T("이 PC의 로컬 파일 · 아래 전송 큐는 모든 탭의 작업을 표시합니다.",
-                    "Local files on this PC · the queue below includes all tabs.")
-                : Loc.T("아래 전송 큐는 모든 탭의 작업이며, 선택한 터미널의 원격 파일 목록이 아닙니다.",
-                    "The queue below includes work from all tabs; it is not a remote file listing for the selected terminal.");
+            : Loc.T("이 PC의 로컬 파일 · 원격 서버 목록이 아닙니다. 아래 전송 큐는 모든 탭의 작업을 표시합니다.",
+                "Local files on this PC · not a remote server listing. The queue below includes all tabs.");
         ToolTipService.SetToolTip(ActiveShellText, ActiveShellText.Text);
     }
 
@@ -113,14 +113,29 @@ public sealed partial class TransfersDashboardPanel : UserControl
         {
             if (_activeWorkspace is { } workspace)
                 await workspace.ShowFileBrowserAsync(BrowserHost);
-            else if (_activeLocal is { IsExternalCommand: false } local)
+            else if (_activeLocal is { } local)
             {
                 var browser = _localBrowsers.GetValue(local, _ => new LocalBrowserPanel());
                 browser.RefreshLanguage();
                 BrowserHost.Content = browser;
-                local.WorkingDirectoryChanged -= Local_WorkingDirectoryChanged;
-                local.WorkingDirectoryChanged += Local_WorkingDirectoryChanged;
-                await browser.FollowWorkingDirectoryAsync(local.WorkingDirectory, force: true);
+                if (local.IsExternalCommand)
+                    await browser.ShowLocalPcAsync();
+                else
+                {
+                    local.WorkingDirectoryChanged -= Local_WorkingDirectoryChanged;
+                    local.WorkingDirectoryChanged += Local_WorkingDirectoryChanged;
+                    if (string.IsNullOrWhiteSpace(local.WorkingDirectory))
+                        await browser.ShowLocalPcAsync();
+                    else
+                        await browser.FollowWorkingDirectoryAsync(local.WorkingDirectory, force: true);
+                }
+            }
+            else
+            {
+                var browser = _standaloneBrowser ??= new LocalBrowserPanel();
+                browser.RefreshLanguage();
+                BrowserHost.Content = browser;
+                await browser.ShowLocalPcAsync();
             }
         }
         catch (Exception error)
@@ -132,11 +147,15 @@ public sealed partial class TransfersDashboardPanel : UserControl
         }
     }
 
+    private void ConnectSsh_Click(object sender, RoutedEventArgs e) =>
+        ConnectSshRequested?.Invoke(this, EventArgs.Empty);
+
     private async void Local_WorkingDirectoryChanged(object? sender, string directory)
     {
         if (!_mounted || !ReferenceEquals(sender, _activeLocal) ||
             BrowserHost.Content is not LocalBrowserPanel browser) return;
         // The per-tab browser owns cancellation/versioning; a late A result cannot publish in B.
-        await browser.FollowWorkingDirectoryAsync(directory);
+        if (string.IsNullOrWhiteSpace(directory)) await browser.ShowLocalPcAsync();
+        else await browser.FollowWorkingDirectoryAsync(directory);
     }
 }

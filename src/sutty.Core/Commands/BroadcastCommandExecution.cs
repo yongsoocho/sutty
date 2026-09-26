@@ -1,4 +1,13 @@
+using sutty.Core.Sessions;
+using sutty.Core.Terminal;
+
 namespace sutty.Core.Commands;
+
+public enum BroadcastCommandMode
+{
+    SshExec,
+    TerminalInput,
+}
 
 public enum BroadcastCommandOutcome
 {
@@ -21,6 +30,24 @@ public sealed record BroadcastCommandResult(
 /// </summary>
 public static class BroadcastCommandExecution
 {
+    /// <summary>Selection expresses intent; terminal-input dispatch still needs separate approval.</summary>
+    public static bool CanSelectTarget(SessionState? sshState, TerminalState? terminalState) =>
+        sshState is { } state ? state == SessionState.Connected : terminalState == TerminalState.Open;
+
+    /// <summary>Terminal input requires a fresh explicit approval in addition to target selection.</summary>
+    public static Task<BroadcastCommandResult> RunApprovedAsync(
+        Func<CancellationToken, Task<CommandExecutionResult>> execute,
+        TimeSpan timeout,
+        BroadcastCommandMode mode,
+        bool terminalInputApproved,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        if (mode == BroadcastCommandMode.TerminalInput && !terminalInputApproved)
+            return Task.FromResult(new BroadcastCommandResult(BroadcastCommandOutcome.NotStarted));
+        return RunAsync(execute, timeout, cancellationToken);
+    }
+
     public static async Task<BroadcastCommandResult> RunAsync(
         Func<CancellationToken, Task<CommandExecutionResult>> execute,
         TimeSpan timeout,

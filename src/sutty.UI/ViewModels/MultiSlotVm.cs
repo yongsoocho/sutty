@@ -51,21 +51,26 @@ public sealed class MultiSlotVm : ObservableObject
 
     public bool HasSession => View is not null || LocalView is not null;
     public bool IsEmpty => !HasSession;
-    public bool CanBroadcast => View?.Session.State == SessionState.Connected;
+    public bool CanBroadcast => BroadcastCommandExecution.CanSelectTarget(
+        View?.Session.State, LocalView?.Terminal.TerminalState);
+    public BroadcastCommandMode ExecutionMode => LocalView is not null
+        ? BroadcastCommandMode.TerminalInput : BroadcastCommandMode.SshExec;
 
     public string ExecutionModeText => View is not null
         ? Loc.T("Sutty SSH · 독립 exec 실행", "Sutty SSH · independent exec")
         : HasSession
-            ? Loc.T("터미널 입력 전용 · 일괄 실행 제외", "Terminal input only · excluded from broadcast")
+            ? Loc.T("터미널 입력 · 실행 전 별도 승인", "Terminal input · requires separate approval")
             : "";
 
-    public string SelectionHelp => CanBroadcast
+    public string SelectionHelp => CanBroadcast && LocalView is not null
+        ? Loc.T("선택할 수 있습니다. 실행 시 전경 프로그램으로 문자열·Enter와 출력 표시자를 보냅니다. 셸 프롬프트를 직접 확인하고 별도로 승인해야 합니다.",
+            "Selectable. Execution sends text, Enter, and output markers to the foreground program. Check the shell prompt yourself and explicitly approve terminal input.")
+        : CanBroadcast
         ? Loc.T("독립 SSH 명령 실행 · 터미널의 cd·환경변수·sudo 상태를 공유하지 않습니다.",
             "Independent SSH execution · terminal cd, environment and sudo state are not shared.")
         : View is not null
             ? Loc.T("원래 Sutty SSH 호스트에 연결한 뒤 선택하세요.", "Connect the original Sutty SSH host before selecting it.")
-            : Loc.T("전경 프로그램과 실제 원격 대상을 확인할 수 없어 일괄 입력을 보내지 않습니다. 저장 호스트로 연결하세요.",
-                "The foreground program and remote target are unknown. Connect a saved host to use broadcast.");
+            : Loc.T("실행 중인 터미널 탭을 선택하세요.", "Select a running terminal tab.");
 
     public string Title => View?.Session.Info.Title
         ?? LocalView?.DisplayTitle ?? "";
@@ -123,6 +128,7 @@ public sealed class MultiSlotVm : ObservableObject
         OnPropertyChanged(nameof(StateBrush));
         OnPropertyChanged(nameof(CanBroadcast));
         OnPropertyChanged(nameof(ExecutionModeText));
+        OnPropertyChanged(nameof(ExecutionMode));
         OnPropertyChanged(nameof(SelectionHelp));
     }
 
@@ -152,10 +158,16 @@ public sealed class MultiSlotVm : ObservableObject
 
     public Task<CommandExecutionResult> ExecuteAsync(
         string command,
-        CancellationToken cancellationToken = default) => CanBroadcast
-        ? View!.Session.ExecuteCommandAsync(command, cancellationToken)
+        CancellationToken cancellationToken = default,
+        bool terminalInputApproved = false) => CanBroadcast
+        ? View is not null
+            ? View.Session.ExecuteCommandAsync(command, cancellationToken)
+            : terminalInputApproved
+                ? LocalView!.RunExternalCommandDetailedAsync(command, cancellationToken)
+                : Task.FromException<CommandExecutionResult>(
+                    new InvalidOperationException("Terminal input requires explicit approval."))
         : Task.FromException<CommandExecutionResult>(
-            new InvalidOperationException("Broadcast requires a connected Sutty SSH session."));
+            new InvalidOperationException("Broadcast requires a connected SSH session or running terminal."));
 
     public bool IsProduction => View?.Session.Info.Tags.Any(tag =>
         tag.Trim().Equals("prod", StringComparison.OrdinalIgnoreCase) ||

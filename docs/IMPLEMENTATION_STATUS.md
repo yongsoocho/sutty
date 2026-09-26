@@ -2,6 +2,43 @@
 
 This document maps the current repository to Sutty's local-first Windows SSH/SFTP product scope. It is intentionally evidence-based: **Implemented** means code and focused verification exist; it does not imply a GA release.
 
+## Shell usability follow-up — 2026-09-27
+
+Changes after `8ad2f2ceabb3b4ddab8633bfe81d7f20e186934f`:
+
+- Last-output copy recognizes compact `❯`/`›` prompts after nested SSH. An unresolved capture
+  leaves the clipboard intact; a known empty command response remains distinct. The Windows
+  clipboard write retries brief contention and shows success/failure beside the clicked button.
+  Packaged renderer tests and local PowerShell/CMD replay cover combined stdout/stderr;
+  arbitrary custom prompt boundaries remain best effort.
+- One-line launch history retains the newest 15 rows, including when opening an older database;
+  shared host favorites remain intact.
+- Files retains an explicitly labeled local PC browser for external terminals or no selected
+  shell. Integrated SSH uses the selected session's Files, with reattachment when its cached
+  browser host has lost the content. Nested `ssh` still cannot retarget the SFTP connection.
+- Multi selection includes running local/external tabs. Each execution separates SSH exec from
+  advanced terminal input and requires a fresh, unchecked-by-default approval for terminal
+  input. Commands and approved targets remain pinned; no approval means no send. Unknown exit
+  status and cancellation remain explicit. The older SSH-only note below describes the earlier
+  review baseline and is superseded by this follow-up.
+- The cursor defaults to a bar, with one-time migration from the earlier underline default.
+  Subsequent explicit cursor preferences remain available. Tabs use subtle theme borders;
+  native client input regions cover the tab strip and overflow arrows, while empty caption
+  space retains normal window dragging and double-click behavior.
+
+마지막 출력 복사 경계·실패 안내, 한 줄 기록 15개 제한, Files 표시 복원,
+로컬·외부 Multi 선택과 별도 실행 승인,
+막대 커서와 탭 경계·제목 표시줄 입력 처리를 보완합니다. 자동 검증은 아래 변경 기록과
+PR에 남기며, 실제 Windows 클릭·클립보드 및 실서버 인수 완료를 뜻하지 않습니다.
+
+Focused verification: final x64 Debug, x64 Release, and ARM64 Debug UI builds passed with
+zero warnings/errors. Command and Setting self-tests passed, including old-history retention,
+mixed-target authorization, local browsing and cursor migration/reset. Fresh local PowerShell/CMD
+ConPTY tests and 25 JavaScript tests passed (17 capture, two native replay, six actual headless
+Edge production-bridge cases; zero skipped). Product-scope, evidence-history, release metadata
+and whitespace guards passed. Native WinUI clicks, Windows clipboard acceptance, DPI and live
+SSH/SFTP remain unverified; the browser test substitutes only WebView's native message transport.
+
 ## Reliability review — 2026-09-26
 
 Source baseline: `90a6e04e6a66898850f0a53b16bd3d43257d963d` plus the current working-tree
@@ -55,7 +92,7 @@ changes. This is Alpha 4 development work, not an exact published or signed cand
 | Interactive terminal | Persistent SSH PTY and local PowerShell/CMD ConPTY use package-local xterm.js 6.0.0 in a hardened WebView2. Both local shells are available from `+` / `Ctrl+T`. ANSI/VT color/style, alternate screen, mouse/input modes, IME/Unicode cells, search, clipboard shortcuts, measured server-side resize, and bounded acknowledged output delivery are integrated. Manual CMD input/resize acceptance remains unverified. |
 | Latest output copy | One clipboard icon beside the CONPTY/PTY dimensions requests the latest rendered command output, including errors. Runtime PowerShell/CMD prompt markers do not modify profile files; custom or unmarked SSH shell boundaries use best-effort detection. The result reflects PTY expansion/processing of tabs, control sequences, and newlines, not a byte-for-byte stdout/stderr capture. Manual clipboard acceptance remains unverified. |
 | Theme catalog | [36 shared app/terminal palettes](THEMES.md) include VS Code defaults, Dracula, Monokai, GitHub, Nord, Tokyo Night, Catppuccin, and more. Gradient accents remain; button text selects black/white for contrast. Named app-follow mode applies ANSI colors even across dark-to-dark switches. Existing saved ids remain compatible; palette brushes, status colors, tab borders, and tab buttons refresh with theme changes. |
-| Local connection launcher | A separate Home card replaces its recent-host card and accepts validated one-line direct connection commands such as `ssh worker1` and `multipass connect master` and opens their installed executable in a new local ConPTY terminal without a shell. OpenSSH therefore reads the user's existing `.ssh/config`, `IdentityFile`, SSH Agent, and `PATH` configuration. Saves join Hosts favorites (10,000 shared profiles), with one-time transactional migration from the archived old library. Empty/filled host stars add/remove favorites. External profiles are excluded from sharing and automatic restore; explicit clicks or --host rebuild their launch plan. Launch history (250 maximum) remains local-only; they retain canonical commands and finite outcomes, never resolved executable paths, terminal output, passwords, tokens, or passphrases. Actual SSH Agent/key/config, Multipass, and UI acceptance remain unverified. |
+| Local connection launcher | A separate Home card replaces its recent-host card and accepts validated one-line direct connection commands such as `ssh worker1` and `multipass connect master` and opens their installed executable in a new local ConPTY terminal without a shell. OpenSSH therefore reads the user's existing `.ssh/config`, `IdentityFile`, SSH Agent, and `PATH` configuration. Saves join Hosts favorites (10,000 shared profiles), with one-time transactional migration from the archived old library. Empty/filled host stars add/remove favorites. External profiles are excluded from sharing and automatic restore; explicit clicks or --host rebuild their launch plan. Launch history (15 maximum) remains local-only; they retain canonical commands and finite outcomes, never resolved executable paths, terminal output, passwords, tokens, or passphrases. Actual SSH Agent/key/config, Multipass, and UI acceptance remain unverified. |
 | Structured commands | Standard output, standard error, exit status/signal, timing, and cancellation are preserved for the user-visible Commands workspace and Multi execution. The existing persisted `Repl` setting value remains compatible. |
 | SFTP baseline | Session-bound dual-pane Files supports absolute paths, back/forward, parent navigation, refresh, hidden toggles, folder-first name/size/modified sorting, multi-selection, and locally persisted host-specific remote favorites. Pane-to-pane file/folder drops, Explorer uploads, and transfer buttons use the same durable collision/staging/checkpoint/verification engine; all drops copy and pin the destination before dialogs. Existing remote search, rename, safe move/delete, permissions, and folder creation remain. The live Transfer Center enables controls only for an exact eligible executor; cross-process queue locks and execution leases remain intact. |
 | Remote editing | Regular text files up to 8 MiB open in a configured external executable. Save detection defaults to manual upload; auto-upload is opt-in per file and stops on failure or conflict. Host/path and upload snapshots are pinned, size/time or remote SHA-256 content changes trigger review, and all transfers use the existing durable safe engine. Failed edits require review rather than generic queue retry. Reload commits a fresh working copy only after verification; existing copies survive failed reload, close, or upload errors in the recovery folder. Unsaved editor buffers cannot be inspected; copies may contain sensitive content and are not automatically deleted. Bounded content comparison detects same-size/time edits; writes after the preflight comparison still require server-side coordination. |
@@ -103,7 +140,7 @@ changes. This is Alpha 4 development work, not an exact published or signed cand
 
 Saved/favorite and recent-host cards have an upper-right X with contextual confirmation. Recent deletion removes one connection_log id and preserves all saved profiles and other attempts. The Hosts/History sharing shortcut was removed; underlying sharing code and Settings host imports remain. Successful one-line Open clears its submitted draft without clearing newer input. Files names its real SFTP endpoint and explains using a destination connection through SSH Jump for another server.
 
-Multi uses explicit three-column placement rather than adaptive maximum-column wrapping. Previous/next/page controls are hidden but internal paging remains. The current screen exposes the first nine tabs; bulk and individual selection target visible connected Sutty SSH only, with explicit excluded counts. Hidden selections cannot enter a broadcast and Clear all removes stale selections. These changes do not extend raw terminal broadcasting or infer a nested SSH target.
+Multi uses explicit three-column placement rather than adaptive maximum-column wrapping. Previous/next/page controls are hidden but internal paging remains. The current screen exposes the first nine tabs; bulk and individual selection include visible running local/external and connected Sutty SSH, with disconnected/hidden counts and separate default-off approval for advanced terminal input. Hidden selections cannot enter a broadcast and Clear all removes stale selections. Advanced terminal input never infers a nested SSH target and reports missing exit status and cancellation uncertainty explicitly.
 
 Validation: x64 Debug/Release and ARM64 Debug UI builds passed with zero warnings/errors in
 isolated `artifacts/usability-*` outputs. Command and Setting self-tests passed, including exact

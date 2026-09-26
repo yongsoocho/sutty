@@ -142,13 +142,14 @@ namespace sutty.UI.Views
             var available = _selection.EligibleCount;
             var offPage = _selection.GetSelectedSlots().Count(slot => !Slots.Contains(slot));
             CountText.Text = Helpers.Loc.T(
-                $"SSH {selected} / {available}개 선택 · 열린 탭 {total}개",
-                $"SSH {selected} / {available} selected · {total} open tabs");
-            var localCount = Slots.Count(slot => slot.LocalView is not null);
-            var disconnectedCount = Slots.Count(slot => slot.View is not null && !slot.CanBroadcast);
+                $"{selected} / {available}개 선택 · 열린 탭 {total}개",
+                $"{selected} / {available} selected · {total} open tabs");
+            var localCount = Slots.Count(slot => slot.LocalView is not null && slot.CanBroadcast);
+            var sshCount = Slots.Count(slot => slot.View is not null && slot.CanBroadcast);
+            var disconnectedCount = Slots.Count(slot => slot.HasSession && !slot.CanBroadcast);
             SelectionNoticeText.Text = Helpers.Loc.T(
-                $"선택 가능: 연결된 Sutty SSH {available}개. 로컬·외부 터미널 {localCount}개, 미연결 SSH {disconnectedCount}개는 제외됩니다.",
-                $"Eligible: {available} connected Sutty SSH. Excludes {localCount} local/external terminals and {disconnectedCount} disconnected SSH.");
+                $"선택 가능: Sutty SSH {sshCount}개 · 로컬/외부 터미널 {localCount}개. 터미널 입력은 실행 전 별도 승인이 필요합니다. 미연결 {disconnectedCount}개는 제외됩니다.",
+                $"Available: {sshCount} Sutty SSH · {localCount} local/external terminals. Terminal input needs separate approval before execution. Excludes {disconnectedCount} disconnected tabs.");
             if (_selection.HiddenSessionCount > 0)
                 SelectionNoticeText.Text += "\n" + Helpers.Loc.T(
                     $"처음 9개 탭만 표시합니다. 나머지 {_selection.HiddenSessionCount}개는 전체 선택과 실행 대상에서 제외됩니다.",

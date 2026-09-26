@@ -43,9 +43,21 @@ internal static class LocalFileBrowserSelfTests
 
         await VerifyViewAndHistoryAsync(service, root, folder);
         await VerifyCancellationAndSupersededNavigationAsync(root);
+        await VerifyStandaloneBrowserWithoutShellAsync(root);
         VerifyRemoteFavorites(scratch);
 
         Console.WriteLine("Local file browser self-tests passed.");
+    }
+
+    private static async Task VerifyStandaloneBrowserWithoutShellAsync(string root)
+    {
+        using var browser = new LocalFileBrowserViewModel(new DelayedBrowserService(root));
+        Assert(await browser.RefreshAsync() && browser.CurrentPath == root && browser.Items.Count == 1,
+            "Files can initialize from this PC's home without a selected shell or remote directory");
+        var folder = Path.Combine(root, "manually-selected");
+        await browser.NavigateAsync(folder);
+        Assert(await browser.RefreshAsync() && browser.CurrentPath == folder,
+            "reopening standalone local Files retains its manually selected directory");
     }
 
     private static async Task VerifyViewAndHistoryAsync(LocalFileBrowserService service, string root, string folder)

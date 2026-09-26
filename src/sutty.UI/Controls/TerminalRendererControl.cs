@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 
 namespace sutty.UI.Controls;
 
@@ -42,6 +43,7 @@ public sealed class TerminalRendererControl : UserControl
     private int _copyWritesRemaining;
     private long _outputCopyId;
     private StringBuilder? _outputCopy;
+    private CancellationTokenSource? _outputCopyCancellation;
 
     public TerminalRendererControl()
     {
@@ -140,6 +142,8 @@ public sealed class TerminalRendererControl : UserControl
             return;
         }
 
+        _outputCopyCancellation?.Cancel();
+        _outputCopyCancellation = null;
         _copyLatestOutputPending = true;
         _copyWritesRemaining = _pendingWrites.Count + (_inFlightId == 0 ? 0 : 1);
         SendNextWrite();
@@ -148,7 +152,9 @@ public sealed class TerminalRendererControl : UserControl
     private void CancelOutputCopy()
     {
         ++_outputCopyId; // Reject late clipboard chunks from a previous terminal generation.
-        var pending = _copyLatestOutputPending || _outputCopy is not null;
+        var pending = _copyLatestOutputPending || _outputCopy is not null || _outputCopyCancellation is not null;
+        _outputCopyCancellation?.Cancel();
+        _outputCopyCancellation = null;
         _outputCopy = null;
         _copyLatestOutputPending = false;
         _copyWritesRemaining = 0;
@@ -309,9 +315,32 @@ public sealed class TerminalRendererControl : UserControl
                 case "outputCopyEnd":
                     if (message.Id == _outputCopyId && _outputCopy is not null)
                     {
-                        var copied = ClipboardHelper.CopyText(_outputCopy.ToString(), allowEmpty: true);
+                        var textToCopy = _outputCopy.ToString();
                         _outputCopy = null;
-                        OutputCopyCompleted?.Invoke(this, copied);
+                        _outputCopyCancellation?.Cancel();
+                        using var cancellation = new CancellationTokenSource();
+                        _outputCopyCancellation = cancellation;
+                        try
+                        {
+                            var copied = await ClipboardHelper.CopyTextAsync(
+                                textToCopy, allowEmpty: true, cancellation.Token);
+                            if (message.Id == _outputCopyId)
+                                OutputCopyCompleted?.Invoke(this, copied);
+                        }
+                        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+                        finally
+                        {
+                            if (ReferenceEquals(_outputCopyCancellation, cancellation))
+                                _outputCopyCancellation = null;
+                        }
+                    }
+                    break;
+
+                case "outputCopyUnavailable":
+                    if (message.Id == _outputCopyId)
+                    {
+                        _outputCopy = null;
+                        OutputCopyCompleted?.Invoke(this, false);
                     }
                     break;
 
@@ -468,7 +497,7 @@ public sealed class TerminalRendererControl : UserControl
         cursorStyle?.ToLowerInvariant() switch
         {
             "block" => "block",
-            "bar" => "bar",
-            _ => "underline",
+            "underline" => "underline",
+            _ => "bar",
         };
 }

@@ -22,6 +22,7 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
     private int _navigationVersion;
     private bool _hasDirectory;
     private bool _disposed;
+    private bool _followsShell = true;
     private CancellationTokenSource? _navigationCancellation;
 
     public LocalFileBrowserViewModel Browser { get; } = new(new LocalFileBrowserService());
@@ -35,6 +36,8 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
     public Task FollowWorkingDirectoryAsync(string directory, bool force = false)
     {
         if (_disposed) return Task.CompletedTask;
+        _followsShell = true;
+        FollowShellButton.Visibility = Visibility.Visible;
         if (!force && string.Equals(_shellDirectory, directory, StringComparison.OrdinalIgnoreCase))
             return Task.CompletedTask;
         _shellDirectory = directory ?? "";
@@ -50,6 +53,17 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
         PathBox.Text = _shellDirectory;
         var path = _shellDirectory;
         return NavigateAsync(token => Browser.NavigateAsync(path, token), shellNavigation: true);
+    }
+
+    /// <summary>Browse this PC even when no shell can report a filesystem directory.</summary>
+    public Task ShowLocalPcAsync()
+    {
+        if (_disposed) return Task.CompletedTask;
+        _followsShell = false;
+        _shellDirectory = "";
+        FollowShellButton.Visibility = Visibility.Collapsed;
+        // Refresh preserves manual navigation; the first visit uses the local home folder.
+        return NavigateAsync(token => Browser.RefreshAsync(token));
     }
 
     public void CancelPendingNavigation()
@@ -109,7 +123,7 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
         ForwardButton.IsEnabled = Browser.CanGoForward && !loading;
         ParentButton.IsEnabled = _hasDirectory && Browser.CanNavigateParent && !loading;
         if (_hasDirectory) PathBox.Text = Browser.CurrentPath;
-        StatusText.Text = !_hasDirectory && string.IsNullOrWhiteSpace(_shellDirectory)
+        StatusText.Text = _followsShell && !_hasDirectory && string.IsNullOrWhiteSpace(_shellDirectory)
             ? Loc.T("현재 셸 폴더를 확인하는 중입니다.", "Waiting for the current shell directory.")
             : Browser.ErrorMessage ?? "";
     }
@@ -123,7 +137,8 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
     private async void Refresh_Click(object sender, RoutedEventArgs e)
     {
         if (_hasDirectory) await NavigateAsync(token => Browser.RefreshAsync(token));
-        else await FollowWorkingDirectoryAsync(_shellDirectory, force: true);
+        else if (_followsShell) await FollowWorkingDirectoryAsync(_shellDirectory, force: true);
+        else await ShowLocalPcAsync();
     }
     private async void FollowShell_Click(object sender, RoutedEventArgs e) =>
         await FollowWorkingDirectoryAsync(_shellDirectory, force: true);

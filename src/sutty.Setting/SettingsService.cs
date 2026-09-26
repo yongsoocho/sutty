@@ -46,18 +46,23 @@ public static class SettingsService
         {
             if (File.Exists(SettingsPath))
             {
+                using var document = JsonDocument.Parse(File.ReadAllText(SettingsPath));
                 var loaded = JsonSerializer.Deserialize(
-                    File.ReadAllText(SettingsPath),
+                    document,
                     SettingsJsonContext.Default.AppSettings);
                 if (loaded is not null)
+                {
+                    if (!document.RootElement.TryGetProperty(nameof(AppSettings.TerminalCursorPreferenceVersion), out _))
+                        loaded.TerminalCursorPreferenceVersion = 0;
                     return _current = Normalize(loaded);
+                }
             }
         }
         catch (Exception)
         {
             // 파일이 손상됐으면 기본값으로 시작한다
         }
-        return _current = new AppSettings();
+        return _current = Normalize(new AppSettings());
     }
 
     /// <summary>
@@ -134,11 +139,15 @@ public static class SettingsService
             : settings.TerminalFontFamily.Trim()[..Math.Min(settings.TerminalFontFamily.Trim().Length, 128)];
         settings.TerminalFontSize = Math.Clamp(settings.TerminalFontSize, 8, 32);
         settings.TerminalTheme = ThemeCatalog.NormalizeTerminalId(settings.TerminalTheme);
-        settings.TerminalCursorStyle = settings.TerminalCursorStyle?.ToLowerInvariant() switch
+        var cursorStyle = settings.TerminalCursorStyle?.ToLowerInvariant();
+        if (settings.TerminalCursorPreferenceVersion < 1 && cursorStyle == "underline")
+            cursorStyle = "bar";
+        settings.TerminalCursorPreferenceVersion = 1;
+        settings.TerminalCursorStyle = cursorStyle switch
         {
             "block" => "block",
-            "bar" => "bar",
-            _ => "underline",
+            "underline" => "underline",
+            _ => "bar",
         };
         settings.TerminalScrollbackLines = Math.Clamp(settings.TerminalScrollbackLines, 100, 50_000);
         settings.DefaultSshPort = Math.Clamp(settings.DefaultSshPort, 1, 65_535);
