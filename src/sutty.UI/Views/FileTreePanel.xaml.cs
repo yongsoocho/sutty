@@ -1927,7 +1927,9 @@ public sealed partial class FileTreePanel : UserControl
             new SftpQueuedTarget
             {
                 Id = CurrentSftpPersistenceId(),
-                DisplayName = _session?.Info.Title ?? displayName,
+                DisplayName = _session is { } session
+                    ? $"{session.Info.Title} · {session.Info.Username}@{session.Info.Host}:{session.Info.Port}"
+                    : displayName,
                 SourcePath = sourcePath,
                 DestinationPath = destinationPath,
                 TotalBytes = Math.Max(0, totalBytes),
@@ -1951,7 +1953,8 @@ public sealed partial class FileTreePanel : UserControl
         SftpQueueTargetState state,
         string? error = null,
         long bytesTransferred = 0,
-        long totalBytes = 0)
+        long totalBytes = 0,
+        SftpTransferPhase? phase = null)
     {
         try
         {
@@ -1961,7 +1964,8 @@ public sealed partial class FileTreePanel : UserControl
                 state,
                 bytesTransferred,
                 totalBytes,
-                error: error);
+                error: error,
+                phase: phase);
         }
         catch (Exception persistenceError) when (persistenceError is IOException or
                                                    UnauthorizedAccessException or
@@ -2250,7 +2254,7 @@ public sealed partial class FileTreePanel : UserControl
         DurableProgressState state) =>
         new Progress<sutty.Core.Sftp.SftpTransferProgress>(progress =>
         {
-            transfer.Report(progress.Fraction);
+            transfer.Report(progress);
             state.BytesTransferred = Math.Max(state.BytesTransferred, progress.BytesTransferred);
             state.TotalBytes = Math.Max(state.TotalBytes, progress.TotalBytes);
 
@@ -2258,17 +2262,19 @@ public sealed partial class FileTreePanel : UserControl
             // each SFTP buffer report into a synchronous disk write on the UI thread.
             var now = DateTimeOffset.UtcNow;
             if (transfer.State != SftpTransferState.Running ||
-                now - state.LastPersistedAtUtc < TimeSpan.FromSeconds(1))
+                state.LastPhase == progress.Phase && now - state.LastPersistedAtUtc < TimeSpan.FromSeconds(1))
             {
                 return;
             }
 
             state.LastPersistedAtUtc = now;
+            state.LastPhase = progress.Phase;
             UpdateQueuedTransfer(
                 job,
                 SftpQueueTargetState.Running,
                 bytesTransferred: state.BytesTransferred,
-                totalBytes: state.TotalBytes);
+                totalBytes: state.TotalBytes,
+                phase: progress.Phase);
         });
 
     private bool CanExecuteFromTransferCenter(
@@ -2513,6 +2519,8 @@ public sealed partial class FileTreePanel : UserControl
 
     private sealed class DurableProgressState
     {
+        public SftpTransferPhase? LastPhase { get; set; }
+
         public long BytesTransferred { get; set; }
 
         public long TotalBytes { get; set; }

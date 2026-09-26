@@ -69,6 +69,8 @@ public sealed record SftpQueuedTarget
     public SftpQueueTargetState State { get; init; } = SftpQueueTargetState.Pending;
     public long BytesTransferred { get; init; }
     public long TotalBytes { get; init; }
+    /// <summary>Byte completion is distinct from verification and final destination promotion.</summary>
+    public SftpTransferPhase? Phase { get; init; }
     public string? Error { get; init; }
     public DateTimeOffset UpdatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
 }
@@ -345,7 +347,9 @@ public sealed class SftpTransferQueueStore
         SftpQueueTargetState state,
         long bytesTransferred = 0,
         long totalBytes = 0,
-        string? error = null)
+        string? error = null,
+        SftpTransferPhase? phase = null,
+        bool isProgressReport = false)
     {
         jobId = NormalizeId(jobId);
         targetId = NormalizeTargetId(targetId);
@@ -365,11 +369,24 @@ public sealed class SftpTransferQueueStore
 
             var targets = job.Targets.ToList();
             var previous = targets[targetIndex];
+            // Progress<T> can deliver even the initial no-phase Pending/Running report
+            // after a synchronously completed attempt. Only the lease owner explicitly
+            // starts an attempt; queued reports cannot revive it or move it backwards.
+            if ((isProgressReport || phase is not null) &&
+                state is SftpQueueTargetState.Pending or SftpQueueTargetState.Running &&
+                (previous.State is not SftpQueueTargetState.Running and not SftpQueueTargetState.Pending ||
+                 state == SftpQueueTargetState.Pending && previous.State == SftpQueueTargetState.Running))
+                return;
             targets[targetIndex] = previous with
             {
                 State = state,
                 BytesTransferred = Math.Max(previous.BytesTransferred, bytesTransferred),
                 TotalBytes = Math.Max(previous.TotalBytes, totalBytes),
+                Phase = state == SftpQueueTargetState.Succeeded
+                    ? SftpTransferPhase.Completed
+                    : state == SftpQueueTargetState.Running
+                        ? phase ?? SftpTransferPhase.Preparing
+                        : previous.Phase,
                 Error = string.IsNullOrWhiteSpace(error) ? null : Limit(error, 2_048),
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
             };

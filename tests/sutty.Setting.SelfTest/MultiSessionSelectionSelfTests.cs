@@ -7,6 +7,7 @@ internal static class MultiSessionSelectionSelfTests
         PagesRetainEveryTarget();
         RefreshRetainsRunningSlotsWithoutRetargeting();
         EmptyAndDuplicateSessionsAreSafe();
+        DraftIsClearedOnlyAfterExactApproval();
         Console.WriteLine("Multi-session selection and paging self-tests passed.");
     }
 
@@ -105,6 +106,26 @@ internal static class MultiSessionSelectionSelfTests
         state.SetAllSelected(true);
         Assert(state.AllSlots.Count == 1 && state.GetSelectedSlots().Count == 1,
             "a duplicate session reference cannot receive the same broadcast twice");
+    }
+
+    private static void DraftIsClearedOnlyAfterExactApproval()
+    {
+        var draft = new BroadcastCommandDraft();
+        draft.Update("  printf one\r\nprintf two\r  ");
+        var submitted = draft.Submit();
+        Assert(submitted.Command == "printf one\nprintf two",
+            "preview command is normalized exactly once");
+        Assert(draft.Text.Length > 0,
+            "submitting without approval retains the draft on zero targets, invalid state or cancelled confirmation");
+        Assert(!draft.TryApprove(new BroadcastCommandSubmission("saved command")) && draft.Text.Length > 0,
+            "approving a saved command never clears an unrelated input draft");
+        draft.Update("new draft");
+        Assert(!draft.TryApprove(submitted) && draft.Text == "new draft",
+            "approving an old command cannot discard a newer draft");
+        draft.Update("  printf one\r\nprintf two\r  ");
+        Assert(!draft.TryApprove(submitted), "returning to old text does not approve a different revision");
+        Assert(draft.TryApprove(draft.Submit()) && draft.Text.Length == 0,
+            "the approved current draft is cleared once");
     }
 
     private static void Assert(bool condition, string description)

@@ -8,6 +8,37 @@ Compatibility states and exact matrix boundaries are authoritative in [Supported
 
 호환성 상태와 정확한 matrix 경계는 [지원 환경](SUPPORTED_ENVIRONMENTS.md)을 기준으로 합니다. 모든 실환경·패키지 결과는 [증거 스키마](evidence/EVIDENCE_SCHEMA.md)의 엄격하고 redaction한 불변 bundle을 사용하고 [Alpha 4 실행 계획](ALPHA4_EXECUTION_PLAN.md)의 의존성 순서와 [릴리스 거버넌스](RELEASE_GOVERNANCE.md)의 보호된 공개 순서를 따라야 합니다.
 
+## Daily workflow review / 일상 작업 점검
+
+These sixteen scenarios apply to the next candidate based on `90a6e04e6a66`. All are
+**Blocked: candidate UI/live/package evidence not yet recorded**. Focused source tests in
+[Implementation status](IMPLEMENTATION_STATUS.md) do not promote these results. Record
+Pass/Fail/Blocked against the exact candidate bytes, environment, and evidence; retain the
+existing authentication, security, scale, and package gates below.
+
+아래 16개 시나리오는 다음 후보의 인수 항목입니다. 현재 모두 **Blocked: 해당 후보의
+UI·실서버·패키지 증거 미기록**이며 자동 테스트 성공으로 통과 처리하지 않습니다.
+정확한 후보 파일·환경·증거에 연결해 Pass/Fail/Blocked를 기록하고 기존 게이트를 유지합니다.
+
+| ID | Scenario / 재현 | Required outcome / 통과 조건 |
+| --- | --- | --- |
+| A01 | Saved/new host, Agent, repeated OTP / 저장·새 호스트, Agent·반복 OTP | Correct authentication and actionable failure / 필요한 인증·실패 안내 |
+| A02 | Changed key, failed Jump/Proxy / 변경 키·간접 경로 실패 | Block changed key; no Direct fallback / 변경 키 차단·Direct 우회 없음 |
+| A03 | SSH A/B, local and external tabs / SSH A/B·로컬·외부 탭 | Exact target, separate capabilities, stale responses ignored / 대상·기능 구분·늦은 응답 무시 |
+| A04 | Switch tabs during upload confirmation / 업로드 확인 중 탭 변경 | Only pinned original host/path or cancel / 고정된 원래 대상에만 반영 또는 취소 |
+| A05 | Multi zero targets and canceled confirmation / 대상 0개·확인 취소 | No send; retain draft / 미전송·초안 보존 |
+| A06 | 10–16 tabs, two pages, new tab during run / 10–16탭·2페이지·실행 중 탭 추가 | Preview every target; approved set only / 전체 대상 확인·승인 집합 고정 |
+| A07 | Local editor, nested SSH, password/OTP prompt / 로컬 편집기·중첩 SSH·인증 대기 | Excluded from ordinary Multi execution / 일반 Multi 실행 대상 제외 |
+| A08 | Hung command, disconnect, cancel / 무응답·단절·취소 | Bounded wait, uncertain remote outcome, no replay / 유한 대기·원격 종료 미확인·재실행 없음 |
+| A09 | Transfer drop/cancel/app exit/disk full / 전송 단절·취소·종료·디스크 부족 | Preserve destinations; incomplete recovery only / 기존 파일 보존·미완료 항목만 복구 |
+| A10 | Same-size/time remote change, save during upload / 같은 크기·시각 변경·업로드 중 재저장 | Detect or fail closed; retain local copy / 검출 또는 검증 불가 중지·로컬 보존 |
+| A11 | Edit after reconnect, failed reload / 재연결 후 편집·재열기 실패 | Recheck original server; retain accessible recovery / 원래 서버 재검토·복구본 보존·접근 |
+| A12 | Small window, 100/150/200% DPI, IME/TUI/clipboard / 작은 창·배율·입력 | Accessible controls, correct input, honest output-copy limits / 필수 조작·입력 정상·복사 한계 안내 |
+| A13 | Import on another PC/account / 다른 PC·계정 가져오기 | Own authentication, no secret sharing or auto-exec / 자신의 인증·비밀 공유 및 자동 실행 없음 |
+| A14 | Tunnel conflict, server rejection, close / 터널 충돌·서버 거부·종료 | Clear errors and owned-resource cleanup / 오류 안내·소유 자원 정리 |
+| A15 | Install/update/recovery/Reset / 설치·업데이트·복구·초기화 | Matching version/commit and stated data preservation / 버전·커밋 일치·명시된 데이터 보존 |
+| A16 | 1 GiB, 1,000 files, ten SSH sessions for 1 h / 대표 규모·장시간 | No crash, cross-target write, or corruption; record memory/responsiveness / 충돌·교차 대상·손상 없음·메모리 및 반응성 기록 |
+
 ## P0 transfer gates / P0 전송 게이트
 
 | Gate | Current state | Required release evidence |

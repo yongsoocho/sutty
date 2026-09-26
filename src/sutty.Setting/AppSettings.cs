@@ -29,6 +29,9 @@ public sealed class AppSettings
     /// <summary>Load the user's PowerShell profile in newly opened local terminal tabs.</summary>
     public bool LoadLocalShellProfile { get; set; } = true;
 
+    /// <summary>Close a shell tab after logout/process exit or an established SSH connection ends.</summary>
+    public bool AutoCloseDisconnectedTabs { get; set; } = true;
+
     /// <summary>Color JSON/YAML keys, strings, numbers, literals, and comments in REPL cells.</summary>
     public bool EnableStructuredTextHighlighting { get; set; } = true;
 

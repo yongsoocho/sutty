@@ -48,7 +48,7 @@ internal static class DatabaseResetSelfTests
             assert(File.ReadAllText(keepFile) == "keep separate settings and recovery files",
                 "database reset leaves unrelated files intact");
             assert(CommandStore.GetAll().Count == 0 && HostProfileStore.GetAll().Count == 0 &&
-                   HostHistoryStore.GetRecent().Count == 0 && CommandLauncherStore.GetFavorites().Count == 0 &&
+                   HostHistoryStore.GetRecent().Count == 0 &&
                    CommandLauncherStore.GetRecentHistory().Count == 0,
                 "existing initialized repositories remain usable after reset");
 

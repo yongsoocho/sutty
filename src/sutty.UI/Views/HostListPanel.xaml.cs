@@ -41,7 +41,11 @@ public sealed partial class HostListPanel : UserControl
         SavedRepeater.ElementPrepared += OnElementPrepared;
         TopRepeater.ElementPrepared += OnElementPrepared;
         HostRepeater.ElementPrepared += OnElementPrepared;
+        Loaded += (_, _) => { HostProfileStore.Changed -= HostProfiles_Changed; HostProfileStore.Changed += HostProfiles_Changed; RefreshFromStore(); };
+        Unloaded += (_, _) => HostProfileStore.Changed -= HostProfiles_Changed;
     }
+
+    private void HostProfiles_Changed(object? sender, EventArgs e) => DispatcherQueue.TryEnqueue(RefreshFromStore);
 
     private void OnElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
     {
@@ -181,7 +185,7 @@ public sealed partial class HostListPanel : UserControl
 
     private async void OnAuthenticationAliasRequested(object? sender, HostInfoModel host)
     {
-        if (!host.IsSavedProfile || string.IsNullOrWhiteSpace(host.ProfileId)) return;
+        if (!host.IsSavedProfile || host.IsExternalCommand || string.IsNullOrWhiteSpace(host.ProfileId)) return;
         try
         {
             var profile = HostProfileStore.GetById(host.ProfileId);
@@ -231,6 +235,7 @@ public sealed partial class HostListPanel : UserControl
 
             var profiles = HostProfileStore.GetAll(limit: 1_000);
             var profileByConnection = profiles
+                .Where(profile => !profile.IsExternalCommand)
                 .GroupBy(profile => ConnectionKey(profile.Host, profile.Port, profile.Username))
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
@@ -253,11 +258,13 @@ public sealed partial class HostListPanel : UserControl
 
     private static HostInfoModel FromProfile(HostProfile profile) => new()
     {
+        LaunchKind = profile.LaunchKind,
+        LaunchCommand = profile.LaunchCommand,
         ProfileId = profile.Id,
         IsSavedProfile = true,
         CredentialId = profile.CredentialId,
         Alias = profile.DisplayName,
-        Hostname = profile.Host,
+        Hostname = profile.IsExternalCommand ? profile.LaunchCommand : profile.Host,
         LastConnected = profile.LastConnectedAtUtc?.LocalDateTime,
         IsPinned = profile.IsFavorite,
         Username = profile.Username,

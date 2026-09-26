@@ -5,220 +5,149 @@ internal static class LauncherStoreSelfTests
 {
     public static void Run(Action<bool, string> assert, string scratch)
     {
+        var primaryDatabase = Db.PathOverride;
         var executableDirectory = Path.Combine(scratch, "launcher-executables");
         Directory.CreateDirectory(executableDirectory);
         foreach (var executable in new[] { "ssh.exe", "multipass.exe", "tool.exe" })
-            File.WriteAllBytes(Path.Combine(executableDirectory, executable), Array.Empty<byte>());
-
+            File.WriteAllBytes(Path.Combine(executableDirectory, executable), []);
         var resolver = new FixtureResolver(executableDirectory);
-        var ssh = LocalTerminalLaunchPlanner.Create(
-            "ssh -i \"C:\\Users\\fixture\\.ssh\\id key\" worker1",
-            resolver);
-        var reparsed = LocalTerminalLaunchPlanner.Create(ssh.CanonicalCommand, resolver);
-        assert(ssh.Kind == LocalTerminalLaunchKind.OpenSsh &&
-               ssh.Arguments.SequenceEqual(reparsed.Arguments) &&
-               ssh.CanonicalCommand.Contains("\"C:\\Users\\fixture\\.ssh\\id key\"", StringComparison.Ordinal),
-            "canonical SSH command keeps a quoted .ssh key-file argument reparseable");
-
+        var ssh = LocalTerminalLaunchPlanner.Create("ssh -i \"C:\\Users\\fixture\\.ssh\\id key\" worker1", resolver);
         var multipass = LocalTerminalLaunchPlanner.Create("multipass connect master", resolver);
-        assert(multipass.Kind == LocalTerminalLaunchKind.MultipassConnect &&
-               multipass.CanonicalCommand == "multipass connect master",
-            "canonical Multipass connection command");
-
-        var events = 0;
-        EventHandler changed = (_, _) => events++;
-        CommandLauncherStore.Changed += changed;
+        Db.PathOverride = Path.Combine(scratch, "unified-favorite-tests.db");
+        var changes = 0;
+        EventHandler changed = (_, _) => changes++;
+        HostProfileStore.Changed += changed;
         try
         {
-            CommandLauncherStore.EnsureInitialized();
-            CommandLauncherStore.EnsureInitialized();
-            assert(CommandStore.GetAll().Count == 0,
-                "launcher schema initialization is idempotent and leaves existing command data untouched");
-
-            var favorite = CommandLauncherStore.SaveFavorite("Worker one", ssh);
-            assert(favorite.CommandText == ssh.CanonicalCommand &&
-                   favorite.Kind == LocalTerminalLaunchKind.OpenSsh &&
-                   favorite.LaunchCount == 0,
-                "planner canonical favorite is stored without a runtime executable path");
-
+            SeedLegacyFavorites();
+            HostProfileStore.EnsureInitialized();
+            var migrated = HostProfileStore.GetAll();
+            assert(migrated.Count == 2 && migrated.All(profile => profile.IsExternalCommand && profile.IsFavorite),
+                "legacy command favorites migrate once to the shared host favorite list");
+            var missing = migrated.Single(profile => profile.LaunchCommand == "multipass connect offline");
+            assert(missing.DisplayName == "Offline VM" && missing.LastConnectedAtUtc?.Year == 2025,
+                "migration preserves labels and timestamps without resolving an unavailable executable");
             using (var connection = Db.Open())
             using (var inspect = connection.CreateCommand())
             {
-                inspect.CommandText = "SELECT command_text FROM command_launcher_favorites WHERE id = $id";
-                inspect.Parameters.AddWithValue("$id", favorite.Id);
-                var persisted = Convert.ToString(inspect.ExecuteScalar()) ?? "";
-                assert(!persisted.Contains(executableDirectory, StringComparison.OrdinalIgnoreCase) &&
-                       persisted == ssh.CanonicalCommand,
-                    "favorite persists the canonical command but never the resolved executable path");
+                inspect.CommandText = "SELECT COUNT(*) FROM command_launcher_favorites";
+                assert(Convert.ToInt32(inspect.ExecuteScalar()) == 3,
+                    "legacy archive preserves malformed entries and original usage data");
             }
+            var missingRejected = false;
+            try { HostProfileStore.CreateCommandLaunchPlan(missing, new MissingResolver()); }
+            catch (IOException) { missingRejected = true; }
+            assert(missingRejected, "missing programs fail only on explicit launch, never on favorite migration");
 
-            var duplicateRejected = false;
-            try { CommandLauncherStore.SaveFavorite("Duplicate", ssh); }
-            catch (InvalidOperationException) { duplicateRejected = true; }
-            assert(duplicateRejected, "equivalent launcher favorite is deduplicated");
+            var portableCollisionId = "command_" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes($"{ssh.Kind}\u001f{ssh.CanonicalCommand}"))).ToLowerInvariant()[..32];
+            var integrated = HostProfileStore.Save(new HostProfileDraft
+                { Host = "integrated.example", DisplayName = "Existing SSH" }, portableCollisionId);
+            var favorite = HostProfileStore.SaveCommandFavorite(ssh, "Worker SSH");
+            assert(favorite.Id != integrated.Id && !HostProfileStore.GetById(integrated.Id)!.IsExternalCommand &&
+                   HostProfileStore.GetById(integrated.Id)!.Host == "integrated.example",
+                "external favorite ID collision never replaces an existing portable SSH profile");
+            assert(favorite.IsExternalCommand && favorite.LaunchKind == "OpenSsh" &&
+                   favorite.LaunchCommand == ssh.CanonicalCommand && favorite.Host == "" && favorite.CredentialId is null,
+                "external favorites have explicit launch identity and no Sutty SSH endpoint or vault binding");
+            var duplicate = HostProfileStore.SaveCommandFavorite(ssh);
+            assert(duplicate.Id == favorite.Id && duplicate.DisplayName == "Worker SSH",
+                "repeated save deduplicates canonical command and preserves the chosen display name");
+            HostProfileStore.SetFavorite(favorite.Id, false);
+            assert(HostProfileStore.SaveCommandFavorite(ssh).IsFavorite,
+                "saving an existing command adds it back to the same host favorites list");
+            var plan = HostProfileStore.CreateCommandLaunchPlan(HostProfileStore.GetById(favorite.Id)!, resolver);
+            assert(plan.Arguments.SequenceEqual(ssh.Arguments) && plan.ExecutablePath == ssh.ExecutablePath,
+                "explicit relaunch reconstructs the same structured arguments through the safe planner");
+            var savedVm = HostProfileStore.SaveCommandFavorite(multipass, "Master VM");
+            assert(HostProfileStore.CreateCommandLaunchPlan(savedVm, resolver).Kind == LocalTerminalLaunchKind.MultipassConnect,
+                "Multipass favorite relaunch retains its external launch kind");
 
-            var beforeMismatch = CommandLauncherStore.GetRecentHistory(CommandLauncherStore.MaximumHistoryEntries).Count;
-            var mismatchRejected = false;
-            try { CommandLauncherStore.RecordFavoriteLaunch(favorite.Id, multipass); }
-            catch (InvalidOperationException) { mismatchRejected = true; }
-            assert(mismatchRejected &&
-                   CommandLauncherStore.GetRecentHistory(CommandLauncherStore.MaximumHistoryEntries).Count == beforeMismatch,
-                "stale favorite plan cannot record a different command");
+            var exportRejected = false;
+            try { DefinitionSharingService.Export([favorite], []); }
+            catch (ArgumentException) { exportRejected = true; }
+            assert(exportRejected, "external command favorites cannot be serialized as misleading SSH host definitions");
+            var wrongKindRejected = false;
+            try { HostProfileStore.Save(new HostProfileDraft { Host = "worker1", LaunchCommand = ssh.CanonicalCommand }); }
+            catch (ArgumentException) { wrongKindRejected = true; }
+            assert(wrongKindRejected, "a Sutty SSH profile cannot accidentally store external launch text");
 
-            var launch = CommandLauncherStore.RecordFavoriteLaunch(favorite.Id, ssh);
-            assert(launch.FavoriteId == favorite.Id &&
-                   launch.Outcome == CommandLauncherLaunchOutcome.LaunchRequested &&
-                   CommandLauncherStore.CompleteLaunch(launch.Id, CommandLauncherLaunchOutcome.Started) &&
+            var unsafeRejected = false;
+            try { HostProfileStore.SaveCommandFavorite(LocalTerminalLaunchPlanner.Create("tool --token=synthetic-value", resolver)); }
+            catch (ArgumentException) { unsafeRejected = true; }
+            assert(unsafeRejected, "unified favorite storage preserves credential-shaped argument filtering");
+            var unsafeNameRejected = false;
+            try { HostProfileStore.SaveCommandFavorite(ssh, "label secret=value"); }
+            catch (ArgumentException) { unsafeNameRejected = true; }
+            assert(unsafeNameRejected, "host command labels retain launcher secret filtering");
+            var unsafeDraftRejected = false;
+            try { HostProfileStore.Save(new HostProfileDraft { LaunchKind = "OpenSsh", LaunchCommand = "ssh worker1; tool" }); }
+            catch (ArgumentException) { unsafeDraftRejected = true; }
+            assert(unsafeDraftRejected, "saving external profiles directly cannot bypass no-shell validation");
+
+            CommandLauncherStore.EnsureInitialized();
+            var launch = CommandLauncherStore.RecordAdHocLaunch(plan, favorite.DisplayName);
+            assert(launch.FavoriteId is null && CommandLauncherStore.CompleteLaunch(launch.Id, CommandLauncherLaunchOutcome.Started) &&
                    CommandLauncherStore.CompleteLaunch(launch.Id, CommandLauncherLaunchOutcome.Exited),
-                "favorite launch records only finite lifecycle state");
-            assert(CommandLauncherStore.GetFavorite(favorite.Id)!.LaunchCount == 1,
-                "favorite launch atomically increments favorite usage");
-
-            var updated = CommandLauncherStore.UpdateFavorite(favorite.Id, "Worker SSH", ssh);
-            assert(updated.DisplayName == "Worker SSH" && updated.LaunchCount == 1,
-                "favorite edit keeps accumulated usage");
-
-            var adHoc = CommandLauncherStore.RecordAdHocLaunch(multipass);
-            assert(adHoc.FavoriteId is null &&
-                   CommandLauncherStore.CompleteLaunch(adHoc.Id, CommandLauncherLaunchOutcome.LaunchNotStarted),
-                "ad-hoc launch can record a pre-start failure without output or error text");
-
-            assert(CommandLauncherStore.DeleteFavorite(favorite.Id) &&
-                   CommandLauncherStore.GetRecentHistory(CommandLauncherStore.MaximumHistoryEntries)
-                       .Any(item => item.Id == launch.Id && item.FavoriteId is null),
-                "deleting a favorite preserves a detached history snapshot");
-
+                "shared favorite launch keeps a separate bounded lifecycle history snapshot");
+            HostProfileStore.Delete(favorite.Id);
+            assert(CommandLauncherStore.GetRecentHistory().Any(item => item.Id == launch.Id),
+                "deleting a shared favorite preserves launch history");
             for (var index = 0; index < CommandLauncherStore.MaximumHistoryEntries + 12; index++)
                 CommandLauncherStore.RecordAdHocLaunch(ssh);
-            assert(CommandLauncherStore.GetRecentHistory(CommandLauncherStore.MaximumHistoryEntries).Count ==
-                   CommandLauncherStore.MaximumHistoryEntries,
-                "launcher history has a durable bounded retention limit");
+            assert(CommandLauncherStore.GetRecentHistory(CommandLauncherStore.MaximumHistoryEntries).Count == CommandLauncherStore.MaximumHistoryEntries,
+                "launch history remains bounded");
 
+            HostProfileStore.Delete(missing.Id);
+            var legacySsh = HostProfileStore.GetAll().Single(item => item.LaunchCommand == "ssh legacy-host");
+            HostProfileStore.SetFavorite(legacySsh.Id, false);
+            var testDatabase = Db.PathOverride;
+            Db.PathOverride = Path.Combine(scratch, "empty-unified-favorites.db");
+            HostProfileStore.EnsureInitialized();
+            CommandLauncherStore.EnsureInitialized();
             using (var connection = Db.Open())
-            using (var columns = connection.CreateCommand())
+            using (var inspect = connection.CreateCommand())
             {
-                columns.CommandText = "PRAGMA table_info(command_launcher_history)";
-                var names = new List<string>();
-                using var reader = columns.ExecuteReader();
-                while (reader.Read())
-                    names.Add(reader.GetString(1));
-                assert(!names.Any(name => name.Contains("output", StringComparison.OrdinalIgnoreCase) ||
-                                          name.Contains("error", StringComparison.OrdinalIgnoreCase) ||
-                                          name.Contains("executable", StringComparison.OrdinalIgnoreCase)),
-                    "history schema has no output, error, or executable-path field");
+                inspect.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE name = 'command_launcher_favorites'";
+                assert(Convert.ToInt32(inspect.ExecuteScalar()) == 0, "new installs never create a separate command favorite table");
             }
-
-            for (var index = 0; index < CommandLauncherStore.MaximumFavorites; index++)
-            {
-                var numbered = LocalTerminalLaunchPlanner.Create($"tool shortcut-{index}", resolver);
-                CommandLauncherStore.SaveFavorite($"Shortcut {index}", numbered);
-            }
-            var limitRejected = false;
-            try
-            {
-                CommandLauncherStore.SaveFavorite(
-                    "Over limit",
-                    LocalTerminalLaunchPlanner.Create("tool shortcut-over-limit", resolver));
-            }
-            catch (InvalidOperationException) { limitRejected = true; }
-            assert(limitRejected &&
-                   CommandLauncherStore.GetFavorites().Count == CommandLauncherStore.DefaultFavoriteLimit &&
-                   CommandLauncherStore.GetFavorites(CommandLauncherStore.MaximumFavorites).Count ==
-                   CommandLauncherStore.MaximumFavorites,
-                "favorite storage caps entries and exposes compact ordered list limits");
-            foreach (var item in CommandLauncherStore.GetFavorites(CommandLauncherStore.MaximumFavorites))
-                CommandLauncherStore.DeleteFavorite(item.Id);
-
-            var unsafeFlag = "--" + "to" + "ken";
-            var unsafeCommand = "tool " + unsafeFlag + "=synthetic-value";
-            var unsafePlan = LocalTerminalLaunchPlanner.Create(unsafeCommand, resolver);
-            var unsafePlanRejected = false;
-            try { CommandLauncherStore.SaveFavorite("Unsafe plan", unsafePlan); }
-            catch (ArgumentException) { unsafePlanRejected = true; }
-            assert(unsafePlanRejected,
-                "planner-valid direct commands with token-like arguments never enter launcher storage");
-            var userInfoPlan = LocalTerminalLaunchPlanner.Create(
-                "tool -u synthetic-user:opaque-value",
-                resolver);
-            var userInfoRejected = false;
-            try { CommandLauncherStore.SaveFavorite("Unsafe user option", userInfoPlan); }
-            catch (ArgumentException) { userInfoRejected = true; }
-            assert(userInfoRejected,
-                "credential-shaped user arguments never enter launcher storage");
-            InsertUntrustedRow(unsafeCommand);
-            assert(CommandLauncherStore.GetFavorites(CommandLauncherStore.MaximumFavorites)
-                       .All(item => item.CommandText != unsafeCommand) &&
-                   CommandLauncherStore.GetRecentHistory(CommandLauncherStore.MaximumHistoryEntries)
-                       .All(item => item.CommandText != unsafeCommand),
-                "tampered credential-like command rows fail closed and stay hidden");
-
-            var unsafeNameRejected = false;
-            try { CommandLauncherStore.SaveFavorite("label " + "secret" + "=value", ssh); }
-            catch (ArgumentException) { unsafeNameRejected = true; }
-            assert(unsafeNameRejected, "favorite labels cannot become a credential side channel");
-
-            var primaryDatabase = Db.PathOverride;
-            var alternateDatabase = Path.Combine(scratch, "alternate-launcher.db");
-            try
-            {
-                Db.PathOverride = alternateDatabase;
-                CommandLauncherStore.EnsureInitialized();
-                assert(File.Exists(alternateDatabase),
-                    "launcher initialization follows an alternate local database path in the same process");
-            }
-            finally
-            {
-                Db.PathOverride = primaryDatabase;
-                CommandLauncherStore.EnsureInitialized();
-            }
-            assert(events > 0, "launcher storage notifications reach compact launcher views");
-            Console.WriteLine("Local command launcher storage self-tests passed.");
+            Db.PathOverride = testDatabase;
+            HostProfileStore.EnsureInitialized();
+            assert(HostProfileStore.GetById(missing.Id) is null && !HostProfileStore.GetById(legacySsh.Id)!.IsFavorite,
+                "migration marker prevents deleted or unpinned favorites from reappearing after reopen");
+            assert(changes > 0, "shared host favorite observers receive save, pin and delete events");
+            Console.WriteLine("Unified host command favorites and launcher history self-tests passed.");
         }
         finally
         {
-            CommandLauncherStore.Changed -= changed;
+            HostProfileStore.Changed -= changed;
+            Db.PathOverride = primaryDatabase;
         }
     }
 
-    private static void InsertUntrustedRow(string unsafeCommand)
+    private static void SeedLegacyFavorites()
     {
-        var now = DateTimeOffset.UtcNow.ToString("O");
         using var connection = Db.Open();
-        using var transaction = connection.BeginTransaction();
-        using (var favorite = connection.CreateCommand())
-        {
-            favorite.Transaction = transaction;
-            favorite.CommandText = """
-                INSERT INTO command_launcher_favorites (
-                    display_name, command_text, command_identity, launch_kind,
-                    created_at_utc, updated_at_utc, last_launched_at_utc, launch_count)
-                VALUES ('Untrusted', $command, 'untrusted-row', 'DirectExecutable', $now, $now, NULL, 0)
-                """;
-            favorite.Parameters.AddWithValue("$command", unsafeCommand);
-            favorite.Parameters.AddWithValue("$now", now);
-            favorite.ExecuteNonQuery();
-        }
-        using (var history = connection.CreateCommand())
-        {
-            history.Transaction = transaction;
-            history.CommandText = """
-                INSERT INTO command_launcher_history (
-                    favorite_id, display_name, command_text, launch_kind, launched_at_utc, outcome)
-                VALUES (NULL, 'Untrusted', $command, 'DirectExecutable', $now, 'LaunchRequested')
-                """;
-            history.Parameters.AddWithValue("$command", unsafeCommand);
-            history.Parameters.AddWithValue("$now", now);
-            history.ExecuteNonQuery();
-        }
-        transaction.Commit();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE command_launcher_favorites (
+                id INTEGER PRIMARY KEY, display_name TEXT NOT NULL, command_text TEXT NOT NULL,
+                command_identity TEXT NOT NULL, launch_kind TEXT NOT NULL, created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL, last_launched_at_utc TEXT, launch_count INTEGER NOT NULL);
+            INSERT INTO command_launcher_favorites VALUES
+                (1, 'Legacy SSH', 'ssh legacy-host', 'legacy-ssh', 'OpenSsh', '2024-01-01T00:00:00Z', '2025-01-01T00:00:00Z', NULL, 3),
+                (2, 'Offline VM', 'multipass connect offline', 'legacy-vm', 'MultipassConnect', '2024-01-01T00:00:00Z', '2025-01-01T00:00:00Z', '2025-02-01T00:00:00Z', 7),
+                (3, 'Malformed original', 'ssh bad; tool', 'bad-row', 'OpenSsh', '2024-01-01T00:00:00Z', '2025-01-01T00:00:00Z', NULL, 1);
+            """;
+        command.ExecuteNonQuery();
     }
 
-    private sealed class FixtureResolver(string executableDirectory) : ILocalTerminalExecutableResolver
+    private sealed class FixtureResolver(string directory) : ILocalTerminalExecutableResolver
     {
-        public string? ResolveExecutable(string executableFileName)
-        {
-            var candidate = Path.Combine(executableDirectory, executableFileName);
-            return File.Exists(candidate) ? candidate : null;
-        }
+        public string? ResolveExecutable(string name) => Path.Combine(directory, name);
+    }
+    private sealed class MissingResolver : ILocalTerminalExecutableResolver
+    {
+        public string? ResolveExecutable(string name) => null;
     }
 }

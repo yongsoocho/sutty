@@ -266,6 +266,14 @@
                                 <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextMuted}"
                                     Text="{x:Bind h:Loc.T('가운데 화면은 항상 셸입니다. + 메뉴에서 PowerShell 또는 CMD를 열고, 명령 도구는 옆 패널에서 사용하세요.', 'The center always shows the shell. Open PowerShell or CMD from the + menu and use command tools in the side panel.')}" />
                                 <ToggleSwitch
+                                    x:Name="AutoCloseDisconnectedTabsToggle"
+                                    Header="{x:Bind h:Loc.T('셸 종료·연결 해제 시 해당 탭 자동 닫기', 'Automatically close the tab when its shell exits or disconnects')}"
+                                    OnContent="{x:Bind h:Loc.T('자동 닫기 (기본)', 'Close automatically (default)')}"
+                                    OffContent="{x:Bind h:Loc.T('종료된 탭 유지', 'Keep ended tabs open')}"
+                                    Toggled="AutoCloseDisconnectedTabsToggle_Toggled" />
+                                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind h:Loc.T('SSH 로그아웃, 연결 종료, 로컬·외부 프로그램 종료에 적용됩니다. 처음 연결에 실패한 탭은 유지합니다. 전송이나 편집본이 있으면 복구 위치를 안내하고 닫기 전에 확인합니다. Sutty 앱은 계속 열려 있습니다.', 'Applies to SSH logout, disconnects, and local or external program exits. Initial connection failures stay open. Transfers or editor copies require confirmation with their recovery location before closing. Sutty stays open.')}" />
+                                <ToggleSwitch
                                     x:Name="StructuredHighlightToggle"
                                     Header="{x:Bind h:Loc.T('JSON / YAML 문법 강조', 'JSON / YAML syntax highlighting')}"
                                     Toggled="TerminalFeatureToggle_Toggled" />

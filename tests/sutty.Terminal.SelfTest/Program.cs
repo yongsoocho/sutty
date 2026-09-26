@@ -163,6 +163,7 @@ if (OperatingSystem.IsWindows())
 
 VerifyPackagedRenderer();
 VerifyLocalTerminalLaunchPlans();
+ShellTabLifetimeSelfTests.Run();
 
 if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
 {

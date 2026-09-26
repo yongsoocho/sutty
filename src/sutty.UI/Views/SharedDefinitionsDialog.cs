@@ -49,6 +49,13 @@ public static class SharedDefinitionsDialog
             content.Children.Add(Paragraph(Loc.T("공유할 호스트 선택", "Choose hosts to share"), true));
             foreach (var host in hosts)
             {
+                if (host.IsExternalCommand)
+                {
+                    content.Children.Add(Paragraph(Loc.T(
+                        $"{host.DisplayName} · 외부 터미널 즐겨찾기 (이 PC 전용, 공유에서 제외)",
+                        $"{host.DisplayName} · external terminal favorite (local to this PC; excluded from sharing)")));
+                    continue;
+                }
                 var check = new CheckBox
                 {
                     Content = $"{host.DisplayName} · {host.Username}@{host.Host}:{host.Port}",

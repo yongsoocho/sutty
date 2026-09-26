@@ -52,18 +52,21 @@
                     FontFamily="Cascadia Mono, Consolas"
                     FontSize="12"
                     Padding="10,9"
-                    PlaceholderText="{x:Bind h:Loc.T('체크된 모든 세션에 실행 · Enter=실행', 'Run on all checked sessions · Enter=run')}"
+                    PlaceholderText="{x:Bind h:Loc.T('Sutty SSH 선택 대상 · Enter=실행 확인', 'Selected Sutty SSH targets · Enter=review')}"
                     PreviewKeyDown="BroadcastBox_PreviewKeyDown"
+                    TextChanged="BroadcastBox_TextChanged"
                     TextWrapping="Wrap" />
+                <StackPanel Grid.Row="1" Spacing="6">
+                <TextBlock FontSize="11" Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                    Text="{x:Bind h:Loc.T('독립 SSH exec · 터미널의 cd·환경변수·sudo 상태를 공유하지 않습니다. 응답은 최대 60초 기다립니다.', 'Independent SSH exec · terminal cd, environment and sudo state are not shared. Waits up to 60 seconds.')}" />
                 <Button
                     x:Name="RunBroadcastButton"
-                    Grid.Row="1"
                     Height="32"
                     HorizontalAlignment="Stretch"
                     Background="{ThemeResource AccentGradient}"
                     BorderThickness="0"
                     Click="RunBroadcast_Click"
-                    Content="{x:Bind h:Loc.T('체크한 세션에서 실행', 'Run on checked sessions')}"
+                    Content="{x:Bind h:Loc.T('대상·명령 확인 후 실행', 'Review targets and command')}"
                     CornerRadius="7"
                     FontSize="12"
                     FontWeight="SemiBold"
@@ -74,6 +77,11 @@
                         <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
                     </Button.Resources>
                 </Button>
+                <Button x:Name="StopBroadcastButton" HorizontalAlignment="Stretch"
+                    Visibility="Collapsed" Click="StopBroadcast_Click"
+                    Content="{x:Bind h:Loc.T('취소 요청 · 대기 종료', 'Request cancellation · stop waiting')}"
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('원격 작업 종료는 보장되지 않습니다. 서버에서 결과를 확인하세요. 자동 재실행하지 않습니다.', 'Remote termination is not guaranteed. Check the server result. No automatic replay.')}" />
+                </StackPanel>
                 <controls:WrapPanel
                     x:Name="BroadcastStatusPanel"
                     Grid.Row="2"

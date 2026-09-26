@@ -61,11 +61,24 @@ public sealed partial class TransfersDashboardPanel : UserControl
     private void UpdateIdentity()
     {
         ActiveShellText.Text = _activeWorkspace is { } workspace
-            ? $"{workspace.ViewModel.DisplayName} · {workspace.ViewModel.ConnectionIdentity}"
-            : _activeLocal?.DisplayTitle ?? "";
+            ? $"Sutty SSH · {workspace.ViewModel.ConnectionIdentity} · {workspace.ViewModel.DisplayName}"
+            : _activeLocal is { } local
+                ? $"{local.ConnectionKindText} · {local.DisplayTitle} · {local.ConnectionIdentity}"
+                : "";
         var hasShell = _activeWorkspace is not null || _activeLocal is not null;
-        BrowserCard.Visibility = hasShell ? Visibility.Visible : Visibility.Collapsed;
+        var isExternal = _activeLocal?.IsExternalCommand == true;
+        BrowserCard.Visibility = hasShell && !isExternal ? Visibility.Visible : Visibility.Collapsed;
+        ExternalTerminalState.Visibility = isExternal ? Visibility.Visible : Visibility.Collapsed;
         NoTargetState.Visibility = hasShell ? Visibility.Collapsed : Visibility.Visible;
+        BrowserScopeText.Text = _activeWorkspace is not null
+            ? Loc.T("선택한 Sutty SSH 연결의 원격 파일 · 아래 전송 큐는 모든 탭의 작업을 표시합니다.",
+                "Remote files for the selected Sutty SSH connection · the queue below includes all tabs.")
+            : _activeLocal is { IsExternalCommand: false }
+                ? Loc.T("이 PC의 로컬 파일 · 아래 전송 큐는 모든 탭의 작업을 표시합니다.",
+                    "Local files on this PC · the queue below includes all tabs.")
+                : Loc.T("아래 전송 큐는 모든 탭의 작업이며, 선택한 터미널의 원격 파일 목록이 아닙니다.",
+                    "The queue below includes work from all tabs; it is not a remote file listing for the selected terminal.");
+        ToolTipService.SetToolTip(ActiveShellText, ActiveShellText.Text);
     }
 
     private void Dashboard_Loaded(object sender, RoutedEventArgs e)
@@ -100,7 +113,7 @@ public sealed partial class TransfersDashboardPanel : UserControl
         {
             if (_activeWorkspace is { } workspace)
                 await workspace.ShowFileBrowserAsync(BrowserHost);
-            else if (_activeLocal is { } local)
+            else if (_activeLocal is { IsExternalCommand: false } local)
             {
                 var browser = _localBrowsers.GetValue(local, _ => new LocalBrowserPanel());
                 browser.RefreshLanguage();

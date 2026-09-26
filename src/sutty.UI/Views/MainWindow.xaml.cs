@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Diagnostics;
+using sutty.Core.Commands;
 using sutty.Core.Models;
 using sutty.Core.Security;
 using sutty.Core.Routing;
@@ -56,6 +57,8 @@ namespace sutty.UI.Views
         private string _appIconPath = "";
         private bool _isMultiView;
         private int _broadcastInProgress;
+        private CancellationTokenSource? _broadcastCancellation;
+        private Task _broadcastCancellationNotification = Task.CompletedTask;
         private readonly MultiSftpTransferCoordinator _multiSftpCoordinator = new();
         private readonly SftpTransferQueueStore _sftpTransferQueue = SftpTransferQueueStore.Default;
         private readonly string _multiSftpTargetLeaseOwnerToken = Guid.NewGuid().ToString("N");
@@ -111,6 +114,8 @@ namespace sutty.UI.Views
             Closed += (_, _) =>
             {
                 _windowClosing = true;
+                StopTrackingShellTabs();
+                RequestBroadcastCancellation();
                 FlushWorkspaceSnapshot();
                 FlushRightPanelWidth();
                 foreach (var localView in GetOpenLocalTerminalViews())
@@ -173,7 +178,7 @@ namespace sutty.UI.Views
             }
             finally
             {
-                if (!_windowClosing && TitleTabs.TabItems.Count == 0)
+                if (!_windowClosing && !_autoClosedLastTab && TitleTabs.TabItems.Count == 0)
                 {
                     await OpenLocalTerminalTabAsync();
                     SelectNavigationItem("Home");
@@ -308,7 +313,7 @@ namespace sutty.UI.Views
                     {
                         try
                         {
-                            if (sutty.Command.HostProfileStore.GetById(tab.SavedHostId) is { } profile)
+                            if (sutty.Command.HostProfileStore.GetById(tab.SavedHostId) is { IsExternalCommand: false } profile)
                                 await OpenHistoryDraftAsync(CreateHostInfo(profile));
                         }
                         catch (Exception error) when (error is IOException or UnauthorizedAccessException or
@@ -345,6 +350,8 @@ namespace sutty.UI.Views
 
         private static ViewModels.HostInfoModel CreateHostInfo(sutty.Command.HostProfile profile) => new()
         {
+            LaunchKind = profile.LaunchKind,
+            LaunchCommand = profile.LaunchCommand,
             ProfileId = profile.Id,
             IsSavedProfile = true,
             CredentialId = profile.CredentialId,
@@ -699,7 +706,7 @@ namespace sutty.UI.Views
                 if (cached is TransfersDashboardPanel transfers)
                     transfers.RefreshFromStore();
                 if (page == AppGlobalPage.Home)
-                    _homeDashboard?.RefreshHosts();
+                    _homeDashboard?.RefreshRecentCommands();
                 if (page == AppGlobalPage.Hosts)
                 {
                     foreach (var hosts in _hostPanels)
@@ -729,7 +736,6 @@ namespace sutty.UI.Views
                 OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this),
             };
             dashboard.ConnectRequested += async (_, info) => await OpenSessionTabAsync(info);
-            dashboard.HistoryConnectRequested += async (_, host) => await OpenHistoryDraftAsync(host);
             dashboard.LocalCommandLaunchRequested += async (_, request) =>
                 await OpenLocalCommandLaunchTabAsync(request);
             _homeDashboard = dashboard;
@@ -801,6 +807,54 @@ namespace sutty.UI.Views
             ViewModels.HostInfoModel host,
             bool reviewMissingReconnectSecrets = false)
         {
+            // Only an explicit host click / --host request reaches this launch route.
+            // Workspace restore excludes external profiles before calling this method.
+            sutty.Command.HostProfile? saved;
+            try
+            {
+                saved = !string.IsNullOrWhiteSpace(host.ProfileId)
+                    ? sutty.Command.HostProfileStore.GetById(host.ProfileId) : null;
+            }
+            catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or IOException or
+                                          UnauthorizedAccessException or ArgumentException or FormatException)
+            {
+                await new ContentDialog
+                {
+                    XamlRoot = Content.XamlRoot,
+                    Title = Helpers.Loc.T("저장 호스트 확인 필요", "Saved host needs attention"),
+                    Content = Helpers.Loc.T("저장된 연결 종류를 읽지 못했습니다. 저장소를 확인한 뒤 다시 시도하세요.",
+                        "The saved connection type could not be read. Check storage and try again."),
+                    CloseButtonText = "OK",
+                }.ShowAsync();
+                return;
+            }
+            if (host.IsExternalCommand || saved?.IsExternalCommand == true)
+            {
+                if (_restoringWorkspace) return;
+                try
+                {
+                    var profile = saved ?? throw new InvalidOperationException("The saved command no longer exists.");
+                    var plan = sutty.Command.HostProfileStore.CreateCommandLaunchPlan(profile);
+                    if (await OpenLocalCommandLaunchTabAsync(new LocalCommandLaunchRequest(plan, favoriteId: null, displayName: profile.DisplayName)))
+                    {
+                        try { sutty.Command.HostProfileStore.MarkConnected(profile.Id); }
+                        catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or IOException or UnauthorizedAccessException)
+                        { Debug.WriteLine($"External favorite timestamp update failed: {error.GetType().Name}"); }
+                    }
+                }
+                catch (Exception error) when (error is ArgumentException or NotSupportedException or IOException or InvalidOperationException or
+                                              Microsoft.Data.Sqlite.SqliteException or UnauthorizedAccessException)
+                {
+                    await new ContentDialog
+                    {
+                        XamlRoot = Content.XamlRoot,
+                        Title = Helpers.Loc.T("외부 연결 명령 확인", "Review external connection command"),
+                        Content = Helpers.Loc.T("저장한 명령을 실행할 수 없습니다. 프로그램 설치와 PATH, 명령 내용을 확인하세요.\n", "The saved command could not launch. Check the installed program, PATH, and command.\n") + error.Message,
+                        CloseButtonText = "OK",
+                    }.ShowAsync();
+                }
+                return;
+            }
             var loaded = _connectionWorkflow.LoadSavedHostDraft(host);
             var draft = loaded.Draft;
 
@@ -937,6 +991,7 @@ namespace sutty.UI.Views
             };
             panel.BroadcastRequested += async (_, command) =>
                 await BroadcastFromPanelAsync(panel, command);
+            panel.BroadcastStopWaitingRequested += (_, _) => RequestBroadcastCancellation();
             panel.SftpUploadRequested += async (_, request) =>
                 await UploadToSelectedSessionsAsync(panel, request);
             panel.SftpDownloadRequested += async (_, request) =>
@@ -1374,6 +1429,9 @@ namespace sutty.UI.Views
 
                     claimedTargets.Add(target);
                     leases.Add(lease);
+                    // Establish the attempt synchronously under its execution lease.
+                    // Posted Progress<T> callbacks are observations, never retry authority.
+                    _sftpTransferQueue.UpdateTarget(jobId, target.PersistenceId, SftpQueueTargetState.Running);
                 }
 
                 return new MultiSftpTargetLeaseBatch([.. claimedTargets], leases);
@@ -1436,40 +1494,47 @@ namespace sutty.UI.Views
 
         private IProgress<MultiSftpTargetStatus> CreateMultiSftpProgress(
             MultiCommandPanel panel,
-            string? queueJobId) => new Progress<MultiSftpTargetStatus>(status =>
+            string? queueJobId)
         {
-            panel.UpdateSftpTarget(status);
-            if (string.IsNullOrWhiteSpace(queueJobId) ||
-                status.State == MultiSftpTargetState.Transferring &&
-                status.TransferProgress is not null)
+            var persisted = new Dictionary<string, (SftpTransferPhase? Phase, DateTimeOffset At)>();
+            return new Progress<MultiSftpTargetStatus>(status =>
             {
-                return;
-            }
+                panel.UpdateSftpTarget(status);
+                if (string.IsNullOrWhiteSpace(queueJobId)) return;
+                var now = DateTimeOffset.UtcNow;
+                var phase = status.TransferProgress?.Phase;
+                if (status.State == MultiSftpTargetState.Transferring && phase is not null &&
+                    persisted.TryGetValue(status.Target.PersistenceId, out var previous) &&
+                    previous.Phase == phase && now - previous.At < TimeSpan.FromSeconds(1)) return;
+                persisted[status.Target.PersistenceId] = (phase, now);
 
-            var state = status.State switch
-            {
-                MultiSftpTargetState.Transferring => SftpQueueTargetState.Running,
-                MultiSftpTargetState.Succeeded => SftpQueueTargetState.Succeeded,
-                MultiSftpTargetState.Failed => SftpQueueTargetState.Failed,
-                MultiSftpTargetState.Cancelled => SftpQueueTargetState.Cancelled,
-                _ => SftpQueueTargetState.Pending,
-            };
-            try
-            {
-                _sftpTransferQueue.UpdateTarget(
-                    queueJobId,
-                    status.Target.PersistenceId,
-                    state,
-                    status.Result?.BytesTransferred ?? status.TransferProgress?.BytesTransferred ?? 0,
-                    status.TransferProgress?.TotalBytes ?? 0,
-                    status.Error);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or
-                                          ArgumentException or InvalidOperationException)
-            {
-                Debug.WriteLine($"SFTP queue status persistence failed: {error.GetType().Name}");
-            }
-        });
+                var state = status.State switch
+                {
+                    MultiSftpTargetState.Transferring => SftpQueueTargetState.Running,
+                    MultiSftpTargetState.Succeeded => SftpQueueTargetState.Succeeded,
+                    MultiSftpTargetState.Failed => SftpQueueTargetState.Failed,
+                    MultiSftpTargetState.Cancelled => SftpQueueTargetState.Cancelled,
+                    _ => SftpQueueTargetState.Pending,
+                };
+                try
+                {
+                    _sftpTransferQueue.UpdateTarget(
+                        queueJobId,
+                        status.Target.PersistenceId,
+                        state,
+                        status.Result?.BytesTransferred ?? status.TransferProgress?.BytesTransferred ?? 0,
+                        status.TransferProgress?.TotalBytes ?? 0,
+                        status.Error,
+                        phase: phase,
+                        isProgressReport: true);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException or
+                                              ArgumentException or InvalidOperationException)
+                {
+                    Debug.WriteLine($"SFTP queue status persistence failed: {error.GetType().Name}");
+                }
+            });
+        }
 
         private void PersistMultiSftpBatch(string? queueJobId, MultiSftpBatchResult batch)
         {
@@ -1493,7 +1558,8 @@ namespace sutty.UI.Views
                         state,
                         status.Result?.BytesTransferred ?? status.TransferProgress?.BytesTransferred ?? 0,
                         status.TransferProgress?.TotalBytes ?? 0,
-                        status.Error);
+                        status.Error,
+                        phase: status.TransferProgress?.Phase);
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException or
                                               ArgumentException or InvalidOperationException)
@@ -1654,7 +1720,31 @@ namespace sutty.UI.Views
             };
         }
 
-        private async Task BroadcastFromPanelAsync(MultiCommandPanel panel, string command)
+        private sealed record BroadcastTarget(
+            MultiSlotVm Slot, ISshSession Session, string Identity, string Title, bool IsProduction);
+
+        private void RequestBroadcastCancellation()
+        {
+            if (_broadcastCancellation is not { } cancellation) return;
+            _broadcastCancellationNotification = Task.WhenAll(
+                _broadcastCancellationNotification, ObserveBroadcastCancellationAsync(cancellation));
+        }
+
+        private static async Task ObserveBroadcastCancellationAsync(CancellationTokenSource cancellation)
+        {
+            try { await cancellation.CancelAsync().ConfigureAwait(false); }
+            catch (ObjectDisposedException) { /* The batch already released its cancellation owner. */ }
+            catch (Exception error) { Debug.WriteLine($"Broadcast cancellation callback failed: {error.GetType().Name}"); }
+        }
+
+        private static async Task DisposeBroadcastCancellationAsync(
+            CancellationTokenSource cancellation, Task notification)
+        {
+            await notification.ConfigureAwait(false);
+            cancellation.Dispose();
+        }
+
+        private async Task BroadcastFromPanelAsync(MultiCommandPanel panel, BroadcastCommandSubmission submission)
         {
             if (Interlocked.CompareExchange(ref _broadcastInProgress, 1, 0) != 0)
             {
@@ -1664,60 +1754,113 @@ namespace sutty.UI.Views
                 return;
             }
 
-            var completed = false;
-            var failed = false;
-            panel.SetBroadcastRunning(true);
+            var status = Helpers.Loc.T("실행하지 않았습니다. 초안을 유지합니다.", "Not executed. Draft retained.");
+            var cancellation = new CancellationTokenSource();
+            _broadcastCancellation = cancellation;
+            panel.SetBroadcastRunning(true, Helpers.Loc.T("대상과 명령 확인 중…", "Reviewing targets and command…"));
             try
             {
-                completed = await BroadcastAsync(command);
+                status = await BroadcastAsync(panel, submission, cancellation.Token) ?? status;
             }
             catch (Exception error)
             {
-                failed = true;
                 Debug.WriteLine($"Broadcast batch failed: {error}");
+                status = Helpers.Loc.T("일괄 실행을 끝내지 못했습니다. 대상별 결과를 확인하세요.",
+                    "Broadcast did not finish. Check each target's result.");
             }
             finally
             {
+                _broadcastCancellation = null;
+                var cancellationNotification = _broadcastCancellationNotification;
+                _broadcastCancellationNotification = Task.CompletedTask;
+                _ = DisposeBroadcastCancellationAsync(cancellation, cancellationNotification);
                 Interlocked.Exchange(ref _broadcastInProgress, 0);
-                panel.SetBroadcastRunning(false, failed
-                    ? Helpers.Loc.T("브로드캐스트 실행 실패", "Broadcast failed")
-                    : completed
-                        ? Helpers.Loc.T("브로드캐스트 완료", "Broadcast complete")
-                        : null);
+                if (!_windowClosing) panel.SetBroadcastRunning(false, status);
             }
         }
 
-        // 체크된 모든 세션에 같은 명령을 병렬로 전송하고, 결과를 그리드 셀에 표시
-        private async Task<bool> BroadcastAsync(string command)
+        // Freeze identities before any dialog. Selection/page/tab changes cannot add targets.
+        private async Task<string?> BroadcastAsync(
+            MultiCommandPanel panel, BroadcastCommandSubmission submission, CancellationToken cancellationToken)
         {
-            var targets = MultiGrid.GetTargetSlots();
-            if (targets.Count == 0)
+            var command = submission.Command;
+            var selected = MultiGrid.GetTargetSlots();
+            if (string.IsNullOrWhiteSpace(command) || command.Contains('\0'))
+                return Helpers.Loc.T("명령이 비어 있거나 NUL 문자를 포함합니다. 초안을 확인하세요.",
+                    "The command is empty or contains NUL. Check the retained draft.");
+            if (selected.Count == 0)
             {
                 var dialog = new ContentDialog
                 {
                     Title = Helpers.Loc.T("대상 세션 없음", "No target sessions"),
                     Content = Helpers.Loc.T(
-                        "체크된 세션이 없습니다. 그리드에서 대상 세션을 체크하세요.",
-                        "No sessions are checked. Check target sessions in the grid."),
+                        "체크된 Sutty SSH가 없습니다. 연결된 SSH 세션을 선택하세요. 로컬·외부 터미널은 일괄 입력에서 제외됩니다.",
+                        "No Sutty SSH sessions are checked. Select connected SSH sessions. Local and external terminals are excluded."),
                     CloseButtonText = "OK",
                     XamlRoot = Content.XamlRoot,
                 };
                 await dialog.ShowAsync();
-                return false;
+                return null;
             }
 
-            var productionTargets = targets
-                .Where(slot => slot.IsProduction)
-                .ToList();
-            if (productionTargets.Count > 0)
+            if (selected.Any(slot => !slot.CanBroadcast || slot.View is null))
+                return Helpers.Loc.T("연결 상태가 바뀌었습니다. SSH 대상을 다시 선택하세요. 실행하지 않았습니다.",
+                    "Connection state changed. Select SSH targets again. Nothing was executed.");
+
+            var targets = selected.Select(slot => new BroadcastTarget(
+                slot, slot.View!.Session, slot.HostText, slot.Title, slot.IsProduction)).ToArray();
+            var offPage = MultiGrid.GetOffPageTargetCount(selected);
+            var review = new StackPanel { Spacing = 10 };
+            review.Children.Add(new TextBlock
             {
-                var targetNames = string.Join(", ", productionTargets.Select(slot => slot.Title));
+                Text = Helpers.Loc.T(
+                    $"전체 선택 {targets.Length}개 · 다른 페이지 {offPage}개\nSutty SSH {targets.Length} · 로컬/외부 터미널 0",
+                    $"{targets.Length} selected in total · {offPage} on other pages\nSutty SSH {targets.Length} · local/external terminals 0"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            review.Children.Add(new TextBlock
+            {
+                Text = string.Join("\n", targets.Select(target =>
+                    $"{(target.IsProduction ? "[PROD] " : "")}{target.Title} · {target.Identity}")),
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+            });
+            review.Children.Add(new TextBlock
+            {
+                Text = Helpers.Loc.T(
+                    "각 서버에서 아래 명령을 독립 SSH exec로 실행합니다. 터미널의 cd·환경변수·sudo 상태는 공유되지 않으며 서버의 기본 작업 폴더에서 시작합니다. 응답 대기는 최대 60초입니다. 취소·대기 종료가 원격 작업 종료를 보장하지는 않습니다.",
+                    "Runs the command below through independent SSH exec on each server, starting in the server's default directory. Terminal cd, environment and sudo state are not shared. Waits up to 60 seconds. Cancellation or stopping the wait does not guarantee remote termination."),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            review.Children.Add(new TextBlock
+            {
+                Text = command,
+                FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+            });
+            var preview = new ContentDialog
+            {
+                Title = Helpers.Loc.T("일괄 실행 대상·명령 확인", "Review broadcast targets and command"),
+                Content = new ScrollViewer { Content = review, MaxHeight = 440,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
+                PrimaryButtonText = Helpers.Loc.T($"{targets.Length}개 대상 승인", $"Approve {targets.Length} targets"),
+                CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot,
+            };
+            if (await preview.ShowAsync() != ContentDialogResult.Primary) return null;
+
+            var productionTargets = targets.Where(target => target.IsProduction).ToArray();
+            if (productionTargets.Length > 0)
+            {
+                var targetNames = string.Join("\n", productionTargets.Select(target => $"{target.Title} · {target.Identity}"));
                 var warning = new StackPanel { Spacing = 10 };
                 warning.Children.Add(new TextBlock
                 {
                     Text = Helpers.Loc.T(
-                        $"PROD 태그가 있는 {productionTargets.Count}개 세션이 포함되어 있습니다.",
-                        $"This broadcast includes {productionTargets.Count} session(s) tagged PROD."),
+                        $"PROD 태그가 있는 {productionTargets.Length}개 세션이 포함되어 있습니다.",
+                        $"This broadcast includes {productionTargets.Length} session(s) tagged PROD."),
                     Foreground = Helpers.ThemeResources.Brush(Root, "StatusRed"),
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                     TextWrapping = TextWrapping.Wrap,
@@ -1740,71 +1883,65 @@ namespace sutty.UI.Views
                 var confirm = new ContentDialog
                 {
                     Title = Helpers.Loc.T("PROD 브로드캐스트 확인", "Confirm PROD broadcast"),
-                    Content = warning,
+                    Content = new ScrollViewer { Content = warning, MaxHeight = 440,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
                     PrimaryButtonText = Helpers.Loc.T(
-                        $"{targets.Count}개 세션에서 실행",
-                        $"Run on {targets.Count} sessions"),
+                        $"{targets.Length}개 세션에서 실행",
+                        $"Run on {targets.Length} sessions"),
                     CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
                     DefaultButton = ContentDialogButton.Close,
                     XamlRoot = Content.XamlRoot,
                 };
                 if (await confirm.ShowAsync() != ContentDialogResult.Primary)
-                    return false;
+                    return null;
             }
 
-            await Task.WhenAll(targets.Select(slot =>
-                RunBroadcastOnSlotAsync(slot, command)));
-            return true;
+            if (_windowClosing || cancellationToken.IsCancellationRequested ||
+                targets.Any(target => target.Session.State != SessionState.Connected ||
+                    target.Slot.View is null || !_sessionWorkspaces.ContainsKey(target.Slot.View)))
+                return Helpers.Loc.T("대상이 닫혔거나 연결 상태가 바뀌었습니다. 실행하지 않았습니다. 초안을 유지합니다.",
+                    "A target closed or its connection changed. Nothing was executed. Draft retained.");
+
+            panel.ApproveBroadcast(submission);
+            panel.ShowBroadcastStatus(Helpers.Loc.T($"승인한 SSH {targets.Length}개 실행 중 · 최대 60초 대기",
+                $"Running on {targets.Length} approved SSH targets · waiting up to 60 seconds"));
+            foreach (var target in targets)
+            {
+                target.Slot.LastOutput = $"$ {command}";
+                target.Slot.ResultText = Helpers.Loc.T("대기", "waiting");
+            }
+            await Task.WhenAll(targets.Select(target => RunBroadcastOnTargetAsync(target, command, cancellationToken)));
+            return Helpers.Loc.T("대상별 응답 대기가 끝났습니다. 결과·종료 코드·미확정 상태를 확인하세요. 자동 재실행하지 않습니다.",
+                "Finished waiting for each target. Check results, exit codes and uncertain outcomes. No automatic replay.");
         }
 
-        private static async Task RunBroadcastOnSlotAsync(ViewModels.MultiSlotVm slot, string command)
+        private static async Task RunBroadcastOnTargetAsync(
+            BroadcastTarget target, string command, CancellationToken cancellationToken)
         {
-            slot.LastOutput = "…";
+            var slot = target.Slot;
             slot.ResultText = Helpers.Loc.T("실행 중", "running");
-            using var timeoutCancellation = new CancellationTokenSource(BroadcastCommandTimeout);
-            try
+            var result = await BroadcastCommandExecution.RunAsync(
+                token => target.Session.ExecuteCommandAsync(command, token),
+                BroadcastCommandTimeout, cancellationToken);
+            slot.ResultText = result.Outcome switch
             {
-                var result = await slot.ExecuteAsync(command, timeoutCancellation.Token);
-                var output = result.CombinedOutput;
-                var timedOut = timeoutCancellation.IsCancellationRequested &&
-                               string.Equals(
-                                   result.ExitSignal,
-                                   "CANCELLED",
-                                   StringComparison.OrdinalIgnoreCase);
-                slot.ResultText = timedOut
-                    ? Helpers.Loc.T("시간 초과", "timed out")
-                    : slot.LocalView is not null
-                    ? Helpers.Loc.T("완료", "complete")
-                    : result.ExitCode is int exitCode
-                        ? $"exit {exitCode}"
-                        : result.ExitSignal is { Length: > 0 } signal
-                            ? signal.ToLowerInvariant()
-                            : Helpers.Loc.T("실패", "failed");
-                slot.LastOutput = string.IsNullOrWhiteSpace(output)
-                    ? timedOut
-                        ? Helpers.Loc.T(
-                            "60초 안에 응답이 없어 중단했습니다.",
-                            "Stopped after no response for 60 seconds.")
-                        : slot.LocalView is not null
-                        ? Helpers.Loc.T("(출력 없음)", "(no output)")
-                        : result.Succeeded
-                            ? Helpers.Loc.T("(출력 없음)", "(no output)")
-                            : Helpers.Loc.T("(출력 없이 실패)", "(failed with no output)")
-                    : output.Length > BroadcastOutputPreviewLimit
-                        ? output[..BroadcastOutputPreviewLimit] + "…" : output;
-            }
-            catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested)
-            {
-                slot.ResultText = Helpers.Loc.T("시간 초과", "timed out");
-                slot.LastOutput = Helpers.Loc.T(
-                    "60초 안에 응답이 없어 중단했습니다.",
-                    "Stopped after no response for 60 seconds.");
-            }
-            catch (Exception ex)
-            {
-                slot.ResultText = Helpers.Loc.T("실패", "failed");
-                slot.LastOutput = $"error: {ex.Message}";
-            }
+                BroadcastCommandOutcome.NotStarted => Helpers.Loc.T("미실행", "not started"),
+                BroadcastCommandOutcome.Completed => Helpers.Loc.T("완료 · exit 0", "complete · exit 0"),
+                BroadcastCommandOutcome.CompletedWithoutExitCode => Helpers.Loc.T("완료 · 종료 코드 미확인", "complete · exit code unknown"),
+                BroadcastCommandOutcome.Failed => Helpers.Loc.T("실패", "failed") +
+                    (result.Execution?.ExitCode is int exitCode ? $" · exit {exitCode}" : $" · {result.Execution?.ExitSignal}"),
+                BroadcastCommandOutcome.CancellationRequested => Helpers.Loc.T("취소 요청 · 종료 미확인", "cancellation requested · termination unknown"),
+                _ => Helpers.Loc.T("응답 불명 · 확인 필요", "response unknown · check server"),
+            };
+            var output = result.Execution?.CombinedOutput ?? result.Error ?? "";
+            if (result.Outcome is BroadcastCommandOutcome.ResponseUnknown or BroadcastCommandOutcome.CancellationRequested)
+                output += "\n" + Helpers.Loc.T(
+                    "대기를 끝냈지만 원격 작업 종료는 확인되지 않았습니다. 서버에서 결과를 확인한 뒤 다음 실행을 결정하세요. 자동 재실행하지 않습니다.",
+                    "Stopped waiting; remote termination is unconfirmed. Check the server before deciding to run again. No automatic replay.");
+            if (string.IsNullOrWhiteSpace(output)) output = Helpers.Loc.T("(출력 없음)", "(no output)");
+            if (output.Length > BroadcastOutputPreviewLimit)
+                output = output[..BroadcastOutputPreviewLimit] + "\n" + Helpers.Loc.T("[출력 잘림]", "[output truncated]");
+            slot.LastOutput = $"$ {command}\n\n{output}";
         }
 
         private async Task RunCommandOnActiveSessionAsync(string command)
@@ -2026,9 +2163,7 @@ namespace sutty.UI.Views
             if (TitleTabs.TabItems.Count >= MaxSessions)
                 return await OpenLocalTerminalTabAsync(request.Plan);
 
-            sutty.Command.CommandLauncherHistoryEntry history = request.FavoriteId is { } favoriteId
-                ? sutty.Command.CommandLauncherStore.RecordFavoriteLaunch(favoriteId, request.Plan)
-                : sutty.Command.CommandLauncherStore.RecordAdHocLaunch(request.Plan, request.DisplayName);
+            var history = sutty.Command.CommandLauncherStore.RecordAdHocLaunch(request.Plan, request.DisplayName);
 
             try
             {
@@ -2125,6 +2260,7 @@ namespace sutty.UI.Views
             tab.Tapped += SessionTab_Tapped;
 
             TitleTabs.TabItems.Add(tab);
+            TrackShellTabLifetime(tab);
             TitleTabs.SelectedItem = tab;
             SwitchSelectedSession();
             UpdateSessionArea();
@@ -2314,6 +2450,7 @@ namespace sutty.UI.Views
             tab.Tapped += SessionTab_Tapped;
 
             TitleTabs.TabItems.Add(tab);
+            TrackShellTabLifetime(tab);
             TitleTabs.SelectedItem = tab;
             SwitchSelectedSession();
             UpdateSessionArea();
@@ -2404,7 +2541,6 @@ namespace sutty.UI.Views
 
                 foreach (var historyPanel in _hostPanels)
                     historyPanel.RefreshFromStore();
-                _homeDashboard?.RefreshHosts();
             }
 
             if (outcome is ConnectionAttemptOutcome.Failed or
@@ -3706,71 +3842,7 @@ namespace sutty.UI.Views
             TabView sender,
             TabViewTabCloseRequestedEventArgs args)
         {
-            if (_closePromptOpen || _windowClosing) return;
-            if (args.Tab.DataContext is SessionView pendingSession &&
-                _sessionWorkspaces.TryGetValue(pendingSession, out var pendingWorkspace) &&
-                !await ConfirmWorkspacesCloseAsync([pendingWorkspace])) return;
-            if (args.Tab.DataContext is SessionView closingSession)
-            {
-                RememberFailedSupportContext(
-                    closingSession.Session,
-                    allowUnsequencedOverwrite: false);
-                if (_sessionWorkspaces.TryGetValue(closingSession, out var closingWorkspace))
-                    closingWorkspace.CancelTransfers(userInitiated: true);
-            }
-
-            var preserveGlobalPage = !_isMultiView &&
-                _shellState.Mode == AppShellMode.Global;
-            var preserveMultiView = _isMultiView;
-            _suppressTabActivation = true;
-            try
-            {
-                sender.TabItems.Remove(args.Tab);
-                if (sender.TabItems.Count > 0 &&
-                    (sender.SelectedItem is null ||
-                     !sender.TabItems.Contains(sender.SelectedItem)))
-                {
-                    sender.SelectedItem = sender.TabItems[0];
-                }
-            }
-            finally
-            {
-                _suppressTabActivation = false;
-            }
-
-            if (sender.TabItems.Count == 0)
-            {
-                var page = _shellState.GlobalPage;
-                await OpenLocalTerminalTabAsync();
-                if (preserveGlobalPage || preserveMultiView)
-                    SelectNavigationItem(page.ToString());
-            }
-
-            SwitchSelectedSession();
-            UpdateSessionArea();
-            QueueWorkspaceSnapshot();
-
-            // 탭은 먼저 닫고, 연결 정리는 백그라운드로 (UI가 안 막히게)
-            if (args.Tab.DataContext is SessionView view)
-            {
-                view.AppShortcutRequested -= TerminalView_AppShortcutRequested;
-                if (_sessionWorkspaces.Remove(view, out var workspace))
-                {
-                    workspace.SectionChanged -= SessionWorkspace_SectionChanged;
-                    workspace.TerminalActivationRequested -= SessionWorkspace_TerminalActivationRequested;
-                    _navigation.ForgetWorkspace(workspace.ViewModel);
-                    try { await DetachAndCloseSessionAsync(workspace).WaitAsync(TimeSpan.FromSeconds(10)); }
-                    catch (TimeoutException) { Debug.WriteLine("Session cleanup is continuing after tab close."); }
-                }
-                else
-                    await ObserveCloseOperationAsync(_sessions.CloseAsync(view.Session));
-            }
-            else if (args.Tab.DataContext is LocalTerminalView localView)
-            {
-                localView.AppShortcutRequested -= TerminalView_AppShortcutRequested;
-                ReleaseLocalFileBrowser(localView);
-                await ObserveCloseOperationAsync(localView.CloseAsync());
-            }
+            await CloseShellTabAsync(args.Tab, automatic: false);
         }
 
         // ── 설정 창 ──
@@ -4112,7 +4184,7 @@ namespace sutty.UI.Views
             if (changes.HasFlag(SettingChangeKind.History) ||
                 changes.HasFlag(SettingChangeKind.HostProfiles))
             {
-                _homeDashboard?.RefreshHosts();
+                _homeDashboard?.RefreshRecentCommands();
                 foreach (var hosts in _hostPanels)
                     hosts.RefreshFromStore();
             }

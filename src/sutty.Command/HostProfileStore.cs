@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using sutty.Core.Terminal;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -27,6 +28,9 @@ public static class HostEnvironments
 /// </summary>
 public sealed class HostProfile
 {
+    public string LaunchKind { get; init; } = "SuttySsh";
+    public string LaunchCommand { get; init; } = "";
+    public bool IsExternalCommand => !string.Equals(LaunchKind, "SuttySsh", StringComparison.Ordinal);
     public string Id { get; init; } = "";
     public string DisplayName { get; init; } = "";
     public string Host { get; init; } = "";
@@ -49,6 +53,8 @@ public sealed class HostProfile
 
 public sealed class HostProfileDraft
 {
+    public string LaunchKind { get; set; } = "SuttySsh";
+    public string LaunchCommand { get; set; } = "";
     public string DisplayName { get; set; } = "";
     public string Host { get; set; } = "";
     public int Port { get; set; } = 22;
@@ -70,18 +76,20 @@ public sealed class HostProfileDraft
 /// SQLite repository for saved hosts. Connection attempts remain append-only in
 /// <see cref="HostHistoryStore"/>; this table represents explicit user-managed profiles.
 /// </summary>
-public static class HostProfileStore
+public static partial class HostProfileStore
 {
     private const int MaxProfiles = 10_000;
     private const string LegacyPinsMigration = "host_profiles_from_legacy_pins_v1";
     private static readonly object Gate = new();
     private static bool _initialized;
+    private static string? _initializedDatabasePath;
+    public static event EventHandler? Changed;
 
     public static void EnsureInitialized()
     {
         lock (Gate)
         {
-            if (_initialized) return;
+            if (_initialized && string.Equals(_initializedDatabasePath, Db.DbPath, StringComparison.OrdinalIgnoreCase)) return;
 
             using var connection = Db.Open();
             using (var command = connection.CreateCommand())
@@ -124,7 +132,9 @@ public static class HostProfileStore
             EnsureConnectionOptionColumns(connection);
 
             MigrateLegacyPins(connection);
+            MigrateCommandFavorites(connection);
             _initialized = true;
+            _initializedDatabasePath = Db.DbPath;
         }
     }
 
@@ -163,11 +173,11 @@ public static class HostProfileStore
                     private_key_path, tags_json, group_name, environment,
                     is_favorite, credential_id, route_json, tunnels_json,
                     created_at_utc, updated_at_utc,
-                    last_connected_at_utc, authentication_alias)
+                    last_connected_at_utc, authentication_alias, launch_kind, launch_command)
                 VALUES (
                     $id, $displayName, $host, $port, $username, $authMethod,
                     $privateKeyPath, $tags, $groupName, $environment,
-                    $favorite, $credentialId, $route, $tunnels, $now, $now, NULL, $authenticationAlias)
+                    $favorite, $credentialId, $route, $tunnels, $now, $now, NULL, $authenticationAlias, $launchKind, $launchCommand)
                 ON CONFLICT(id) DO UPDATE SET
                     display_name = excluded.display_name,
                     host = excluded.host,
@@ -181,6 +191,8 @@ public static class HostProfileStore
                     is_favorite = excluded.is_favorite,
                     credential_id = excluded.credential_id,
                     authentication_alias = excluded.authentication_alias,
+                    launch_kind = excluded.launch_kind,
+                    launch_command = excluded.launch_command,
                     route_json = excluded.route_json,
                     tunnels_json = excluded.tunnels_json,
                     updated_at_utc = excluded.updated_at_utc
@@ -190,6 +202,7 @@ public static class HostProfileStore
         }
 
         transaction.Commit();
+        NotifyChanged();
         return GetById(id) ?? throw new InvalidOperationException("The saved host could not be reloaded.");
     }
 
@@ -217,6 +230,7 @@ public static class HostProfileStore
 
     public static HostProfileDraft ToDraft(HostProfile profile) => new()
     {
+        LaunchKind = profile.LaunchKind, LaunchCommand = profile.LaunchCommand,
         DisplayName = profile.DisplayName, Host = profile.Host, Port = profile.Port,
         Username = profile.Username, AuthMethod = profile.AuthMethod, PrivateKeyPath = profile.PrivateKeyPath,
         Tags = [.. profile.Tags], GroupName = profile.GroupName, Environment = profile.Environment,
@@ -249,6 +263,7 @@ public static class HostProfileStore
             WHERE $query = ''
                OR display_name LIKE $pattern ESCAPE '\'
                OR host LIKE $pattern ESCAPE '\'
+               OR launch_command LIKE $pattern ESCAPE '\'
                OR username LIKE $pattern ESCAPE '\'
                OR group_name LIKE $pattern ESCAPE '\'
                OR tags_json LIKE $pattern ESCAPE '\'
@@ -277,7 +292,9 @@ public static class HostProfileStore
         using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM host_profiles WHERE id = $id";
         command.Parameters.AddWithValue("$id", id);
-        return command.ExecuteNonQuery() > 0;
+        var deleted = command.ExecuteNonQuery() > 0;
+        if (deleted) NotifyChanged();
+        return deleted;
     }
 
     public static void SetFavorite(string id, bool favorite)
@@ -295,6 +312,7 @@ public static class HostProfileStore
         command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$id", id);
         command.ExecuteNonQuery();
+        NotifyChanged();
     }
 
     public static void MarkConnected(string id, DateTimeOffset? connectedAtUtc = null)
@@ -312,6 +330,7 @@ public static class HostProfileStore
         command.Parameters.AddWithValue("$connected", now.ToString("O"));
         command.Parameters.AddWithValue("$id", id);
         command.ExecuteNonQuery();
+        NotifyChanged();
     }
 
     private static void MigrateLegacyPins(SqliteConnection connection)
@@ -445,6 +464,13 @@ public static class HostProfileStore
             addAlias.CommandText = "ALTER TABLE host_profiles ADD COLUMN authentication_alias TEXT NOT NULL DEFAULT ''";
             addAlias.ExecuteNonQuery();
         }
+        foreach (var (name, defaultValue) in new[] { ("launch_kind", "SuttySsh"), ("launch_command", "") })
+        {
+            if (columns.Contains(name)) continue;
+            using var add = connection.CreateCommand();
+            add.CommandText = $"ALTER TABLE host_profiles ADD COLUMN {name} TEXT NOT NULL DEFAULT '{defaultValue}'";
+            add.ExecuteNonQuery();
+        }
     }
 
     private static void AddDraftParameters(
@@ -454,6 +480,8 @@ public static class HostProfileStore
         DateTimeOffset now)
     {
         command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$launchKind", draft.LaunchKind);
+        command.Parameters.AddWithValue("$launchCommand", draft.LaunchCommand);
         command.Parameters.AddWithValue("$displayName", draft.DisplayName);
         command.Parameters.AddWithValue("$host", draft.Host);
         command.Parameters.AddWithValue("$port", draft.Port);
@@ -473,6 +501,10 @@ public static class HostProfileStore
 
     private static HostProfileDraft Normalize(HostProfileDraft draft)
     {
+        if (!string.Equals(draft.LaunchKind, "SuttySsh", StringComparison.Ordinal))
+            return NormalizeCommandDraft(draft);
+        if (!string.IsNullOrWhiteSpace(draft.LaunchCommand))
+            throw new ArgumentException("An SSH profile cannot contain an external launch command.", nameof(draft));
         var host = draft.Host?.Trim() ?? "";
         if (host.Length is < 1 or > 255 || host.Any(char.IsControl))
             throw new ArgumentException("A valid host name or address is required.", nameof(draft));
@@ -768,6 +800,8 @@ public static class HostProfileStore
         UpdatedAtUtc = DateTimeOffset.Parse(reader.GetString(15)),
         LastConnectedAtUtc = reader.IsDBNull(16) ? null : DateTimeOffset.Parse(reader.GetString(16)),
         AuthenticationAlias = reader.GetString(17),
+        LaunchKind = reader.GetString(18),
+        LaunchCommand = reader.GetString(19),
     };
 
     private const string SelectColumns = """
@@ -775,6 +809,6 @@ public static class HostProfileStore
         private_key_path, tags_json, group_name, environment,
         is_favorite, credential_id, route_json, tunnels_json,
         created_at_utc, updated_at_utc,
-        last_connected_at_utc, authentication_alias
+        last_connected_at_utc, authentication_alias, launch_kind, launch_command
         """;
 }

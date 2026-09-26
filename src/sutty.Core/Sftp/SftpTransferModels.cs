@@ -16,6 +16,8 @@ public enum SftpTransferPhase
     Verifying,
     Retrying,
     Completed,
+    // Append to retain the numeric values persisted by earlier queue versions.
+    Promoting,
 }
 
 /// <summary>

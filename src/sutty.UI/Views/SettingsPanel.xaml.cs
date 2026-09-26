@@ -132,6 +132,7 @@ namespace sutty.UI.Views
                 CursorBlinkToggle.IsOn = settings.TerminalCursorBlink;
                 ScreenReaderToggle.IsOn = settings.TerminalScreenReaderMode;
                 LoadShellProfileToggle.IsOn = settings.LoadLocalShellProfile;
+                AutoCloseDisconnectedTabsToggle.IsOn = settings.AutoCloseDisconnectedTabs;
                 StructuredHighlightToggle.IsOn = settings.EnableStructuredTextHighlighting;
                 SeverityHighlightToggle.IsOn = settings.EnableSeverityHighlighting;
                 CommandSuggestionToggle.IsOn = settings.EnableCommandSuggestions;
@@ -348,6 +349,13 @@ namespace sutty.UI.Views
             settings.EnableCommandSuggestions = CommandSuggestionToggle.IsOn;
             settings.AcceptSuggestionWithTab = SuggestionTabToggle.IsOn;
             CommitChangesNow(SettingChangeKind.TerminalFeatures);
+        }
+
+        private void AutoCloseDisconnectedTabsToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            SettingsService.Current.AutoCloseDisconnectedTabs = AutoCloseDisconnectedTabsToggle.IsOn;
+            CommitChangesNow(SettingChangeKind.Workspace);
         }
 
         private void SftpRetryToggle_Toggled(object sender, RoutedEventArgs e)

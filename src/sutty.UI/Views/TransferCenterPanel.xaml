@@ -219,6 +219,11 @@
 
                                 <StackPanel Grid.Row="3" Spacing="4">
                                     <TextBlock
+                                        AutomationProperties.LiveSetting="Polite"
+                                        FontSize="10.5" Foreground="{ThemeResource TextMuted}"
+                                        Text="{x:Bind RecoveryHint, Mode=OneWay}" TextWrapping="Wrap"
+                                        Visibility="{x:Bind RecoveryHintVisibility, Mode=OneWay}" />
+                                    <TextBlock
                                         MaxLines="2"
                                         AutomationProperties.LiveSetting="Polite"
                                         FontSize="10.5"
@@ -250,6 +255,7 @@
                                         AutomationProperties.Name="{x:Bind ResumeAutomationName, Mode=OneWay}"
                                         Click="Resume_Click"
                                         Content="{x:Bind h:Loc.T('재개', 'Resume')}"
+                                        ToolTipService.ToolTip="{x:Bind ResumeDisabledReason, Mode=OneWay}"
                                         IsEnabled="{x:Bind CanResume, Mode=OneWay}"
                                         Visibility="{x:Bind ResumeVisibility, Mode=OneWay}" />
                                     <Button
@@ -258,6 +264,7 @@
                                         AutomationProperties.Name="{x:Bind RetryAutomationName, Mode=OneWay}"
                                         Click="RetryFailed_Click"
                                         Content="{x:Bind h:Loc.T('실패만 재시도', 'Retry failed')}"
+                                        ToolTipService.ToolTip="{x:Bind RetryDisabledReason, Mode=OneWay}"
                                         IsEnabled="{x:Bind CanRetry, Mode=OneWay}"
                                         Visibility="{x:Bind RetryVisibility, Mode=OneWay}" />
                                     <Button

@@ -30,7 +30,7 @@ public sealed class MultiSlotVm : ObservableObject
     public bool IsSelected
     {
         get => _isSelected;
-        set => SetProperty(ref _isSelected, HasSession && value);
+        set => SetProperty(ref _isSelected, CanBroadcast && value);
     }
 
     private string _lastOutput = "";
@@ -51,15 +51,28 @@ public sealed class MultiSlotVm : ObservableObject
 
     public bool HasSession => View is not null || LocalView is not null;
     public bool IsEmpty => !HasSession;
+    public bool CanBroadcast => View?.Session.State == SessionState.Connected;
+
+    public string ExecutionModeText => View is not null
+        ? Loc.T("Sutty SSH · 독립 exec 실행", "Sutty SSH · independent exec")
+        : HasSession
+            ? Loc.T("터미널 입력 전용 · 일괄 실행 제외", "Terminal input only · excluded from broadcast")
+            : "";
+
+    public string SelectionHelp => CanBroadcast
+        ? Loc.T("독립 SSH 명령 실행 · 터미널의 cd·환경변수·sudo 상태를 공유하지 않습니다.",
+            "Independent SSH execution · terminal cd, environment and sudo state are not shared.")
+        : View is not null
+            ? Loc.T("원래 Sutty SSH 호스트에 연결한 뒤 선택하세요.", "Connect the original Sutty SSH host before selecting it.")
+            : Loc.T("전경 프로그램과 실제 원격 대상을 확인할 수 없어 일괄 입력을 보내지 않습니다. 저장 호스트로 연결하세요.",
+                "The foreground program and remote target are unknown. Connect a saved host to use broadcast.");
 
     public string Title => View?.Session.Info.Title
         ?? LocalView?.DisplayTitle ?? "";
 
     public string HostText => View is not null
-        ? $"{View.Session.Info.Host}:{View.Session.Info.Port}"
-        : LocalView is not null
-            ? $"{Loc.T("로컬", "local")} · {Environment.UserName}@{Environment.MachineName}"
-            : "";
+        ? $"{View.Session.Info.Username}@{View.Session.Info.Host}:{View.Session.Info.Port}"
+        : LocalView?.ConnectionIdentity ?? "";
 
     public string StateText => View is not null
         ? View.Session.State switch
@@ -103,10 +116,14 @@ public sealed class MultiSlotVm : ObservableObject
     /// <summary>Refresh computed labels when a retained card is shown again.</summary>
     public void RefreshSessionDetails()
     {
+        if (!CanBroadcast) IsSelected = false;
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(HostText));
         OnPropertyChanged(nameof(StateText));
         OnPropertyChanged(nameof(StateBrush));
+        OnPropertyChanged(nameof(CanBroadcast));
+        OnPropertyChanged(nameof(ExecutionModeText));
+        OnPropertyChanged(nameof(SelectionHelp));
     }
 
     public bool CanUseSftp => View?.Session is
@@ -125,7 +142,7 @@ public sealed class MultiSlotVm : ObservableObject
     public MultiSftpTarget? CreateSftpTarget(string remoteDirectory) => CanUseSftp
         ? new MultiSftpTarget(
             View!.Session.Id.ToString("N"),
-            Title,
+            $"{Title} · {HostText}",
             View.Session.Sftp,
             remoteDirectory)
         {
@@ -135,12 +152,10 @@ public sealed class MultiSlotVm : ObservableObject
 
     public Task<CommandExecutionResult> ExecuteAsync(
         string command,
-        CancellationToken cancellationToken = default) => View is not null
-        ? View.RunExternalCommandDetailedAsync(command, cancellationToken)
-        : LocalView is not null
-            ? LocalView.RunExternalCommandDetailedAsync(command, cancellationToken)
-            : Task.FromException<CommandExecutionResult>(
-                new InvalidOperationException("The broadcast slot is empty."));
+        CancellationToken cancellationToken = default) => CanBroadcast
+        ? View!.Session.ExecuteCommandAsync(command, cancellationToken)
+        : Task.FromException<CommandExecutionResult>(
+            new InvalidOperationException("Broadcast requires a connected Sutty SSH session."));
 
     public bool IsProduction => View?.Session.Info.Tags.Any(tag =>
         tag.Trim().Equals("prod", StringComparison.OrdinalIgnoreCase) ||

@@ -10,6 +10,16 @@ namespace sutty.Core.Sftp;
 /// </summary>
 public sealed class LocalFileService : ISftpService
 {
+    public Task<byte[]> ReadFileBytesAsync(string remotePath, int maximumBytes, CancellationToken ct = default) =>
+        Task.Run(() =>
+        {
+            var attributes = File.GetAttributes(remotePath);
+            if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+                throw new IOException("Only regular files can be verified for editing.");
+            using var input = new FileStream(remotePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return SftpBoundedRead.Read(input, maximumBytes, ct);
+        }, ct);
+
     public Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(string path, CancellationToken ct = default)
         => Task.Run<IReadOnlyList<RemoteFileEntry>>(() =>
         {
@@ -659,6 +669,16 @@ public sealed class LocalFileService : ISftpService
             hash = Convert.ToHexString(sourceHash).ToLowerInvariant();
         }
 
+        ct.ThrowIfCancellationRequested();
+        progress?.Report(new SftpTransferProgress(
+            direction,
+            SftpTransferPhase.Promoting,
+            file.RelativePath,
+            completedBytes + file.Length,
+            totalBytes,
+            completedFiles,
+            totalFiles,
+            attempt));
         File.Move(partialPath, destination, replaceExistingDestination);
         return new LocalCopyOutcome(file.Length, resumed, hash);
     }

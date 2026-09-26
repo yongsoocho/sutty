@@ -61,7 +61,9 @@ public sealed class TransferCenterItemViewModel : ObservableObject
         {
             var total = _job.Targets.Sum(target => Math.Max(0, target.TotalBytes));
             return total > 0 || _job.State == SftpQueueJobState.Completed
-                ? $"{ProgressPercent:0}%"
+                ? _job.State == SftpQueueJobState.Completed
+                    ? "100%"
+                    : TransferPhaseLabels.Bytes(ProgressPercent)
                 : "—";
         }
     }
@@ -75,11 +77,14 @@ public sealed class TransferCenterItemViewModel : ObservableObject
     public string StateText => _job.State switch
     {
         SftpQueueJobState.Pending => Loc.T("대기", "Pending"),
-        SftpQueueJobState.Running => Loc.T("전송 중", "Running"),
+        SftpQueueJobState.Running => TransferPhaseLabels.Active(
+            _job.Targets.Where(target => target.State == SftpQueueTargetState.Running)
+                .OrderByDescending(target => target.UpdatedAtUtc).FirstOrDefault()?.Phase,
+            ProgressPercent / 100),
         SftpQueueJobState.Paused => Loc.T("일시 정지됨", "Paused"),
         SftpQueueJobState.Interrupted => Loc.T("복구 필요", "Interrupted"),
         SftpQueueJobState.Failed => Loc.T("실패", "Failed"),
-        SftpQueueJobState.Completed => Loc.T("완료", "Completed"),
+        SftpQueueJobState.Completed => TransferPhaseLabels.Complete,
         SftpQueueJobState.Cancelled => Loc.T("취소됨", "Cancelled"),
         _ => "",
     };
@@ -140,6 +145,34 @@ public sealed class TransferCenterItemViewModel : ObservableObject
 
     public bool CanRemove => !IsBusy && _job.State == SftpQueueJobState.Completed;
 
+    public string ResumeDisabledReason => DisabledReason(TransferCenterAction.Resume);
+    public string RetryDisabledReason => DisabledReason(TransferCenterAction.RetryFailed);
+    public string RecoveryHint => ResumeVisibility == Visibility.Visible && !CanResume
+        ? ResumeDisabledReason
+        : RetryVisibility == Visibility.Visible && !CanRetry ? RetryDisabledReason : "";
+    public Visibility RecoveryHintVisibility => string.IsNullOrEmpty(RecoveryHint)
+        ? Visibility.Collapsed : Visibility.Visible;
+
+    private string DisabledReason(TransferCenterAction action)
+    {
+        if (IsBusy) return Loc.T("요청 처리 중입니다. 잠시 기다려 주세요.", "A request is being handled. Please wait.");
+        return _service.GetUnavailableReason(_job, action) switch
+        {
+            TransferCenterUnavailableReason.EditReviewRequired => Loc.T(
+                "원래 호스트에 연결한 뒤 Files > Edits에서 원격 변경과 보존한 편집본을 검토하세요.",
+                "Connect to the original host, then review remote changes and the retained copy in Files > Edits."),
+            TransferCenterUnavailableReason.OriginalConnectionRequired when _job.Mode != SftpQueueMode.Single => Loc.T(
+                "원래 호스트들을 연결하고 Multi > SFTP에서 '실패한 서버만 재시도' 또는 '복원된 전송 재개'를 선택하세요.",
+                "Connect the original hosts, then use 'Retry failed servers only' or 'Resume restored transfer' in Multi > SFTP."),
+            TransferCenterUnavailableReason.OriginalConnectionRequired => Loc.T(
+                "이 작업의 원래 호스트에 다시 연결하고 Files를 여세요. 원본이 변경되었다면 파일을 확인한 뒤 새 전송을 시작하세요.",
+                "Reconnect to this job's original host and open Files. If the source changed, review it and start a new transfer."),
+            TransferCenterUnavailableReason.NoEligibleTargets => Loc.T("대상 상태가 변경되었습니다. 목록을 새로 고치세요.",
+                "The target state changed. Refresh the list."),
+            _ => "",
+        };
+    }
+
     public string PauseAutomationName => Loc.T(
         $"{Name} 전송 일시 정지",
         $"Pause transfer {Name}");
@@ -182,6 +215,9 @@ public sealed class TransferCenterItemViewModel : ObservableObject
         OnPropertyChanged(nameof(RetryAutomationName));
         OnPropertyChanged(nameof(CancelAutomationName));
         OnPropertyChanged(nameof(RemoveAutomationName));
+        OnPropertyChanged(nameof(ProgressText));
+        OnPropertyChanged(nameof(ErrorText));
+        RaiseCapabilitiesChanged();
     }
 
     private bool HasTarget(params SftpQueueTargetState[] states) =>
@@ -207,6 +243,10 @@ public sealed class TransferCenterItemViewModel : ObservableObject
 
     private void RaiseCapabilitiesChanged()
     {
+        OnPropertyChanged(nameof(ResumeDisabledReason));
+        OnPropertyChanged(nameof(RetryDisabledReason));
+        OnPropertyChanged(nameof(RecoveryHint));
+        OnPropertyChanged(nameof(RecoveryHintVisibility));
         OnPropertyChanged(nameof(BusyVisibility));
         OnPropertyChanged(nameof(PauseVisibility));
         OnPropertyChanged(nameof(ResumeVisibility));

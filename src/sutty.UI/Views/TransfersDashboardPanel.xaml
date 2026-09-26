@@ -21,6 +21,8 @@
                            Text="{x:Bind h:Loc.T('현재 선택한 셸의 파일과 폴더를 표시합니다.', 'Files and folders for the currently selected shell.')}" />
                 <TextBlock x:Name="ActiveShellText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                            Foreground="{ThemeResource TextPrimary}" AutomationProperties.LiveSetting="Polite" />
+                <TextBlock x:Name="BrowserScopeText" Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Polite" />
                 <TextBlock x:Name="BrowserError" Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap"
                            AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
             </StackPanel>
@@ -29,6 +31,20 @@
                     Background="{ThemeResource CardBg}" CornerRadius="10">
                 <ContentControl x:Name="BrowserHost"
                                 HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+            </Border>
+
+            <Border x:Name="ExternalTerminalState" Grid.Row="1" Padding="20" Visibility="Collapsed"
+                    Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
+                    BorderThickness="1" CornerRadius="10">
+                <StackPanel Spacing="10" VerticalAlignment="Center">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextPrimary}"
+                               Text="{x:Bind h:Loc.T('외부 터미널에는 원격 파일이 연결되지 않습니다.', 'Remote files are not connected to this external terminal.')}" />
+                    <TextBlock Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                               Text="{x:Bind h:Loc.T('이 탭은 설치된 ssh 또는 다른 프로그램을 실행합니다. 원격 SFTP · Tunnels는 자동 통합되지 않습니다.', 'This tab runs the installed ssh or another program. Remote SFTP and Tunnels are not automatically integrated.')}" />
+                    <TextBlock Foreground="{ThemeResource TextPrimary}" TextWrapping="Wrap"
+                               Text="{x:Bind h:Loc.T('Hosts에서 저장한 호스트에 연결하거나 기존 호스트를 가져온 뒤 Sutty SSH 연결의 Files · Tunnels를 사용하세요. 이 PC의 파일은 PowerShell 또는 CMD 탭에서 탐색할 수 있습니다.', 'Connect to a saved host in Hosts, or import an existing host, then use Files and Tunnels in its Sutty SSH connection. To browse files on this PC, select a PowerShell or CMD tab.')}" />
+                </StackPanel>
             </Border>
 
             <Border x:Name="NoTargetState" Grid.Row="1" Padding="20" Background="{ThemeResource CardBg}"

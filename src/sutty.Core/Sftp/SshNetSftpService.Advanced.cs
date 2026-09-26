@@ -378,13 +378,14 @@ public sealed partial class SshNetSftpService
         totalBytes,
         filesCompleted,
         totalFiles,
-        (attempt, reportFileBytes) => UploadFileCore(
+        (attempt, reportFileBytes, reportPhase) => UploadFileCore(
             Client,
             localPath,
             remotePath,
             options,
             attempt,
             reportFileBytes,
+            reportPhase,
             ct),
         ct).ConfigureAwait(false);
 
@@ -407,13 +408,14 @@ public sealed partial class SshNetSftpService
         totalBytes,
         filesCompleted,
         totalFiles,
-        (attempt, reportFileBytes) => DownloadFileCore(
+        (attempt, reportFileBytes, reportPhase) => DownloadFileCore(
             Client,
             remotePath,
             localPath,
             options,
             attempt,
             reportFileBytes,
+            reportPhase,
             ct),
         ct).ConfigureAwait(false);
 
@@ -424,6 +426,7 @@ public sealed partial class SshNetSftpService
         SftpTransferOptions options,
         int attempt,
         Action<long> reportBytes,
+        Action<SftpTransferPhase> reportPhase,
         CancellationToken ct)
     {
         var source = new FileInfo(localPath);
@@ -545,6 +548,7 @@ public sealed partial class SshNetSftpService
             string? checksum = null;
             if (options.VerifyChecksum)
             {
+                reportPhase(SftpTransferPhase.Verifying);
                 var localHash = ComputeLocalSha256(source.FullName, ct);
                 var remoteHash = ComputeRemoteSha256(client, partialPath, ct);
                 if (!CryptographicOperations.FixedTimeEquals(localHash, remoteHash))
@@ -552,9 +556,10 @@ public sealed partial class SshNetSftpService
                 checksum = Convert.ToHexString(localHash);
             }
 
+            ct.ThrowIfCancellationRequested();
+            reportPhase(SftpTransferPhase.Promoting);
             PromoteRemoteFile(client, partialPath, remotePath, replaceExistingDestination);
             _checkpointStore.Delete(id);
-            reportBytes(source.Length);
             return new FileTransferResult(source.Length, offset, checksum);
         }
         catch (SftpChecksumMismatchException)
@@ -583,6 +588,7 @@ public sealed partial class SshNetSftpService
         SftpTransferOptions options,
         int attempt,
         Action<long> reportBytes,
+        Action<SftpTransferPhase> reportPhase,
         CancellationToken ct)
     {
         var attributes = client.GetAttributes(remotePath);
@@ -696,6 +702,7 @@ public sealed partial class SshNetSftpService
             string? checksum = null;
             if (options.VerifyChecksum)
             {
+                reportPhase(SftpTransferPhase.Verifying);
                 var remoteHash = ComputeRemoteSha256(client, remotePath, ct);
                 var localHash = ComputeLocalSha256(partialPath, ct);
                 if (!CryptographicOperations.FixedTimeEquals(localHash, remoteHash))
@@ -703,9 +710,10 @@ public sealed partial class SshNetSftpService
                 checksum = Convert.ToHexString(localHash);
             }
 
+            ct.ThrowIfCancellationRequested();
+            reportPhase(SftpTransferPhase.Promoting);
             File.Move(partialPath, destination, replaceExistingDestination);
             _checkpointStore.Delete(id);
-            reportBytes(attributes.Size);
             return new FileTransferResult(attributes.Size, offset, checksum);
         }
         catch (SftpChecksumMismatchException)
@@ -736,7 +744,7 @@ public sealed partial class SshNetSftpService
         long totalBytes,
         int filesCompleted,
         int totalFiles,
-        Func<int, Action<long>, T> operation,
+        Func<int, Action<long>, Action<SftpTransferPhase>, T> operation,
         CancellationToken ct)
     {
         var attempts = options.RetryEnabled ? options.MaxRetries + 1 : 1;
@@ -746,17 +754,25 @@ public sealed partial class SshNetSftpService
             ct.ThrowIfCancellationRequested();
             try
             {
+                long latestBytes = 0;
                 return await Task.Run(() => operation(
                     attempt,
-                    fileBytes => progress?.Report(new SftpTransferProgress(
-                        direction,
-                        SftpTransferPhase.Transferring,
-                        relativePath,
-                        Math.Min(totalBytes, previousBytes + Math.Max(0, fileBytes)),
-                        totalBytes,
-                        filesCompleted,
-                        totalFiles,
-                        attempt))), ct).ConfigureAwait(false);
+                    fileBytes =>
+                    {
+                        latestBytes = Math.Max(0, fileBytes);
+                        ReportPhase(SftpTransferPhase.Transferring);
+                    },
+                    ReportPhase), ct).ConfigureAwait(false);
+
+                void ReportPhase(SftpTransferPhase phase) => progress?.Report(new SftpTransferProgress(
+                    direction,
+                    phase,
+                    relativePath,
+                    Math.Min(totalBytes, previousBytes + latestBytes),
+                    totalBytes,
+                    filesCompleted,
+                    totalFiles,
+                    attempt));
             }
             catch (Exception error) when (
                 attempt < attempts &&
@@ -804,7 +820,7 @@ public sealed partial class SshNetSftpService
         totalBytes,
         filesCompleted,
         totalFiles,
-        (_, _) =>
+        (_, _, _) =>
         {
             operation();
             return true;
@@ -830,7 +846,7 @@ public sealed partial class SshNetSftpService
         totalBytes,
         filesCompleted,
         totalFiles,
-        (_, _) => operation(),
+        (_, _, _) => operation(),
         ct).ConfigureAwait(false);
 
     private async Task ReconnectForRetryAsync(CancellationToken ct)

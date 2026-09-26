@@ -33,6 +33,7 @@ public sealed partial class LocalTerminalView : UserControl
     private string _lastNotifiedWorkingDirectory = string.Empty;
     private readonly Queue<byte[]> _terminalOutputQueue = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
+    private readonly ShellTabLifetimePolicy _shellLifetime = new();
     private readonly SemaphoreSlim _broadcastCommandGate = new(1, 1);
     private readonly object _broadcastCaptureGate = new();
     private TerminalBroadcastCapture? _broadcastCapture;
@@ -81,6 +82,7 @@ public sealed partial class LocalTerminalView : UserControl
         LocalShellKind shellKind = LocalShellKind.PowerShell)
     {
         Terminal = terminal ?? throw new ArgumentNullException(nameof(terminal));
+        _shellLifetime.ObserveTerminal(Terminal.TerminalState);
         _workingDirectorySource = terminal as ILocalWorkingDirectoryTerminal;
         _launchPlan = launchPlan;
         ShellKind = shellKind;
@@ -129,6 +131,15 @@ public sealed partial class LocalTerminalView : UserControl
     public string DisplayTitle => _launchPlan?.LaunchTitle ??
         (ShellKind == LocalShellKind.CommandPrompt ? "CMD" : "PowerShell");
 
+    /// <summary>An external program owns this terminal; it is not a Sutty SSH session.</summary>
+    public bool IsExternalCommand => _launchPlan is not null;
+    public string ConnectionKindText => _launchPlan?.Kind == LocalTerminalLaunchKind.OpenSsh
+        ? Loc.T("외부 SSH · 터미널 전용", "External SSH · terminal only")
+        : IsExternalCommand
+            ? Loc.T("외부 명령 · 터미널 전용", "External command · terminal only")
+            : Loc.T("로컬 PC", "Local PC");
+    public string ConnectionIdentity => $"{Environment.UserName}@{Environment.MachineName}";
+
     /// <summary>
     /// Direct command tabs intentionally are not restored: their owner can use
     /// the bounded local history or a favorite to explicitly run them again.
@@ -161,8 +172,8 @@ public sealed partial class LocalTerminalView : UserControl
         {
             TitleText.Text = DisplayTitle;
             SubtitleText.Text = Loc.T(
-                $"로컬 · {Environment.UserName}@{Environment.MachineName}",
-                $"Local · {Environment.UserName}@{Environment.MachineName}");
+                $"로컬 PC · {ConnectionIdentity} · 로컬 파일",
+                $"Local PC · {ConnectionIdentity} · local files");
             AutomationProperties.SetName(TerminalSurface, Loc.T(
                 $"로컬 {DisplayTitle} 터미널",
                 $"Local {DisplayTitle} terminal"));
@@ -170,17 +181,15 @@ public sealed partial class LocalTerminalView : UserControl
         else
         {
             TitleText.Text = _launchPlan.LaunchTitle;
-            SubtitleText.Text = _launchPlan.Kind == LocalTerminalLaunchKind.OpenSsh
-                ? Loc.T(
-                    "로컬 SSH · .ssh/config와 SSH Agent 설정 사용",
-                    "Local SSH · uses .ssh/config and SSH Agent settings")
-                : Loc.T(
-                    "로컬 명령 · 설치된 프로그램과 PATH 설정 사용",
-                    "Local command · uses the installed program and PATH settings");
+            SubtitleText.Text = ConnectionKindText;
             AutomationProperties.SetName(TerminalSurface, Loc.T(
-                "로컬 연결 명령 터미널",
-                "Local connection command terminal"));
+                "외부 프로그램 터미널 · 원격 파일과 터널 미통합",
+                "External program terminal · remote files and tunnels are not integrated"));
         }
+        ToolTipService.SetToolTip(SubtitleText, IsExternalCommand
+            ? Loc.T("외부 프로그램 실행 탭입니다. 원격 SFTP와 터널은 연결되지 않습니다. 호스트를 가져오거나 저장한 호스트로 Sutty SSH에 연결하세요.",
+                "This tab runs an external program. Remote SFTP and tunnels are not connected. Import a host or connect to a saved host with Sutty SSH.")
+            : SubtitleText.Text);
         UpdateTerminalStatus(Terminal.TerminalState);
     }
 
@@ -225,6 +234,7 @@ public sealed partial class LocalTerminalView : UserControl
 
     private void OnTerminalStateChanged(object? sender, TerminalState state)
     {
+        _shellLifetime.ObserveTerminal(state);
         if (Volatile.Read(ref _closed) != 0)
             return;
 
@@ -365,7 +375,8 @@ public sealed partial class LocalTerminalView : UserControl
     private async Task EnsureTerminalStartedAsync()
     {
         if (Volatile.Read(ref _closed) != 0 ||
-            Terminal.TerminalState is TerminalState.Open or TerminalState.Opening)
+            Terminal.TerminalState is TerminalState.Open or TerminalState.Opening ||
+            !_shellLifetime.CanStartAutomatically)
         {
             return;
         }

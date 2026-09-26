@@ -66,6 +66,7 @@ namespace sutty.UI.Views
         private readonly object _terminalOutputGate = new();
         private readonly Queue<byte[]> _terminalOutputQueue = new();
         private readonly SemaphoreSlim _commandGate = new(1, 1);
+        private readonly ShellTabLifetimePolicy _shellLifetime = new();
         private readonly CommandSuggestionEngine _suggestionEngine = new();
         private readonly List<string> _commandHistory = [];
         private IReadOnlyList<string> _savedCommandSuggestions = [];
@@ -87,6 +88,7 @@ namespace sutty.UI.Views
         public SessionView(ISshSession session)
         {
             Session = session;
+            _shellLifetime.ObserveTerminal(session.TerminalState);
             var user = string.IsNullOrWhiteSpace(session.Info.Username) ? "root" : session.Info.Username;
             _prompt = $"{user}@{session.Info.Host}";
             InitializeComponent();
@@ -100,7 +102,7 @@ namespace sutty.UI.Views
                 UpdateSftpPill(Session.SftpState);
             };
 
-            TitleText.Text = $"{user}@{Session.Info.Title} · {Session.Info.Host}:{Session.Info.Port}";
+            TitleText.Text = $"Sutty SSH · {user}@{Session.Info.Host}:{Session.Info.Port} · {Session.Info.Title}";
             RoutePillText.Text = Session.Info.Route?.DisplayName ??
                 Session.CorrelationContext.RouteType.ToString().ToUpperInvariant();
             UpdateConnectionInfoToolTip();
@@ -204,7 +206,9 @@ namespace sutty.UI.Views
             => DispatcherQueue.TryEnqueue(() => UpdateSftpPill(state));
 
         private void OnTerminalStateChanged(object? sender, TerminalState state)
-            => DispatcherQueue.TryEnqueue(() =>
+        {
+            _shellLifetime.ObserveTerminal(state);
+            DispatcherQueue.TryEnqueue(() =>
             {
                 if (state == TerminalState.Opening)
                 {
@@ -217,6 +221,7 @@ namespace sutty.UI.Views
                 if (state == TerminalState.Open)
                     TerminalSurface.FocusTerminal();
             });
+        }
 
         private void OnTerminalDataReceived(object? sender, TerminalDataReceivedEventArgs e)
         {
@@ -931,6 +936,8 @@ namespace sutty.UI.Views
                 await WaitForTerminalOpeningAsync();
                 return;
             }
+
+            if (!_shellLifetime.CanStartAutomatically) return;
 
             _requestedTerminalSize = TerminalSurface.ViewportSize;
             ClearTerminalBacklog();

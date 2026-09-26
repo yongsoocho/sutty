@@ -96,6 +96,8 @@ public static class DefinitionSharingService
         ArgumentNullException.ThrowIfNull(selectedHosts);
         ArgumentNullException.ThrowIfNull(selectedCommands);
         var hosts = selectedHosts.Take(MaxItems + 1).ToList();
+        if (hosts.Any(host => host.IsExternalCommand))
+            throw new ArgumentException("External terminal favorites are local-only and cannot be exported as SSH hosts.");
         var commands = selectedCommands.Take(MaxItems + 1).ToList();
         if (hosts.Count + commands.Count > MaxItems)
             throw new ArgumentException("Choose at most 1,000 definitions per file.");
@@ -234,6 +236,8 @@ public static class DefinitionSharingService
             var identity = Identity(draft.Host, draft.Port, draft.Username);
             var existing = local.FirstOrDefault(profile => shared && profile.Id == id) ??
                 local.FirstOrDefault(profile => Identity(profile.Host, profile.Port, profile.Username) == identity);
+            if (existing?.IsExternalCommand == true)
+                error = "외부 터미널 즐겨찾기는 SSH 정의로 덮어쓸 수 없습니다 / An external terminal favorite cannot be overwritten by an SSH definition";
             var repeated = !seen.Add(identity) || (shared && !seenIds.Add(id ?? ""));
             var kind = error.Length > 0 ? ImportChangeKind.Invalid : existing is null
                 ? repeated ? ImportChangeKind.Duplicate : ImportChangeKind.Add
@@ -282,6 +286,8 @@ public static class DefinitionSharingService
                 {
                     var previous = row.Existing ?? throw new ArgumentException("There is no existing host to update.");
                     var current = HostProfileStore.GetById(previous.Id);
+                    if (current?.IsExternalCommand == true)
+                        throw new InvalidOperationException("An external terminal favorite cannot be overwritten by an SSH definition.");
                     if (current is null || current.UpdatedAtUtc != previous.UpdatedAtUtc)
                         throw new InvalidOperationException("The host changed after preview. Preview again.");
                     saveId = current.Id;
@@ -362,6 +368,8 @@ public static class DefinitionSharingService
 
     private static string ValidateImport(HostProfileDraft draft)
     {
+        if (draft.LaunchKind != "SuttySsh" || !string.IsNullOrEmpty(draft.LaunchCommand))
+            return "외부 명령은 이 PC에서 직접 저장하세요 / Save external commands locally on this PC";
         if (draft.Route is null || !draft.Route.CanConnect || !RouteTypes.Contains(draft.Route.Type ?? ""))
             return "경로 미지원/손상 · 직접 연결로 우회하지 않음 / Unsupported or invalid route; direct fallback is blocked";
         if (draft.Route.Type == "ExternalProxyCommand")

@@ -10,6 +10,10 @@ public interface ISftpService
 {
     Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(string path, CancellationToken ct = default);
 
+    /// <summary>Reads one regular file through SFTP, rejecting content above the bound without shell commands.</summary>
+    Task<byte[]> ReadFileBytesAsync(string remotePath, int maximumBytes, CancellationToken ct = default) =>
+        throw new NotSupportedException("This SFTP adapter does not support bounded content verification.");
+
     /// <summary>Recursively enumerates a remote directory without following symbolic links.</summary>
     Task<IReadOnlyList<RemoteTreeEntry>> EnumerateTreeAsync(
         string path,

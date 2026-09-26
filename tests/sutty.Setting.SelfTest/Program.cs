@@ -9,6 +9,7 @@ WorkspaceStateStore.PathOverride = Path.Combine(scratch, "workspace.json");
 try
 {
     Assert(new AppSettings().TerminalMode == "Terminal", "fresh terminal default");
+    Assert(new AppSettings().AutoCloseDisconnectedTabs, "ended shell tabs close by default");
     Assert(new AppSettings { TerminalMode = "Repl" }.TerminalMode == "Repl",
         "legacy Repl preference preserved");
 
@@ -69,6 +70,7 @@ try
     Assert(!loaded.TerminalCursorBlink, "terminal cursor-blink setting load");
     Assert(loaded.TerminalScreenReaderMode, "terminal accessibility setting load");
     Assert(!loaded.LoadLocalShellProfile, "local shell-profile setting load");
+    Assert(loaded.AutoCloseDisconnectedTabs, "legacy settings without the tab-close preference retain the default enabled behavior");
     Assert(loaded.RestoreWorkspaceOnStartup && loaded.ConfirmWorkspaceRestore,
         "workspace restore settings load");
 
@@ -81,6 +83,7 @@ try
     loaded.SftpRetryCount = 3;
     loaded.SftpVerificationMode = "SizeOnly";
     loaded.SftpConflictPolicy = "Rename";
+    loaded.AutoCloseDisconnectedTabs = false;
     var saved = SettingsService.Save(loaded);
     Assert(saved.Succeeded, "atomic setting save");
     Assert(!Directory.EnumerateFiles(scratch, "*.tmp").Any(), "setting temp cleanup");
@@ -97,6 +100,8 @@ try
         "SFTP verification mode persistence");
     Assert(json["SftpConflictPolicy"]?.GetValue<string>() == "Rename",
         "SFTP conflict policy persistence");
+    Assert(json["AutoCloseDisconnectedTabs"]?.GetValue<bool>() == false && !SettingsService.Load().AutoCloseDisconnectedTabs,
+        "keeping ended tabs is persisted and loaded as false");
 
     var workspaceTabs = Enumerable.Range(0, 20)
         .Select(index => index % 2 == 0

@@ -10,6 +10,12 @@ namespace sutty.UI.ViewModels;
 /// </summary>
 public class HostInfoModel
 {
+    public string LaunchKind { get; set; } = "SuttySsh";
+    public string LaunchCommand { get; set; } = "";
+    public bool IsExternalCommand => !string.Equals(LaunchKind, "SuttySsh", StringComparison.Ordinal);
+    public string ConnectionLabel => IsExternalCommand
+        ? Helpers.Loc.T($"외부 터미널 · {LaunchCommand}", $"External terminal · {LaunchCommand}")
+        : Hostname;
     public long Id { get; set; }
     public string? ProfileId { get; set; }
     public bool IsSavedProfile { get; set; }
