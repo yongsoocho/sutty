@@ -175,8 +175,7 @@ public sealed partial class FileTreePanel
         item.FailureDetail = null;
         // Reload into a separate session and directory. Until verification succeeds, an
         // existing editor still refers to its original path and uploaded baseline.
-        var candidate = item.Ready ? new RemoteEditSession(item.Edit.HostIdentity, item.Edit.RemoteFilePath,
-            Path.GetDirectoryName(item.Edit.WorkingDirectory)) : item.Edit;
+        var candidate = item.Ready ? item.Edit.CreateReloadCandidate() : item.Edit;
         var before = await RemoteEditSession.ReadRemoteStampAsync(item.Sftp, item.Edit.RemoteFilePath, ct)
             ?? throw new IOException("The remote file no longer exists.");
         item.Status = Loc.T("편집본 내려받는 중…", "Downloading a working copy…");
@@ -254,12 +253,15 @@ public sealed partial class FileTreePanel
         var ct = cts.Token;
         try
         {
-            var current = await RemoteEditSession.ReadRemoteStampAsync(item.Sftp, item.Edit.RemoteFilePath, ct);
-            var conflict = item.Edit.HasRemoteConflict(current);
+            item.Status = Loc.T("원격 내용 확인 중…", "Verifying remote content…");
+            UpdateEditUi();
+            var current = await item.Edit.ReadRemoteVersionAsync(item.Sftp, ct);
+            var conflict = item.Edit.HasRemoteContentConflict(current);
             var destination = item.Edit.RemoteFilePath;
             if (automatic && conflict)
             {
                 item.AutoUpload = false;
+                item.Edit.RequireReview();
                 SetEditFailure(item, Loc.T("원격 변경 또는 확인 불가 · 자동 반영 중지. 서버에 반영 버튼으로 확인하세요.", "Remote change or unknown version · automatic upload stopped. Review with Upload changes."));
                 return;
             }
@@ -269,7 +271,7 @@ public sealed partial class FileTreePanel
                 var body = new StackPanel { Spacing = 12 };
                 body.Children.Add(new TextBlock { Text = $"{item.Environment} · {item.Edit.HostIdentity}\n{destination}\n\n" + (conflict
                     ? Loc.T("원격 파일이 변경되었거나 확인할 수 없습니다. 덮어쓰기 전에 검토하세요.", "The remote file changed or cannot be compared. Review before overwriting.")
-                    : Loc.T("이 로컬 편집본을 서버에 반영합니다.", "Upload this local working copy to the server.")) + "\n" + Loc.T("크기·수정시각 비교는 동시 수정을 완전히 막지 못합니다.", "Size/time comparison cannot prevent every concurrent edit."), TextWrapping = TextWrapping.Wrap });
+                    : Loc.T("이 로컬 편집본을 서버에 반영합니다.", "Upload this local working copy to the server.")) + "\n" + Loc.T("반영 직전 내용 해시를 다시 비교합니다. 비교 직후의 동시 수정까지 막지는 못합니다. 다시 내려받아도 기존 로컬 편집본은 보관합니다.", "Content hashes are checked again before upload. Changes after that check remain possible. Download again keeps your existing local copy."), TextWrapping = TextWrapping.Wrap });
                 body.Children.Add(name);
                 var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = Loc.T("서버 파일 반영", "Upload edited file"), Content = body,
                     PrimaryButtonText = conflict ? Loc.T("덮어쓰기 / 다른 이름", "Overwrite / Save as") : Loc.T("반영", "Upload"),
@@ -299,9 +301,14 @@ public sealed partial class FileTreePanel
                 saveAs ? SftpConflictPolicy.Ask : SftpConflictPolicy.Overwrite,
                 async token =>
                 {
-                    var latest = await RemoteEditSession.ReadRemoteStampAsync(item.Sftp, destination, token);
-                    if (saveAs ? latest is not null : current is null ? latest is not null :
-                        latest is null || (current.CanCompare && latest.CanCompare && !current.Matches(latest)))
+                    if (saveAs)
+                    {
+                        if (await RemoteEditSession.ReadRemoteStampAsync(item.Sftp, destination, token) is not null)
+                            throw new IOException("Save as requires a new destination. Choose a different path.");
+                        return;
+                    }
+                    var latest = await item.Edit.ReadRemoteVersionAsync(item.Sftp, token);
+                    if (current is null ? latest is not null : !current.Matches(latest))
                         throw new IOException("The remote file changed after confirmation. Review again.");
                 }, ct);
             // Once promotion succeeds, do not report the local content as unuploaded even if the follow-up stat fails.
@@ -332,7 +339,7 @@ public sealed partial class FileTreePanel
         {
             item.AutoUpload = false;
             item.Edit.RequireReview();
-            SetEditFailure(item, Loc.T("반영 실패 · 로컬 편집본을 보관합니다. 원격 상태를 확인하고 다시 반영하세요.", "Upload failed · working copy retained. Review the remote file and upload again.") + $" ({error.GetType().Name})");
+            SetEditFailure(item, Loc.T("검증 또는 반영 실패 · 자동 반영 중지, 로컬 편집본 보관. 원래 서버의 현재 파일을 확인하고 다시 반영하세요.", "Verification or upload failed · automatic upload stopped, working copy retained. Review the current file on the original server before uploading again.") + $" ({error.GetType().Name})");
         }
         finally { item.Busy = false; UpdateEditUi(); }
     }
@@ -453,11 +460,16 @@ public sealed partial class FileTreePanel
                 : $"{item.Environment} · {item.Edit.HostIdentity}\n{item.Edit.RemoteFilePath}\n{item.Status}\n{item.Edit.LocalFilePath}";
             if (item?.FailureDetail is { } failure && !string.Equals(failure, item.Status, StringComparison.Ordinal))
                 _editDetails.Text += "\n" + failure;
+            if (item is not null && !EditConnected(item))
+                _editDetails.Text += "\n" + Loc.T("원래 서버에 재연결하고 서버 신원·경로를 확인하세요. 새 편집본을 열어 보관된 변경을 검토해 옮긴 뒤 반영하세요.",
+                    "Reconnect to the original server and check its identity and path. Open a fresh working copy, review and copy your retained changes into it, then upload.");
+            _editDetails.Text += "\n" + Loc.T("보관본에 민감한 서버 설정이 남을 수 있습니다. 자동 삭제하지 않으며, 작업 후 보관 폴더에서 확인해 로컬 파일을 직접 정리하세요. 서버 파일은 삭제되지 않습니다.",
+                "Retained copies may contain sensitive server settings. They are not automatically deleted. After editing, review and remove local copies in the recovery folder; server files are unaffected.");
             _applyEdit.IsEnabled = item is { Ready: true, Busy: false } && EditConnected(item);
             _reloadEdit.IsEnabled = item is { Busy: false } && EditConnected(item);
             _openEdit.IsEnabled = item is { Ready: true, Busy: false };
             _finishEdit.IsEnabled = item is { Busy: false };
-            _autoEdit.IsEnabled = item is { Ready: true, Busy: false } && EditConnected(item);
+            _autoEdit.IsEnabled = item is { Ready: true, Busy: false } && EditConnected(item) && !item.Edit.NeedsReview;
             _autoEdit.IsChecked = item?.AutoUpload ?? false;
             RemoteEditsButton.Content = Loc.T($"편집본 ({_remoteEdits.Count})", $"Edits ({_remoteEdits.Count})");
         }

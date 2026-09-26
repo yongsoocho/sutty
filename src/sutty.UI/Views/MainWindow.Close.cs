@@ -74,6 +74,7 @@ public sealed partial class MainWindow
             if (!accepted)
                 foreach (var workspace in workspaces) workspace.FileTree.SuspendAutomaticEdits(false);
             _closePromptOpen = false;
+            DispatcherQueue.TryEnqueue(ResumePendingShellAutoCloses);
         }
     }
 
@@ -85,6 +86,7 @@ public sealed partial class MainWindow
         var workspaces = _sessionWorkspaces.Values.ToArray();
         if (!await ConfirmWorkspacesCloseAsync(workspaces, closingWindow: true)) return;
         _windowClosing = true;
+        RequestBroadcastCancellation();
         try { FlushWorkspaceSnapshot(); FlushRightPanelWidth(); }
         catch (Exception error) { System.Diagnostics.Debug.WriteLine($"Close settings flush failed: {error.GetType().Name}"); }
         try
@@ -98,12 +100,15 @@ public sealed partial class MainWindow
         Close();
     }
 
-    private Task DetachAndCloseSessionAsync(SessionWorkspaceView workspace)
+    private Task DetachAndCloseSessionAsync(SessionWorkspaceView workspace) =>
+        DetachAndCloseSessionAsync(workspace, userInitiated: true);
+
+    private Task DetachAndCloseSessionAsync(SessionWorkspaceView workspace, bool userInitiated)
     {
         // Detach synchronously cancels edits/transfers and unsubscribes callbacks before its
         // first await. Start transport disconnect as well so a pending bind/tunnel operation
         // cannot prevent SSH/SFTP cleanup. Observe both even if the outer close times out.
-        var detach = workspace.DetachAsync(userInitiated: true);
+        var detach = workspace.DetachAsync(userInitiated);
         var disconnect = _sessions.CloseAsync(workspace.SessionView.Session);
         return Task.WhenAll(ObserveCloseOperationAsync(detach), ObserveCloseOperationAsync(disconnect));
     }

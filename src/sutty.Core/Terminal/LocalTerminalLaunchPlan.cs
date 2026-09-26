@@ -127,6 +127,16 @@ public sealed class LocalTerminalLaunchPlan
 /// </summary>
 public static class LocalTerminalLaunchPlanner
 {
+    /// <summary>Validates persisted syntax without finding or executing a program.</summary>
+    public static (LocalTerminalLaunchKind Kind, string CanonicalCommand, string LaunchTitle) ValidateCommand(string command)
+    {
+        var tokens = Tokenize(command);
+        var executable = NormalizeExecutableName(tokens[0]);
+        var arguments = tokens.Skip(1).ToArray();
+        var kind = ParseSpecialConnectionForm(executable, arguments);
+        return (kind, BuildCanonicalCommand(executable, arguments), BuildLaunchTitle(kind, executable, arguments));
+    }
+
     public const int MaximumCommandLength = 2_048;
     public const int MaximumArgumentCount = 32;
     public const int MaximumArgumentLength = 1_024;

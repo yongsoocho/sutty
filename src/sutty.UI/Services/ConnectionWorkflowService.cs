@@ -28,6 +28,8 @@ public sealed class ConnectionWorkflowService
     public SavedHostConnectionDraft LoadSavedHostDraft(HostInfoModel host)
     {
         ArgumentNullException.ThrowIfNull(host);
+        if (host.IsExternalCommand)
+            throw new ArgumentException("External terminal favorites cannot be loaded as Sutty SSH connections.", nameof(host));
 
         var alias = host.Alias;
         var hostname = host.Hostname;
@@ -52,6 +54,8 @@ public sealed class ConnectionWorkflowService
             {
                 if (HostProfileStore.GetById(profileId) is { } profile)
                 {
+                    if (profile.IsExternalCommand)
+                        throw new NotSupportedException("External terminal favorites cannot be loaded as Sutty SSH connections.");
                     alias = profile.DisplayName;
                     hostname = profile.Host;
                     username = profile.Username;

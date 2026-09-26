@@ -21,7 +21,11 @@ Local-first is a product boundary, not a temporary implementation detail:
 
 ### App navigation and core execution surfaces
 
-The selected local or SSH shell anchors the workspace. A fresh start and closing the last tab
+Logout/disconnect closes the owning shell tab by default; Settings can retain it. Automatic
+last-tab closure returns to Home. Initial failures and pending-work recovery confirmation remain
+visible. Home separates New connection from One-line connection, whose saves join Hosts favorites.
+
+The selected local or SSH shell anchors the workspace. A fresh start and manually closing the last tab
 open PowerShell; the `+` menu also offers CMD. Global **Home**, **Hosts**, **Transfers**, and
 **Commands** keep the terminal visible, opening on the right in wide windows and below it under
 1100 logical pixels. **Settings** is a full-page view that covers the shell while sessions stay
@@ -30,8 +34,11 @@ layouts, below its terminal for the exact host context. Cards, controls, and fil
 available width. **Multi Command** is a separate navigation destination (`Alt+8`) that covers
 the central shell with a 3×3 session grid while open shells keep running. It shows up to 16
 local/SSH sessions nine per page and reuses the existing command library on the right. Narrow
-windows retain the 3×3 layout with scrolling. Free-form and saved commands go only to checked
-sessions across all pages; Select all / Clear all also applies to every page.
+windows retain the 3×3 layout with scrolling. Free-form and saved commands go only to checked,
+connected Sutty SSH sessions across all pages after an exact-target/command preview. Local
+and external terminals cannot receive Multi command input. Select all / Clear all applies to
+every page. Structured SSH exec does not share the visible terminal's directory, environment,
+or sudo state. A finite wait and cancellation leave unconfirmed remote outcomes explicit.
 
 The clipboard icon beside `CONPTY` / `PTY` dimensions copies the latest rendered command output,
 including errors. PowerShell/CMD prompt markers are session-local and do not edit profile files;
@@ -106,7 +113,11 @@ Local-first는 임시 구현 방식이 아니라 제품 경계입니다.
 
 ### 앱 내비게이션과 핵심 실행 화면
 
-선택한 로컬 또는 SSH 셸을 중심으로 작업합니다. 새로 시작하거나 마지막 탭을 닫으면
+로그아웃·연결 종료 시 해당 탭만 자동으로 닫는 것이 기본값이며 설정에서 남겨둘 수 있습니다.
+마지막 탭 자동 종료는 Home으로 돌아갑니다. 최초 연결 실패와 작업 복구 확인창은 유지합니다.
+Home은 새 연결과 한 줄 연결을 분리하며 한 줄 연결 저장은 Hosts 즐겨찾기에 통합합니다.
+
+선택한 로컬 또는 SSH 셸을 중심으로 작업합니다. 새로 시작하거나 마지막 탭을 수동으로 닫으면
 PowerShell을 열며, `+` 메뉴에서 CMD도 선택할 수 있습니다. 전역 **Home**, **Hosts**,
 **Transfers**, **Commands**는 터미널을 유지한 채 넓은 창의 오른쪽이나 논리 픽셀 1100 미만
 창의 아래 패널에 엽니다. **Settings**는 셸을 가리는 전체 페이지이며 기존 세션은 계속
@@ -115,8 +126,10 @@ PowerShell을 열며, `+` 메뉴에서 CMD도 선택할 수 있습니다. 전역
 **Multi Command**는 별도 이동 탭(`Alt+8`)이며 중앙 셸을 가리고 3×3 세션 그리드를 표시합니다.
 열린 셸은 계속 실행되고, 최대 16개 로컬/SSH 세션을 한 페이지에 9개씩 표시하며 오른쪽에는
 기존 명령 모음집 UI를 재사용합니다. 좁은 화면에서도 3×3 배치를 유지하고 스크롤할 수 있습니다.
-직접 입력·저장 명령은 모든 페이지에서 체크한 세션에만 전송하며 전체 선택 / 전체 해제도
-모든 페이지에 적용합니다.
+직접 입력·저장 명령은 모든 페이지에서 체크한 연결된 Sutty SSH만 대상으로 하며 정확한 대상·명령을
+확인한 뒤 실행합니다. 로컬·외부 터미널에는 Multi 입력을 보내지 않습니다. 전체 선택 / 전체 해제도
+모든 페이지에 적용합니다. SSH exec는 보이는 터미널의 경로·환경변수·sudo 상태를 공유하지 않으며
+유한 대기와 취소 뒤에도 확인되지 않은 원격 결과를 명시합니다.
 
 `CONPTY` / `PTY` 크기 옆의 클립보드 아이콘은 오류를 포함한 마지막 명령의 표시 출력을
 복사합니다. PowerShell/CMD 프롬프트 표시자는 이번 세션에만 적용하며 프로필 파일은

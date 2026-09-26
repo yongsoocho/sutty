@@ -19,23 +19,6 @@ public enum CommandLauncherLaunchOutcome
 }
 
 /// <summary>
-/// A user-pinned, direct local connection command.  <see cref="CommandText"/>
-/// is the Core planner's canonical display form, never a resolved executable
-/// path or a shell-expanded command line.
-/// </summary>
-public sealed class CommandLauncherFavorite
-{
-    public long Id { get; init; }
-    public string DisplayName { get; init; } = "";
-    public string CommandText { get; init; } = "";
-    public LocalTerminalLaunchKind Kind { get; init; }
-    public DateTimeOffset CreatedAtUtc { get; init; }
-    public DateTimeOffset UpdatedAtUtc { get; init; }
-    public DateTimeOffset? LastLaunchedAtUtc { get; init; }
-    public int LaunchCount { get; init; }
-}
-
-/// <summary>
 /// A bounded, credential-free local-launch record.  A deleted favorite leaves
 /// its old history snapshot available but clears <see cref="FavoriteId"/>.
 /// </summary>
@@ -51,16 +34,14 @@ public sealed class CommandLauncherHistoryEntry
 }
 
 /// <summary>
-/// Persists a small, local-only library of direct SSH and Multipass connection
-/// shortcuts.  Input is accepted only as a Core planner-produced plan, so this
+/// Persists bounded local launch history. Favorites live in HostProfileStore.
+/// Input is accepted only as a Core planner-produced plan, so this
 /// store never parses arbitrary shell text or persists a resolved executable,
 /// output, token, password, passphrase, or private-key contents.
 /// </summary>
 public static class CommandLauncherStore
 {
-    public const int MaximumFavorites = 100;
     public const int MaximumHistoryEntries = 250;
-    public const int DefaultFavoriteLimit = 6;
     public const int DefaultHistoryLimit = 8;
     public const int MaximumDisplayNameLength = 128;
 
@@ -80,7 +61,7 @@ public static class CommandLauncherStore
         "user", "proxyuser", "u",
     };
 
-    /// <summary>Raised after favorites or launch history changes.</summary>
+    /// <summary>Raised after launch history changes.</summary>
     public static event EventHandler? Changed;
 
     public static void EnsureInitialized()
@@ -97,22 +78,6 @@ public static class CommandLauncherStore
             using var connection = Db.Open();
             using var create = connection.CreateCommand();
             create.CommandText = """
-                CREATE TABLE IF NOT EXISTS command_launcher_favorites (
-                    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-                    display_name          TEXT    NOT NULL,
-                    command_text          TEXT    NOT NULL,
-                    command_identity      TEXT    NOT NULL COLLATE BINARY,
-                    launch_kind           TEXT    NOT NULL,
-                    created_at_utc        TEXT    NOT NULL,
-                    updated_at_utc        TEXT    NOT NULL,
-                    last_launched_at_utc  TEXT,
-                    launch_count          INTEGER NOT NULL DEFAULT 0
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS ux_command_launcher_favorites_identity
-                    ON command_launcher_favorites(command_identity);
-                CREATE INDEX IF NOT EXISTS idx_command_launcher_favorites_recent
-                    ON command_launcher_favorites(last_launched_at_utc DESC, created_at_utc DESC);
-
                 CREATE TABLE IF NOT EXISTS command_launcher_history (
                     id              INTEGER PRIMARY KEY AUTOINCREMENT,
                     favorite_id     INTEGER,
@@ -129,232 +94,6 @@ public static class CommandLauncherStore
             _initialized = true;
             _initializedDatabasePath = databasePath;
         }
-    }
-
-    /// <summary>
-    /// Pins a planner-validated command.  The runtime executable path is never
-    /// written; callers retain the plan only long enough to launch it.
-    /// </summary>
-    public static CommandLauncherFavorite SaveFavorite(
-        string? displayName,
-        LocalTerminalLaunchPlan plan)
-    {
-        var command = NormalizePlan(plan);
-        var name = NormalizeDisplayName(displayName, command.CommandText);
-        EnsureInitialized();
-
-        var now = DateTimeOffset.UtcNow;
-        long id;
-        using (var connection = Db.Open())
-        using (var transaction = connection.BeginTransaction())
-        {
-            using (var count = connection.CreateCommand())
-            {
-                count.Transaction = transaction;
-                count.CommandText = "SELECT COUNT(*) FROM command_launcher_favorites";
-                if (Convert.ToInt32(count.ExecuteScalar(), CultureInfo.InvariantCulture) >= MaximumFavorites)
-                    throw new InvalidOperationException("The launcher favorite limit has been reached.");
-            }
-
-            try
-            {
-                using var insert = connection.CreateCommand();
-                insert.Transaction = transaction;
-                insert.CommandText = """
-                    INSERT INTO command_launcher_favorites (
-                        display_name, command_text, command_identity, launch_kind,
-                        created_at_utc, updated_at_utc, last_launched_at_utc, launch_count)
-                    VALUES (
-                        $name, $command, $identity, $kind,
-                        $created, $updated, NULL, 0);
-                    SELECT last_insert_rowid();
-                    """;
-                insert.Parameters.AddWithValue("$name", name);
-                insert.Parameters.AddWithValue("$command", command.CommandText);
-                insert.Parameters.AddWithValue("$identity", command.Identity);
-                insert.Parameters.AddWithValue("$kind", command.Kind.ToString());
-                insert.Parameters.AddWithValue("$created", now.ToString("O"));
-                insert.Parameters.AddWithValue("$updated", now.ToString("O"));
-                id = Convert.ToInt64(insert.ExecuteScalar(), CultureInfo.InvariantCulture);
-            }
-            catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
-            {
-                throw new InvalidOperationException("That launcher command is already a favorite.", exception);
-            }
-
-            transaction.Commit();
-        }
-
-        var favorite = new CommandLauncherFavorite
-        {
-            Id = id,
-            DisplayName = name,
-            CommandText = command.CommandText,
-            Kind = command.Kind,
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now,
-        };
-        NotifyChanged();
-        return favorite;
-    }
-
-    /// <summary>Edits a favorite without resetting its launch count or history.</summary>
-    public static CommandLauncherFavorite UpdateFavorite(
-        long id,
-        string? displayName,
-        LocalTerminalLaunchPlan plan)
-    {
-        if (id <= 0)
-            throw new ArgumentOutOfRangeException(nameof(id));
-
-        var command = NormalizePlan(plan);
-        var name = NormalizeDisplayName(displayName, command.CommandText);
-        EnsureInitialized();
-
-        using (var connection = Db.Open())
-        {
-            try
-            {
-                using var update = connection.CreateCommand();
-                update.CommandText = """
-                    UPDATE command_launcher_favorites
-                    SET display_name = $name,
-                        command_text = $command,
-                        command_identity = $identity,
-                        launch_kind = $kind,
-                        updated_at_utc = $updated
-                    WHERE id = $id
-                    """;
-                update.Parameters.AddWithValue("$name", name);
-                update.Parameters.AddWithValue("$command", command.CommandText);
-                update.Parameters.AddWithValue("$identity", command.Identity);
-                update.Parameters.AddWithValue("$kind", command.Kind.ToString());
-                update.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.ToString("O"));
-                update.Parameters.AddWithValue("$id", id);
-                if (update.ExecuteNonQuery() != 1)
-                    throw new InvalidOperationException("The launcher favorite no longer exists.");
-            }
-            catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
-            {
-                throw new InvalidOperationException("That launcher command is already a favorite.", exception);
-            }
-        }
-
-        var favorite = GetFavorite(id)
-            ?? throw new InvalidOperationException("The launcher favorite no longer exists.");
-        NotifyChanged();
-        return favorite;
-    }
-
-    /// <summary>Returns the newest or most recently launched favorites for a compact launcher surface.</summary>
-    public static List<CommandLauncherFavorite> GetFavorites(int limit = DefaultFavoriteLimit)
-    {
-        EnsureInitialized();
-        limit = Math.Clamp(limit, 1, MaximumFavorites);
-
-        using var connection = Db.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT id, display_name, command_text, launch_kind,
-                   created_at_utc, updated_at_utc, last_launched_at_utc, launch_count
-            FROM command_launcher_favorites
-            ORDER BY COALESCE(last_launched_at_utc, created_at_utc) DESC,
-                     display_name COLLATE NOCASE,
-                     id DESC
-            LIMIT $limit
-            """;
-        command.Parameters.AddWithValue("$limit", limit);
-
-        var result = new List<CommandLauncherFavorite>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            if (TryReadFavorite(reader, out var favorite))
-                result.Add(favorite);
-        }
-        return result;
-    }
-
-    public static CommandLauncherFavorite? GetFavorite(long id)
-    {
-        if (id <= 0)
-            return null;
-
-        EnsureInitialized();
-        using var connection = Db.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT id, display_name, command_text, launch_kind,
-                   created_at_utc, updated_at_utc, last_launched_at_utc, launch_count
-            FROM command_launcher_favorites
-            WHERE id = $id
-            """;
-        command.Parameters.AddWithValue("$id", id);
-        using var reader = command.ExecuteReader();
-        return reader.Read() && TryReadFavorite(reader, out var favorite)
-            ? favorite
-            : null;
-    }
-
-    /// <summary>
-    /// Atomically snapshots a favorite into history and increments its usage.
-    /// The plan must still match the currently saved canonical command so a
-    /// stale UI cannot launch one favorite while recording another.
-    /// </summary>
-    public static CommandLauncherHistoryEntry RecordFavoriteLaunch(
-        long favoriteId,
-        LocalTerminalLaunchPlan plan)
-    {
-        if (favoriteId <= 0)
-            throw new ArgumentOutOfRangeException(nameof(favoriteId));
-
-        var requested = NormalizePlan(plan);
-        EnsureInitialized();
-
-        CommandLauncherHistoryEntry entry;
-        using (var connection = Db.Open())
-        using (var transaction = connection.BeginTransaction())
-        {
-            var favorite = ReadFavoriteById(connection, transaction, favoriteId)
-                ?? throw new InvalidOperationException("The launcher favorite no longer exists or is unsafe.");
-            if (favorite.Kind != requested.Kind ||
-                !string.Equals(favorite.CommandText, requested.CommandText, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException("The launcher favorite changed before it could be started.");
-            }
-
-            var now = DateTimeOffset.UtcNow;
-            entry = InsertHistory(
-                connection,
-                transaction,
-                favorite.Id,
-                favorite.DisplayName,
-                requested,
-                now,
-                CommandLauncherLaunchOutcome.LaunchRequested);
-
-            using (var update = connection.CreateCommand())
-            {
-                update.Transaction = transaction;
-                update.CommandText = """
-                    UPDATE command_launcher_favorites
-                    SET launch_count = launch_count + 1,
-                        last_launched_at_utc = $now,
-                        updated_at_utc = $now
-                    WHERE id = $id
-                    """;
-                update.Parameters.AddWithValue("$now", now.ToString("O"));
-                update.Parameters.AddWithValue("$id", favoriteId);
-                if (update.ExecuteNonQuery() != 1)
-                    throw new InvalidOperationException("The launcher favorite no longer exists.");
-            }
-
-            PruneHistory(connection, transaction);
-            transaction.Commit();
-        }
-
-        NotifyChanged();
-        return entry;
     }
 
     /// <summary>Records a safe, non-favorited direct connection attempt.</summary>
@@ -437,40 +176,6 @@ public static class CommandLauncherStore
         return result;
     }
 
-    /// <summary>Removes a favorite while preserving its bounded history snapshot.</summary>
-    public static bool DeleteFavorite(long id)
-    {
-        if (id <= 0)
-            return false;
-
-        EnsureInitialized();
-        bool deleted;
-        using (var connection = Db.Open())
-        using (var transaction = connection.BeginTransaction())
-        {
-            using (var detach = connection.CreateCommand())
-            {
-                detach.Transaction = transaction;
-                detach.CommandText = "UPDATE command_launcher_history SET favorite_id = NULL WHERE favorite_id = $id";
-                detach.Parameters.AddWithValue("$id", id);
-                detach.ExecuteNonQuery();
-            }
-
-            using (var delete = connection.CreateCommand())
-            {
-                delete.Transaction = transaction;
-                delete.CommandText = "DELETE FROM command_launcher_favorites WHERE id = $id";
-                delete.Parameters.AddWithValue("$id", id);
-                deleted = delete.ExecuteNonQuery() == 1;
-            }
-            transaction.Commit();
-        }
-
-        if (deleted)
-            NotifyChanged();
-        return deleted;
-    }
-
     public static bool DeleteHistory(long id)
     {
         if (id <= 0)
@@ -550,77 +255,6 @@ public static class CommandLauncherStore
         prune.ExecuteNonQuery();
     }
 
-    private static CommandLauncherFavorite? ReadFavoriteById(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        long id)
-    {
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            SELECT id, display_name, command_text, launch_kind,
-                   created_at_utc, updated_at_utc, last_launched_at_utc, launch_count
-            FROM command_launcher_favorites
-            WHERE id = $id
-            """;
-        command.Parameters.AddWithValue("$id", id);
-        using var reader = command.ExecuteReader();
-        return reader.Read() && TryReadFavorite(reader, out var favorite)
-            ? favorite
-            : null;
-    }
-
-    private static bool TryReadFavorite(SqliteDataReader reader, out CommandLauncherFavorite favorite)
-    {
-        favorite = null!;
-        try
-        {
-            if (reader.GetInt64(0) <= 0 ||
-                !TryReadKind(reader.GetString(3), out var kind) ||
-                !TryReadDate(reader.GetString(4), out var created) ||
-                !TryReadDate(reader.GetString(5), out var updated))
-            {
-                return false;
-            }
-
-            DateTimeOffset? last = null;
-            if (!reader.IsDBNull(6))
-            {
-                if (!TryReadDate(reader.GetString(6), out var parsedLast))
-                    return false;
-                last = parsedLast;
-            }
-
-            var displayName = reader.GetString(1);
-            var commandText = reader.GetString(2);
-            if (!IsStoredValueSafe(displayName, MaximumDisplayNameLength) ||
-                !IsCanonicalCommandSafe(commandText, kind))
-            {
-                return false;
-            }
-
-            var count = reader.GetInt32(7);
-            if (count < 0)
-                return false;
-            favorite = new CommandLauncherFavorite
-            {
-                Id = reader.GetInt64(0),
-                DisplayName = displayName,
-                CommandText = commandText,
-                Kind = kind,
-                CreatedAtUtc = created,
-                UpdatedAtUtc = updated,
-                LastLaunchedAtUtc = last,
-                LaunchCount = count,
-            };
-            return true;
-        }
-        catch (Exception error) when (error is InvalidOperationException or FormatException or OverflowException)
-        {
-            return false;
-        }
-    }
-
     private static bool TryReadHistory(SqliteDataReader reader, out CommandLauncherHistoryEntry entry)
     {
         entry = null!;
@@ -661,7 +295,7 @@ public static class CommandLauncherStore
         }
     }
 
-    private static SafeLauncherCommand NormalizePlan(LocalTerminalLaunchPlan? plan)
+    internal static SafeLauncherCommand NormalizePlan(LocalTerminalLaunchPlan? plan)
     {
         if (plan is null || !Enum.IsDefined(plan.Kind))
             throw new ArgumentException("A validated local connection plan is required.", nameof(plan));
@@ -675,13 +309,20 @@ public static class CommandLauncherStore
                 "The launcher command is unsupported or contains sensitive data.", nameof(plan));
         }
 
-        return new SafeLauncherCommand(
-            plan.Kind,
-            commandText,
-            $"{plan.Kind}\u001f{commandText}");
+        return ValidateStoredCommand(commandText, plan.Kind.ToString());
     }
 
-    private static string NormalizeDisplayName(string? displayName, string commandText)
+    internal static SafeLauncherCommand ValidateStoredCommand(string text, string kindText)
+    {
+        if (!Enum.TryParse<LocalTerminalLaunchKind>(kindText, false, out var kind) || !Enum.IsDefined(kind))
+            throw new ArgumentException("The external launch type is unsupported.");
+        var definition = LocalTerminalLaunchPlanner.ValidateCommand(text);
+        if (definition.Kind != kind || !IsCanonicalCommandSafe(definition.CanonicalCommand, kind))
+            throw new ArgumentException("The command is invalid or contains sensitive data.");
+        return new SafeLauncherCommand(kind, definition.CanonicalCommand, $"{kind}\u001f{definition.CanonicalCommand}");
+    }
+
+    internal static string NormalizeDisplayName(string? displayName, string commandText)
     {
         var normalized = string.IsNullOrWhiteSpace(displayName)
             ? commandText
@@ -693,7 +334,7 @@ public static class CommandLauncherStore
         return normalized;
     }
 
-    private static bool IsCanonicalCommandSafe(string value, LocalTerminalLaunchKind kind)
+    internal static bool IsCanonicalCommandSafe(string value, LocalTerminalLaunchKind kind)
     {
         if (!IsStoredValueSafe(value, LocalTerminalLaunchPlanner.MaximumCommandLength) ||
             value.IndexOfAny(ShellSyntaxCharacters) >= 0)
@@ -830,7 +471,7 @@ public static class CommandLauncherStore
         }
     }
 
-    private sealed record SafeLauncherCommand(
+    internal sealed record SafeLauncherCommand(
         LocalTerminalLaunchKind Kind,
         string CommandText,
         string Identity);

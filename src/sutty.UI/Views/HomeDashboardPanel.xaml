@@ -18,14 +18,12 @@
             <local:HomePanel x:Name="QuickConnect" />
         </Border>
         <Border
-            MinHeight="260"
-            MaxHeight="420"
             Padding="12"
             Background="{ThemeResource CardBg}"
             BorderBrush="{ThemeResource CardBorder}"
             BorderThickness="1"
             CornerRadius="10">
-            <local:HostListPanel x:Name="HostHistory" />
+            <local:OneLineConnectionPanel x:Name="OneLineConnection" />
         </Border>
     </StackPanel>
     </ScrollViewer>

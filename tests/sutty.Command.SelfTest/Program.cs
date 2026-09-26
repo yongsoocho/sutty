@@ -6,6 +6,7 @@ Db.PathOverride = Path.Combine(scratch, "sutty.db");
 
 try
 {
+    await BroadcastCommandSelfTests.RunAsync();
     Assert(SuttyLaunchRequestParser.Parse("").Action == SuttyLaunchAction.Default,
         "empty launch arguments open the default workspace");
     Assert(SuttyLaunchRequestParser.Parse("--version").Action == SuttyLaunchAction.ShowVersion,
@@ -63,7 +64,7 @@ try
     using (var connection = Db.Open())
     using (var migration = connection.CreateCommand())
     {
-        migration.CommandText = "SELECT COUNT(*) FROM storage_migrations";
+        migration.CommandText = "SELECT COUNT(*) FROM storage_migrations WHERE id = 'host_profiles_from_legacy_pins_v1'";
         Assert(Convert.ToInt32(migration.ExecuteScalar()) == 1, "legacy migration is versioned");
     }
 

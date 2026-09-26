@@ -16,6 +16,7 @@ if (args.Length == 7 && args[0] == "--queue-lease-probe")
 }
 
 await RemoteEditingSelfTests.RunAsync();
+await TransferPhaseSelfTests.RunAsync();
 
 Assert(RemotePath.Normalize(@"/srv/a\b") == @"/srv/a\b",
     "POSIX backslash filename is preserved");

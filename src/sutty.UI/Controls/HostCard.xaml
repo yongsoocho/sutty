@@ -77,7 +77,7 @@
                         <FontIcon
                             x:Name="PrimaryActionIcon"
                             FontSize="14"
-                            Glyph="&#xE718;" />
+                            Glyph="&#xE734;" />
                     </Button>
                 </StackPanel>
             </Grid>
@@ -85,7 +85,7 @@
                 FontSize="11"
                 FontFamily="Cascadia Mono, Consolas"
                 Foreground="{ThemeResource TextMuted}"
-                Text="{x:Bind Host.Hostname}"
+                Text="{x:Bind Host.ConnectionLabel}"
                 TextTrimming="CharacterEllipsis" />
             <ItemsControl
                 ItemsSource="{x:Bind Host.Tags}"

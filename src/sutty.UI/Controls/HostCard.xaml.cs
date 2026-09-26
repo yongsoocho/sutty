@@ -78,9 +78,7 @@ public sealed partial class HostCard : UserControl
         if (PrimaryActionIcon is null || PrimaryActionButton is null || Host is null) return;
 
         var hasSavedProfile = !string.IsNullOrWhiteSpace(Host.ProfileId);
-        PrimaryActionIcon.Glyph = hasSavedProfile
-            ? Host.IsPinned ? "\uE735" : "\uE734"
-            : "\uE74E";
+        PrimaryActionIcon.Glyph = Host.IsPinned ? "\uE735" : "\uE734";
         PrimaryActionIcon.Foreground = Helpers.ThemeResources.Brush(
             this,
             Host.IsPinned ? "AccentTeal" : "TextFaint");
@@ -89,16 +87,16 @@ public sealed partial class HostCard : UserControl
             ? Host.IsPinned
                 ? Helpers.Loc.T("즐겨찾기에서 제거", "Remove from favorites")
                 : Helpers.Loc.T("즐겨찾기에 추가", "Add to favorites")
-            : Helpers.Loc.T("호스트 저장", "Save host");
+            : Helpers.Loc.T("즐겨찾기에 추가", "Add to favorites");
         var targetLabel = $"{actionLabel}: {Host.Alias} ({Host.Hostname})";
         ToolTipService.SetToolTip(PrimaryActionButton, targetLabel);
         AutomationProperties.SetName(PrimaryActionButton, targetLabel);
 
         DeleteMenuItem.Visibility = Host.IsSavedProfile ? Visibility.Visible : Visibility.Collapsed;
         DeleteMenuItem.Text = Helpers.Loc.T("저장 호스트 삭제", "Delete saved host");
-        DuplicateMenuItem.Visibility = Host.IsSavedProfile ? Visibility.Visible : Visibility.Collapsed;
+        DuplicateMenuItem.Visibility = Host.IsSavedProfile && !Host.IsExternalCommand ? Visibility.Visible : Visibility.Collapsed;
         DuplicateMenuItem.Text = Helpers.Loc.T("저장 호스트 복제", "Duplicate saved host");
-        AuthenticationAliasMenuItem.Visibility = Host.IsSavedProfile ? Visibility.Visible : Visibility.Collapsed;
+        AuthenticationAliasMenuItem.Visibility = Host.IsSavedProfile && !Host.IsExternalCommand ? Visibility.Visible : Visibility.Collapsed;
         AuthenticationAliasMenuItem.Text = Helpers.Loc.T("인증 별칭 설정", "Set authentication alias");
 
         OutcomeDot.Visibility = Host.HasOutcome ? Visibility.Visible : Visibility.Collapsed;

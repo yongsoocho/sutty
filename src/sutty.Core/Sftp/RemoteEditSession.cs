@@ -46,6 +46,9 @@ public sealed class RemoteEditSession
         return LocalFilePath;
     }
 
+    /// <summary>The current working copy and baseline stay intact until the UI accepts a verified replacement.</summary>
+    public RemoteEditSession CreateReloadCandidate() => new(HostIdentity, RemoteFilePath, Path.GetDirectoryName(WorkingDirectory));
+
     /// <summary>Initialize only after a successful, verified queue download and a second stat.</summary>
     public async Task AcceptDownloadAsync(RemoteEditStamp before, RemoteEditStamp? after, CancellationToken ct)
     {
@@ -77,6 +80,36 @@ public sealed class RemoteEditSession
 
     public bool HasRemoteConflict(RemoteEditStamp? current) => NeedsReview || Baseline is null || !Baseline.Matches(current);
 
+    public bool HasRemoteContentConflict(RemoteEditVersion? current) => current is null ||
+        HasRemoteConflict(current.Stamp) || UploadedHash is null ||
+        !string.Equals(UploadedHash, current.Sha256, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Compare content through the existing serialized SFTP stream. A matching size/time alone
+    /// cannot detect an in-place save with a preserved timestamp. Failure never permits upload.
+    /// </summary>
+    public async Task<RemoteEditVersion?> ReadRemoteVersionAsync(ISftpService sftp, CancellationToken ct,
+        string? remotePath = null)
+    {
+        var path = remotePath ?? RemoteFilePath;
+        try
+        {
+            var before = await ReadRemoteStampAsync(sftp, path, ct);
+            if (before is null) return null;
+            var bytes = await sftp.ReadFileBytesAsync(path, checked((int)MaximumBytes), ct);
+            var after = await ReadRemoteStampAsync(sftp, path, ct);
+            ct.ThrowIfCancellationRequested();
+            if (bytes.LongLength > MaximumBytes || before.Size != bytes.LongLength || after != before)
+                throw new IOException("The remote file changed while its content was being verified. Review again.");
+            return new RemoteEditVersion(before, Hash(bytes));
+        }
+        catch
+        {
+            NeedsReview = true;
+            throw;
+        }
+    }
+
     public async Task AcceptUploadAsync(RemoteEditUpload upload, string destination, RemoteEditStamp? after, CancellationToken ct)
     {
         UploadedHash = upload.Sha256;
@@ -107,7 +140,11 @@ public sealed class RemoteEditSession
     private async Task WriteRecoveryNoteAsync(CancellationToken ct)
     {
         // Human-readable recovery metadata deliberately excludes credentials and terminal history.
-        var note = $"Sutty remote working copy / 원격 편집본\nServer / 서버: {HostIdentity}\nRemote / 원격: {RemoteFilePath}\nLocal / 로컬: {LocalFilePath}\n\nThis copy is kept locally. Review the current remote file before uploading after reconnect.\n이 파일은 로컬에 보관됩니다. 재연결 후 현재 원격 파일을 확인하고 업로드하세요.\n";
+        var note = $"Sutty remote working copy / 원격 편집본\nServer / 서버: {HostIdentity}\nRemote / 원격: {RemoteFilePath}\nLocal / 로컬: {LocalFilePath}\n\n" +
+            "Reconnect to the original server and verify its identity and current remote file. Open a fresh working copy, review and copy your retained changes into it, then upload explicitly.\n" +
+            "원래 서버에 재연결하고 서버 신원과 현재 원격 파일을 확인하세요. 새 편집본을 열어 보관된 변경을 검토해 옮긴 뒤 명시적으로 반영하세요.\n\n" +
+            "upload-*.txt files are immutable snapshots of upload attempts. Copies may contain sensitive server settings and are not automatically deleted. After recovery, review and remove local copies yourself; this does not delete server files.\n" +
+            "upload-*.txt는 업로드 시도 당시의 불변 스냅샷입니다. 민감한 서버 설정이 남을 수 있으며 자동 삭제하지 않습니다. 복구 후 확인해 로컬 보관본을 직접 정리하세요. 서버 파일은 삭제되지 않습니다.\n";
         try
         {
             await File.WriteAllTextAsync(Path.Combine(WorkingDirectory, "RECOVER.txt"), note, new UTF8Encoding(false), ct);
@@ -152,3 +189,9 @@ public sealed record RemoteEditStamp(long Size, DateTime? Modified)
 }
 
 public sealed record RemoteEditUpload(string LocalPath, string Sha256, long Size);
+
+public sealed record RemoteEditVersion(RemoteEditStamp Stamp, string Sha256)
+{
+    public bool Matches(RemoteEditVersion? other) => other is not null && Stamp == other.Stamp &&
+        string.Equals(Sha256, other.Sha256, StringComparison.Ordinal);
+}

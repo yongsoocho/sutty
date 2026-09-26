@@ -21,13 +21,15 @@
 Sutty is a **Windows local-first SSH/SFTP operations workspace for individuals and small teams**. It brings everyday local terminals, SSH, SFTP, reusable commands, and multi-session operations into one workspace. That is a product goal, not a statement that every planned capability is complete.
 
 The product is local-first and Windows-only. The workspace centers on the selected local or SSH
-terminal. A fresh start opens PowerShell, and closing the last tab opens a replacement PowerShell
-tab. Home, Hosts, Transfers, and Commands open alongside it: on the right in wide windows and
+terminal. A fresh start and manually closing the last tab open PowerShell. By default, logout or
+disconnect closes only that shell tab; automatic closure of the last tab returns to Home. Settings
+can keep disconnected tabs open, and recovery prompts still protect pending work.
+Home, Hosts, Transfers, and Commands open alongside it: on the right in wide windows and
 below it when the window is narrower than 1100 logical pixels. Settings fills the workspace and
 covers the shell while existing sessions keep running. Multi Command displays a central 3×3
 session grid with the reused command library on the right. Global navigation has six destinations:
 
-- **Home** — Quick Connect and local connection shortcuts.
+- **Home** — separate Quick Connect and one-line connection cards. One-line saves appear in Hosts favorites.
 - **Hosts** — Saved Hosts, favorites, and recent connections.
 - **Transfers** — the cross-session transfer view.
 - **Commands** — reusable commands for the selected session.
@@ -51,9 +53,9 @@ Small teams can exchange selected host, group, tag, route, tunnel, and command d
 - Fail-closed SSH host-key verification. Unknown keys offer **Connect once**, **Trust and save**, or **Cancel**; changed saved keys are blocked.
 - Read-only SSH connection information for the primary transport shows server/client identification, KEX, verified host-key algorithm and SHA-256 fingerprint, and both cipher/MAC/compression directions. Merely connecting no longer runs automatic banner or home-directory discovery commands.
 - Independent SSH, Terminal, and SFTP states, so an unavailable SFTP subsystem does not close a working SSH session.
-- Commands and Multi execution backed by structured standard output, standard error, exit status/signal, and duration; reusable positional command templates remain available.
+- SSH Commands and Multi execution backed by structured standard output, standard error, exit status/signal, and duration; reusable positional command templates remain available.
 - Dual-pane Files supports absolute paths, back/forward, parent, refresh, hidden-file toggles, name/size/modified sorting, multi-selection, and host-specific remote favorite folders. Pane-to-pane file/folder drag-and-drop, transfer buttons, and Windows Explorer → Remote drop all use the same durable collision/staging/checkpoint/verification flow. Drops copy and retain the source; the destination is pinned before dialogs. Remote search, rename, move without overwrite, safe recursive deletion, permissions, and folder creation remain available.
-- Remote text editing uses a configured external `.exe` (Notepad by default) for regular files up to 8 MiB. Saves are detected and **Upload changes** is the default; automatic upload must be enabled for that file. Size/time conflict checks, explicit Save as/reload, immutable upload snapshots, and the existing safe transfer queue protect the workflow. Copies remain in the local recovery folder, including after errors or closing; failed reloads retain the previous copy. Metadata comparison cannot prevent every concurrent edit. Failed edit jobs require review in **Edits**, rather than generic queue retry.
+- Remote text editing uses a configured external `.exe` (Notepad by default) for regular files up to 8 MiB. Saves are detected and **Upload changes** is the default; automatic upload must be enabled for that file. Size/time and bounded remote SHA-256 content conflict checks, explicit Save as/reload, immutable upload snapshots, and the existing safe transfer queue protect the workflow. Copies remain in the local recovery folder, including after errors or closing; failed reloads retain the previous copy. Content comparison detects same-size/time changes but cannot prevent a write after the comparison without server-side locking. Failed edit jobs require review in **Edits**, rather than generic queue retry.
 - **Open in terminal** previews a safely quoted POSIX `cd` command and copies it without a newline; users paste and execute at a shell prompt themselves. Terminal → Files accepts an explicit absolute path. No output parsing or automatic shell command is used for path synchronization.
 - Transfers shows the active shell's browser above the live queue: the selected SSH session's Files or the PowerShell/CMD directory reported at the prompt. It never falls back to another server; missing shells or unknown paths show an explanation. Changing shell tabs keeps the selected supporting pane open. The live queue provides Pause, Resume, failed-target Retry, Cancel, completed-record removal, and state/direction/target filtering only when the exact connected Files executor can accept them. Multi batches remain visible without batch-wide global Pause/Cancel. Queue mutations and target execution leases are serialized across Sutty processes.
 - A compact per-panel transfer queue with queued/running state, an explicit `0%`–`100%` value, progress bar, speed, ETA, cancellation, and an eight-job cap. Transfers support resumable deterministic partial files, persisted non-secret checkpoints, configurable transient-failure retries, and user-selectable final-size or SHA-256 verification (safe SHA-256 by default).
@@ -61,9 +63,9 @@ Small teams can exchange selected host, group, tag, route, tunnel, and command d
 - Append-only connection-attempt history plus explicit Saved Host profiles, duplication without credentials, groups, environments, favorites, and search in SQLite.
 - Credential-free Saved Host launcher: `sutty.UI.exe --host <id or exact name>` opens an existing profile while rejecting password/passphrase arguments; `sutty.UI.exe --version` reports the Alpha build.
 - Opt-in local credential storage using a per-user Windows-protected AES-256-GCM vault; SQLite and settings contain only opaque credential references.
-- Up to 16 mixed local/SSH tabs and a separate **Multi Command** destination (`Alt+8`). It replaces the central shell view with a 3×3 session grid, nine sessions per page, and reuses the command library on the right. Free-form and saved commands run only on checked sessions across all pages; Select all / Clear all covers every page. New sessions start unchecked. Selection, last results, and running state stay with the same open sessions when switching pages, tabs, or navigation. Broadcasts that include PROD-tagged SSH sessions require an extra confirmation.
+- Up to 16 mixed local/SSH tabs and a separate **Multi Command** destination (`Alt+8`). It replaces the central shell view with a 3×3 session grid, nine sessions per page, and reuses the command library on the right. Free-form and saved commands run only on checked connected Sutty SSH sessions after an all-page target/command preview; local and external terminals are excluded; Select all / Clear all covers every page. New sessions start unchecked. Selection, last results, and running state stay with the same open sessions when switching pages, tabs, or navigation. Broadcasts that include PROD-tagged SSH sessions require an extra confirmation.
 - Optional restart-safe Workspace restoration remembers each local tab's PowerShell/CMD choice and opaque Saved Host ids. Older local entries default to PowerShell. SSH reconnection asks first by default, and previous commands are never stored or replayed.
-- Failed or disconnected SSH sessions expose an explicit Reconnect action that always creates a new shell. Saved Hosts are reloaded from the current profile and optional encrypted vault; one-off sessions return to Quick Connect with a credential-free draft. Previous commands, terminal input, transport objects, and trust-once decisions are never replayed. Automatic reconnect and automatic SFTP/tunnel recovery remain unimplemented.
+- Retained failed or disconnected SSH tabs expose an explicit Reconnect action that always creates a new shell. Saved Hosts are reloaded from the current profile and optional encrypted vault; one-off sessions return to Quick Connect with a credential-free draft. Previous commands, terminal input, transport objects, and trust-once decisions are never replayed. Automatic reconnect and automatic SFTP/tunnel recovery remain unimplemented.
 - Immediately applied Korean/English settings, atomic settings persistence, and [36 app and terminal themes](docs/THEMES.md), including VS Code Dark+/Light+, Dracula, Monokai, Nord, Tokyo Night, and Catppuccin. Each keeps gradient accents; **Follow application** applies the selected named palette and ANSI colors. Cursor/scrollback/accessibility controls and optional PowerShell profile loading remain available.
 - Numeric settings use direct entry without spin buttons. About provides separate red settings and SQLite reset actions, each with a Yes/No dialog defaulting to No. Settings reset atomically applies defaults; SQLite reset deletes user rows transactionally while keeping schema, migration metadata, open sessions, and separate settings/trust/vault/recovery files.
 - A clipboard icon beside the `CONPTY` / `PTY` dimensions copies the latest rendered command output, including errors. PowerShell/CMD use runtime prompt markers without changing profile files. This is terminal text rather than original stdout/stderr bytes: PTY rendering expands tabs and processes control sequences and newlines. Command boundaries for custom or unmarked SSH shells are best effort.
@@ -80,7 +82,7 @@ Small teams can exchange selected host, group, tag, route, tunnel, and command d
 - Windows Agent, repeated OTP/multi-prompt keyboard-interactive authentication, PPK v2/v3, SSH jump, and external ProxyCommand routes are integrated, but their live-server/agent/route compatibility matrix is incomplete. Negotiated connection information is exposed without issuing a remote command, and manual reconnect is implemented without replay; live fingerprint/reconnect/no-exec/indirect-route acceptance and opt-in automatic reconnect remain pending. Central route-policy distribution and command replay after a full SSH reconnect remain outside the current implementation.
 - Saved Hosts support duplication and import/export previews; real cross-PC import, credential binding, and manual UI acceptance remain unverified. Broader bulk management and operating-system credential-broker integration remain planned.
 - SFTP transfer/recovery has an Alpha implementation, but manual pane drag-and-drop, external-editor save/conflict/failure/close, server permissions, and large/deep-path live acceptance remain unverified. Synchronized browsing and directory comparison are not implemented.
-- Commands output is completion-based rather than streamed. Multi uses structured per-host results with a scrollable preview of up to 16,384 output characters per session, but has no persistent local activity export, timeout, or streaming workflow.
+- Commands output is completion-based rather than streamed. Multi uses structured per-host results with a scrollable preview of up to 16,384 output characters per session, with a 60-second wait limit and a cancel-wait action that does not claim remote termination. Persistent local activity export and streaming remain unimplemented.
 - The runtime tunnel manager has focused lifecycle tests; real local/remote/dynamic forwarding and port-failure acceptance remain unverified. A signed-MSIX/update/rollback workflow exists for x64 and ARM64, but no production certificate or accepted signed clean-install artifact has been supplied. Connection Doctor, Known Host management, and local support bundles exist; the GA compatibility/accessibility matrices remain incomplete.
 
 The detailed current-state mapping is in [Requirements Traceability](docs/REQUIREMENTS.md), with the latest milestone summary in [Alpha implementation status](docs/IMPLEMENTATION_STATUS.md). Exact compatibility-claim boundaries are in [Supported environments](docs/SUPPORTED_ENVIRONMENTS.md), and live evidence must follow the [evidence schema](docs/evidence/EVIDENCE_SCHEMA.md). Live-server, scale, soak, and signed-package gates are in [Release acceptance](docs/RELEASE_ACCEPTANCE.md), with Alpha 4 ordering and exit criteria in the [Alpha 4 execution plan](docs/ALPHA4_EXECUTION_PLAN.md) and protected publication controls in [Release governance](docs/RELEASE_GOVERNANCE.md). Product admission rules and explicit non-goals are fixed in [Product Scope](docs/PRODUCT_SCOPE.md), with longer-term delivery order in the [Roadmap](docs/ROADMAP.md), engineering rules in [Contributing](CONTRIBUTING.md) and the [Development Playbook](docs/DEVELOPMENT_PLAYBOOK.md), and supporting rationale in [Product Direction](docs/PRODUCT_DIRECTION.md).
@@ -122,6 +124,10 @@ Read [Security](SECURITY.md) before reporting or sharing diagnostic data.
 | [`tests`](tests) | Focused self-tests plus an opt-in credentialed live-server smoke/connection-info/fault/scale/soak harness; not a completed GA matrix |
 
 ### Prerequisites, build, and run
+
+Debug and Release default to `PublishReadyToRun=false` and `PublishTrimmed=false`, matching
+CI and the Alpha candidate/signed-package workflows. A local working-tree build is a development
+build; publishing requires the existing exact-candidate validation and promotion gates.
 
 - Windows 11 24H2 or later
 - x64 or ARM64
@@ -173,16 +179,21 @@ Sutty is available under the [MIT License](LICENSE).
 
 ## 한국어
 
+Debug·Release의 ReadyToRun·trimming 기본값은 false이며 CI·Alpha 후보·서명 패키지와
+일치합니다. 로컬 작업 트리 빌드는 개발용입니다. 공개 배포는 기존 후보 검증·승격 게이트를 따릅니다.
+
 Sutty는 **개인 사용자와 소규모 팀을 위한 Windows local-first SSH/SFTP operations workspace**입니다. 일상적인 로컬 터미널, SSH, SFTP, 재사용 명령, 다중 세션 운영을 하나의 작업 공간에 통합합니다. 이는 제품 목표이며 계획한 모든 기능이 현재 완성됐다는 뜻은 아닙니다.
 
 제품은 로컬 우선·Windows 전용이며 선택한 로컬 또는 SSH 터미널을 중심으로 작업합니다.
-새로 시작하면 PowerShell을 열고, 마지막 탭을 닫으면 새 PowerShell 탭을 엽니다.
+새로 시작하거나 마지막 탭을 수동으로 닫으면 PowerShell을 엽니다. 기본값은 로그아웃·연결 종료 시
+해당 셸 탭만 자동으로 닫기이며, 마지막 탭이 자동 종료되면 Home으로 돌아갑니다. 설정에서
+끊긴 탭을 남겨둘 수 있고, 복구가 필요한 작업에는 기존 확인창을 유지합니다.
 Home·Hosts·Transfers·Commands는 넓은 창에서는 오른쪽, 창 너비가 논리 픽셀 1100 미만이면
 터미널 아래에 엽니다. Settings는 작업 영역 전체를 채워 셸을 가리며 기존 세션은 계속 실행됩니다.
 Multi Command는 중앙에 3×3 세션 그리드를 표시하고 오른쪽에 기존 명령 모음집을 재사용합니다.
 전역 이동 목적지는 여섯 개입니다.
 
-- **Home** — Quick Connect와 로컬 연결 바로가기
+- **Home** — 새 연결과 한 줄 연결의 독립 카드. 한 줄 연결 저장은 Hosts 즐겨찾기에 추가
 - **Hosts** — 저장 Host·즐겨찾기·최근 연결
 - **Transfers** — 세션 전체의 전송 화면
 - **Commands** — 선택한 세션에서 실행할 재사용 명령
@@ -205,9 +216,9 @@ Multi Command는 중앙에 3×3 세션 그리드를 표시하고 오른쪽에 �
 - 기본 차단 방식의 SSH 호스트키 검증. 알 수 없는 키는 **이번만 연결**, **신뢰하고 저장**, **취소**를 제공하며 저장된 키가 바뀌면 연결을 차단합니다.
 - 주 SSH 전송의 서버·클라이언트 식별, KEX, 검증된 호스트 키 알고리즘과 SHA-256 지문, 양방향 cipher·MAC·압축을 보여주는 읽기 전용 연결 정보. 연결만으로 자동 banner나 홈 디렉터리 탐색 명령을 실행하지 않습니다.
 - SFTP subsystem을 사용할 수 없어도 작동 중인 SSH 세션을 닫지 않는 SSH·Terminal·SFTP 독립 상태
-- 표준 출력·표준 오류·종료 상태/signal·소요 시간을 구조화하는 Commands·Multi 명령 실행과 재사용 가능한 위치형 명령 템플릿
+- 표준 출력·표준 오류·종료 상태/signal·소요 시간을 구조화하는 SSH Commands·Multi 명령 실행과 재사용 가능한 위치형 명령 템플릿
 - Dual-pane Files는 절대 경로, 뒤로/앞으로, 상위 폴더, 새로 고침, 숨김 표시, 이름·크기·수정일 정렬, 다중 선택, 호스트별 원격 즐겨찾기를 제공합니다. 패널 간 파일·폴더 드래그앤드롭, 전송 버튼, Windows Explorer → Remote 드롭은 같은 영속 큐·충돌·staging·checkpoint·검증 흐름을 사용합니다. 드롭은 원본을 보존하는 복사이며 대화상자 전에 목적지를 고정합니다. 원격 검색·이름 변경·덮어쓰기 없는 이동·안전 재귀 삭제·권한 변경·폴더 생성도 유지합니다.
-- 8 MiB 이하의 일반 텍스트 파일을 지정한 외부 `.exe` 편집기(기본 메모장)로 열 수 있습니다. 저장을 감지한 뒤 **서버에 반영**이 기본이며 파일별로 자동 반영을 켤 수 있습니다. 크기·수정시각 충돌 확인, 다른 이름/다시 내려받기, 고정된 업로드 사본, 기존 안전 전송 큐를 사용합니다. 오류·종료 후에도 로컬 복구 폴더에 편집본을 보관하고, 다시 내려받기 실패 시 이전 편집본을 유지합니다. 메타데이터 비교는 모든 동시 수정을 막지 못합니다. 실패한 편집 작업은 일반 큐 재시도 대신 **편집본**에서 다시 확인해야 합니다.
+- 8 MiB 이하의 일반 텍스트 파일을 지정한 외부 `.exe` 편집기(기본 메모장)로 열 수 있습니다. 저장을 감지한 뒤 **서버에 반영**이 기본이며 파일별로 자동 반영을 켤 수 있습니다. 크기·수정시각 및 한도 내 원격 SHA-256 내용 충돌 확인, 다른 이름/다시 내려받기, 고정된 업로드 사본, 기존 안전 전송 큐를 사용합니다. 오류·종료 후에도 로컬 복구 폴더에 편집본을 보관하고, 다시 내려받기 실패 시 이전 편집본을 유지합니다. 같은 크기·시각의 변경도 내용 비교로 검출하지만 비교 직후의 동시 수정을 서버 잠금 없이 막지는 못합니다. 실패한 편집 작업은 일반 큐 재시도 대신 **편집본**에서 다시 확인해야 합니다.
 - **터미널에서 열기**는 안전하게 인용한 POSIX `cd` 명령을 미리 보여주고 줄바꿈 없이 복사합니다. 사용자가 셸 프롬프트에서 붙여넣고 실행합니다. Terminal → Files는 명시적인 절대 경로 입력을 사용하며 출력 파싱이나 자동 명령으로 경로를 동기화하지 않습니다.
 - 수동 새로 고침 없이 영속 큐를 투영하고 일시정지·재개·실패 대상 재시도·취소·완료 기록 제거와 상태·방향·대상 필터를 제공하는 전역 Transfer Center. 정확히 일치하는 연결된 Files 실행자가 요청을 받을 수 있을 때만 명령을 활성화합니다. Multi batch는 표시하지만 전역 일시정지·취소 완료를 주장하지 않습니다. 큐 변경과 대상 실행 lease는 여러 Sutty 프로세스 사이에서도 직렬화합니다.
 - 대기·실행 상태, 명시적인 `0%`–`100%` 숫자, 진행 막대, 속도, ETA, 취소, 최대 8개 작업을 제공하는 패널별 전송 큐. 결정적인 partial 파일, 비밀정보 없는 영속 체크포인트, 설정 가능한 일시 오류 재시도, 사용자가 선택하는 최종 크기 또는 SHA-256 검증(기본값은 안전한 SHA-256)으로 전송을 재개할 수 있습니다.
@@ -215,7 +226,7 @@ Multi Command는 중앙에 3×3 세션 그리드를 표시하고 오른쪽에 �
 - SQLite 기반 append-only 접속 시도 기록과 명시적인 저장 호스트·자격증명 없는 복제·그룹·환경·즐겨찾기·검색
 - 자격증명 없는 저장 Host 실행: `sutty.UI.exe --host <ID 또는 정확한 이름>`으로 기존 프로필을 열며 비밀번호·키 암호 인자는 거부하고, `sutty.UI.exe --version`으로 Alpha 버전을 확인
 - Windows 사용자별 보호와 AES-256-GCM을 사용하는 선택형 로컬 자격증명 보관소. SQLite와 설정에는 불투명 참조만 저장
-- 로컬/SSH 혼합 최대 16개 탭과 독립 **Multi Command** 화면(`Alt+8`). 중앙 셸 화면을 3×3 세션 그리드로 바꾸어 한 페이지에 9개씩 표시하며 오른쪽에 기존 명령 모음집을 재사용합니다. 직접 입력·저장 명령은 모든 페이지에서 체크한 세션에만 실행하고, 전체 선택 / 전체 해제도 모든 페이지에 적용합니다. 새 세션은 미선택으로 시작하며 페이지·탭·메뉴를 바꿔도 같은 열린 세션의 선택·마지막 결과·진행 상태를 유지합니다. PROD 태그 SSH 세션이 포함된 방송은 추가 확인을 거칩니다.
+- 로컬/SSH 혼합 최대 16개 탭과 독립 **Multi Command** 화면(`Alt+8`). 중앙 셸 화면을 3×3 세션 그리드로 바꾸어 한 페이지에 9개씩 표시하며 오른쪽에 기존 명령 모음집을 재사용합니다. 직접 입력·저장 명령은 전체 대상·명령 확인 후 체크한 연결된 Sutty SSH에만 실행하고 로컬·외부 터미널은 제외하며, 전체 선택 / 전체 해제도 모든 페이지에 적용합니다. 새 세션은 미선택으로 시작하며 페이지·탭·메뉴를 바꿔도 같은 열린 세션의 선택·마지막 결과·진행 상태를 유지합니다. PROD 태그 SSH 세션이 포함된 방송은 추가 확인을 거칩니다.
 - 선택형 Workspace 복원은 로컬 탭별 PowerShell/CMD 선택과 불투명 저장 Host ID를 기억합니다. 기존 로컬 항목은 PowerShell로 복원합니다. SSH 재연결은 기본적으로 먼저 확인하며 이전 명령은 저장하거나 재실행하지 않습니다.
 - 실패하거나 끊긴 SSH 세션은 항상 새 Shell을 만드는 명시적 재연결을 제공합니다. 저장 Host는 현재 profile과 선택형 암호화 Vault를 다시 읽고, 일회성 세션은 비밀값 없는 초안을 Quick Connect로 돌려보냅니다. 이전 명령·터미널 입력·transport 객체·이번만 신뢰 결정은 재실행하거나 재사용하지 않습니다. 자동 재연결과 SFTP·tunnel 자동 복구는 아직 구현하지 않았습니다.
 - 즉시 반영되는 한국어/영어 설정, 원자적 설정 저장과 [앱·터미널 테마 36개](docs/THEMES.md). VS Code Dark+/Light+·Dracula·Monokai·Nord·Tokyo Night·Catppuccin 등을 지원하며 각 테마의 그라데이션 강조를 유지합니다. **앱 테마에 맞춤**은 선택한 이름의 팔레트와 ANSI 색상까지 반영합니다. 커서·스크롤백·접근성 설정과 선택형 PowerShell 프로필 로딩도 유지합니다.
@@ -235,7 +246,7 @@ Multi Command는 중앙에 3×3 세션 그리드를 표시하고 오른쪽에 �
 - Windows Agent, 반복 OTP·다중 prompt keyboard-interactive 인증, PPK v2/v3, SSH Jump, 외부 ProxyCommand 경로를 통합했지만 실제 서버·Agent·경로 호환성 매트릭스는 아직 미완성입니다. 원격 명령 없이 협상 연결 정보를 표시하고 명령 재실행 없는 수동 재연결을 구현했지만 실제 지문·재연결·무명령 연결·간접 경로 인수와 선택형 자동 재연결은 남아 있습니다. 중앙 경로 정책 배포와 전체 SSH 재연결 뒤 명령 재실행은 현재 구현 범위 밖입니다.
 - 저장 호스트 복제와 가져오기/내보내기 미리보기를 구현했지만 실제 PC 간 가져오기·자격증명 연결·수동 UI 인수는 검증하지 않았습니다. 폭넓은 일괄 관리와 운영체제 자격증명 브로커 연동은 계획 상태입니다.
 - SFTP 전송·복구의 Alpha 구현은 있지만 수동 패널 드래그앤드롭, 외부 편집기의 저장·충돌·실패·종료, 서버 권한, 대용량·깊은 경로 실환경 인수는 검증하지 않았습니다. 동기 탐색과 디렉터리 비교는 구현하지 않았습니다.
-- Commands 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과와 세션마다 최대 16,384자의 스크롤 가능한 출력 미리보기를 제공하지만 영속 로컬 활동 내보내기, timeout, streaming 흐름이 없습니다.
+- Commands 출력은 스트리밍이 아니라 완료 후 표시됩니다. Multi는 구조화된 호스트별 결과와 세션마다 최대 16,384자의 스크롤 가능한 출력 미리보기를 제공하지만 60초 대기 제한과 대기 취소를 제공합니다. 원격 종료는 보장하지 않으며 영속 활동 내보내기와 streaming은 미구현입니다.
 - 실행 중 터널 관리자는 수명주기 집중 테스트가 있으며 실제 Local·Remote·Dynamic 포워딩과 포트 오류 인수는 검증하지 않았습니다. x64·ARM64 서명 MSIX·업데이트·롤백 workflow는 있지만 production 인증서와 서명된 깨끗한 PC 설치 인수 산출물은 아직 없습니다. Connection Doctor, Known Host 관리, 로컬 support bundle은 구현했으며 GA 호환성·접근성 매트릭스는 미완성입니다.
 
 현재 상태의 상세 연결표는 [요구사항 추적표](docs/REQUIREMENTS.md), 이번 마일스톤 요약은 [Alpha 구현 상태](docs/IMPLEMENTATION_STATUS.md)에 있습니다. 정확한 호환성 주장 경계는 [지원 환경](docs/SUPPORTED_ENVIRONMENTS.md), 실환경 증거 계약은 [증거 스키마](docs/evidence/EVIDENCE_SCHEMA.md)를 따릅니다. 실서버·대용량·soak·서명 패키지 게이트는 [출시 인수 기준](docs/RELEASE_ACCEPTANCE.md), Alpha 4 순서와 종료 기준은 [Alpha 4 실행 계획](docs/ALPHA4_EXECUTION_PLAN.md), 보호된 공개 통제는 [릴리스 거버넌스](docs/RELEASE_GOVERNANCE.md)에 있습니다. 기능 채택 규칙과 명시적 비목표는 [제품 범위](docs/PRODUCT_SCOPE.md), 장기 개발 순서는 [로드맵](docs/ROADMAP.md), 개발 규칙은 [기여 가이드](CONTRIBUTING.md)와 [개발 Playbook](docs/DEVELOPMENT_PLAYBOOK.md), 설계 근거는 [제품 방향](docs/PRODUCT_DIRECTION.md)에 정리했습니다.

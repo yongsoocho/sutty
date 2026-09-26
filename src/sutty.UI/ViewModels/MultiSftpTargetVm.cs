@@ -12,6 +12,7 @@ public sealed class MultiSftpTargetVm : ObservableObject
     private double _progress;
     private string _relativePath = "";
     private string _error = "";
+    private SftpTransferPhase? _phase;
 
     public MultiSftpTargetVm(string id, string displayName)
     {
@@ -44,13 +45,15 @@ public sealed class MultiSftpTargetVm : ObservableObject
         }
     }
 
-    public string ProgressText => $"{Progress:P0}";
+    public string ProgressText => State == MultiSftpTargetState.Succeeded
+        ? "100%"
+        : TransferPhaseLabels.Bytes(Progress * 100);
 
     public string StateText => State switch
     {
         MultiSftpTargetState.Pending => Loc.T("대기", "Pending"),
-        MultiSftpTargetState.Transferring => Loc.T("전송 중", "Transferring"),
-        MultiSftpTargetState.Succeeded => Loc.T("성공", "Succeeded"),
+        MultiSftpTargetState.Transferring => TransferPhaseLabels.Active(_phase, Progress),
+        MultiSftpTargetState.Succeeded => TransferPhaseLabels.Complete,
         MultiSftpTargetState.Failed => Loc.T("실패", "Failed"),
         MultiSftpTargetState.Cancelled => Loc.T("취소됨", "Cancelled"),
         _ => "",
@@ -72,15 +75,19 @@ public sealed class MultiSftpTargetVm : ObservableObject
 
     public void Update(MultiSftpTargetStatus status)
     {
+        _phase = status.TransferProgress?.Phase;
         State = status.State;
         Progress = status.Fraction;
         _relativePath = status.TransferProgress?.RelativePath ?? "";
         _error = status.Error ?? "";
+        OnPropertyChanged(nameof(StateText));
+        OnPropertyChanged(nameof(ProgressText));
         OnPropertyChanged(nameof(DetailText));
     }
 
     public void RefreshLanguage()
     {
+        OnPropertyChanged(nameof(ProgressText));
         OnPropertyChanged(nameof(StateText));
         OnPropertyChanged(nameof(DetailText));
     }

@@ -10,6 +10,17 @@ The authoritative near-term order, dependencies, and exit criteria are in the [A
 
 ## Now — Daily-driver Alpha hardening / 일상 사용 Alpha 안정화
 
+The current implementation baseline is `90a6e04e6a66898850f0a53b16bd3d43257d963d`.
+Harden the existing workflow in this order: reproducible candidate build → connection/command
+target safety → edit/transfer recovery → real Windows acceptance → release/document alignment.
+The [16 acceptance scenarios](RELEASE_ACCEPTANCE.md#daily-workflow-review--일상-작업-점검)
+supplement the existing release gates; source tests cannot replace them. Alpha 4 source changes
+are not evidence about the previously published Alpha 3 ZIP.
+
+현재 구현 기준은 위 커밋입니다. 후보 빌드 → 연결·명령 대상 안전성 → 편집·전송 복구 →
+실제 Windows 인수 → 배포·문서 정합 순서로 기존 기능을 마무리합니다. 인수 시나리오 16개는
+기존 출시 게이트에 추가되며 자동 테스트로 대체하지 않습니다. Alpha 4 소스와 공개 Alpha 3은 구분합니다.
+
 ### Milestone A — Authentication and Route Matrix / 인증·경로 매트릭스
 
 - Record one independently reviewable live acceptance slice for password, each supported private-key format, Windows Agent, and repeated keyboard-interactive prompts.
@@ -32,12 +43,12 @@ The authoritative near-term order, dependencies, and exit criteria are in the [A
 
 ### Milestone C — Known Host and Connection Diagnostics / Known Host·연결 진단
 
-- Add known-host list, inspect, remove, changed-key explanation, and deliberate rotation slices without weakening fail-closed behavior.
-- Produce a user-created redacted local support bundle with an explicit inclusion manifest and exclusion tests.
+- Validate the implemented known-host list, inspect, remove, changed-key explanation, and deliberate rotation without weakening fail-closed behavior.
+- Validate the implemented user-created redacted local support bundle and its explicit inclusion manifest and exclusion tests.
 - Correlate local connection activity by session while excluding credentials, terminal transcripts, and command output.
 
-- 기본 차단 정책을 약화하지 않는 Known Host 목록·확인·삭제·변경 Key 설명·명시적 rotation Slice를 추가합니다.
-- 포함 항목 manifest와 제외 테스트를 갖춘 사용자 생성형 redaction 로컬 support bundle을 만듭니다.
+- 구현된 Known Host 목록·확인·삭제·변경 Key 설명·명시적 rotation을 기본 차단 정책을 유지하며 검증합니다.
+- 구현된 사용자 생성형 redaction 로컬 support bundle의 포함 항목 manifest와 제외 동작을 검증합니다.
 - 자격증명·terminal transcript·command output을 제외하고 세션별 로컬 연결 활동을 연결합니다.
 
 ### Milestone D — Signed MSIX and Update Recovery / 서명 MSIX·업데이트 복구
@@ -50,43 +61,43 @@ The authoritative near-term order, dependencies, and exit criteria are in the [A
 - Clean install, upgrade, update 실패, rollback, uninstall, 로컬 데이터 보존 Slice를 기록합니다.
 - GA 상태를 바꾸기 전에 지원 경계와 재현 가능한 release 증거를 공개합니다.
 
-## Next — SFTP workspace / SFTP 작업 공간
+## Now — File and command reliability / 파일·명령 신뢰성
 
 - Complete safe two-way file workflows, drag-and-drop target clarity, and a global bounded transfer manager.
 - Prove retry, resume, checkpoint, safe promotion, and size/SHA-256 verification under disconnect, cancellation, restart, and disk-full faults.
-- Add measured lazy/virtualized handling for deep trees, 100 GB files, and 100,000-file directories.
-- Add external-editor round trips, synchronized navigation, and directory comparison only after transfer integrity gates pass.
+- Validate the implemented external-editor round trip, content conflict checks, retained copies, and recovery actions.
+- Keep the 3×3 Multi grid; preview all approved targets across pages, restrict commands to integrated SSH exec, preserve drafts on cancellation, and bound result waits without claiming remote termination.
+- Begin representative acceptance with 1 GiB, 1,000 small files, and ten SSH sessions for one hour; separately verify 16 tabs and two-page selection. Larger-scale claims require corresponding evidence.
 
 - 안전한 양방향 파일 작업, drag-and-drop 대상 명확성, 제한된 전역 Transfer Manager를 완성합니다.
 - 네트워크 단절, 취소, 재실행, 디스크 부족에서 retry, resume, checkpoint, safe promotion, size/SHA-256 검증을 증명합니다.
-- 깊은 tree, 100GB 파일, 10만 파일 디렉터리를 lazy loading·virtualization과 측정 결과로 검증합니다.
-- 전송 무결성 게이트를 통과한 뒤 외부 편집기 연동, 동기 탐색, 디렉터리 비교를 추가합니다.
+- 구현된 외부 편집기의 내용 충돌 확인, 편집본 보존과 복구 동선을 검증합니다.
+- 3×3 Multi를 유지하며 전체 페이지 승인 대상 확인, 통합 SSH exec 제한, 취소 시 초안 보존, 유한 대기를 적용합니다. 대기 종료를 원격 작업 종료로 표현하지 않습니다.
+- 대표 인수는 1 GiB·작은 파일 1,000개·SSH 10세션 1시간으로 시작하고 16탭·2페이지 선택을 별도로 검증합니다. 더 큰 규모의 지원 주장은 해당 증거가 필요합니다.
 
-## Later — Operations workspace / 운영 작업 공간
+## Now — Existing tunnels and sharing acceptance / 기존 터널·공유 인수
 
-- Post-connect tunnel manager with explicit state, stop, conflict, disconnect, and restore behavior.
-- Streaming REPL output, typed command parameters, timeouts, cancellation, and bounded history.
-- Durable per-host Multi results, failed-target retry, preview/export, and production safeguards.
-- Local command palette and activity history without terminal transcript or secret capture.
+- The post-connect tunnel manager is implemented. Verify port conflicts, policy rejection, start/stop, non-loopback confirmation, and session-close cleanup on real servers.
+- Credential-free JSON definition sharing, import preview, duplicate decisions, and authentication aliases are implemented. Verify another PC imports definitions and binds its own authentication without executing imported commands.
+- Sharing omits stored credentials, private-key paths, and trust. User-authored command text and endpoint identifiers still require manual review.
 
-- 명시적 상태, 중지, 충돌, 연결 종료, 복원 동작을 가진 연결 후 Tunnel Manager
-- Streaming REPL 출력, typed parameter, timeout, 취소, 제한된 history
-- 영속 Host별 Multi 결과, 실패 대상 재시도, 미리보기·내보내기, 운영 보호 장치
-- 터미널 transcript나 secret을 수집하지 않는 로컬 Command Palette와 Activity History
+- 연결 후 Tunnel Manager는 구현됐습니다. 실서버에서 포트 충돌·정책 거부·시작/중지·비루프백 확인·세션 종료 정리를 검증합니다.
+- 비밀정보 없는 JSON 공유·가져오기 미리보기·중복 선택·인증 별칭은 구현됐습니다. 다른 PC에서 정의를 가져와 자신의 인증을 연결하고 명령을 자동 실행하지 않는지 검증합니다.
+- 저장된 자격증명·개인키 경로·신뢰는 공유에서 제외하지만 사용자 명령 텍스트와 대상 식별자는 직접 검토해야 합니다.
 
-## Final planned stage — Credential-free small-team packs / 자격증명 없는 소규모 팀 Pack
+## Later — Three small conveniences / 후속 편의 개선 세 가지
 
-This stage is planned, not implemented in the current Alpha. Definitions currently remain local to each user's installation.
+Promote these only after the reliability work and observed user need; do not rebuild existing features.
 
-이 단계는 계획 상태이며 현재 Alpha에는 구현되지 않았습니다. 현재 정의는 각 사용자의 로컬 설치에만 저장됩니다.
+신뢰성 개선과 실제 불편 확인 이후에만 진행하며 이미 있는 기능을 다시 만들지 않습니다.
 
-- Git-friendly host, group, tag, route, tunnel, and command-template export.
-- Import preview, conflict decisions, schema versioning, and per-user local credential binding.
-- Hard rejection of credential material in every shared package.
+- Files focus/restore without a docking framework.
+- Optional host-specific local/remote folder pairs without automatic synchronization.
+- A retained-edit list with deliberate local-copy cleanup, without automatic upload.
 
-- Git 친화적인 Host, 그룹, 태그, 경로, 터널, 명령 템플릿 내보내기
-- 가져오기 미리보기, 충돌 결정, schema version, 사용자별 로컬 자격증명 연결
-- 모든 공유 package에서 자격증명 자료를 강제로 거부
+- 도킹 프레임워크 없는 Files 집중 보기·복귀
+- 자동 동기화 없는 호스트별 로컬·원격 폴더 쌍
+- 자동 업로드 없는 보존 편집본 목록과 확인 후 로컬 복사본 정리
 
 ## Stage exit rule / 단계 종료 기준
 

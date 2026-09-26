@@ -19,7 +19,7 @@ namespace sutty.UI.Views
         private const int ColumnCount = 3;
         private const double CellSpacing = 8;
         private const double MinimumCellWidth = 190;
-        private const double MinimumCellHeight = 160;
+        private const double MinimumCellHeight = 210;
         private double _cellHeight = MinimumCellHeight;
         private IReadOnlyList<FrameworkElement> _views = [];
         private bool _watchSessionStates;
@@ -155,21 +155,23 @@ namespace sutty.UI.Views
         {
             var total = _selection.AllSlots.Count;
             var selected = _selection.GetSelectedSlots().Count;
+            var available = _selection.AllSlots.Count(slot => slot.CanBroadcast);
+            var offPage = _selection.GetSelectedSlots().Count(slot => !Slots.Contains(slot));
             CountText.Text = Helpers.Loc.T(
-                $"전체 {total}개 중 {selected}개 선택",
-                $"{selected} of {total} sessions selected");
+                $"전체 {total}개 · SSH {selected}개 선택 · 다른 페이지 {offPage}개",
+                $"{total} sessions · {selected} SSH selected · {offPage} on other pages");
             PageText.Text = Helpers.Loc.T(
                 $"{_selection.PageIndex + 1} / {_selection.PageCount} 페이지",
                 $"Page {_selection.PageIndex + 1} / {_selection.PageCount}");
             PreviousPageButton.IsEnabled = _selection.PageIndex > 0;
             NextPageButton.IsEnabled = _selection.PageIndex + 1 < _selection.PageCount;
-            SelectAllButton.IsEnabled = selected < total;
+            SelectAllButton.IsEnabled = selected < available;
             ClearSelectionButton.IsEnabled = selected > 0;
         }
 
         private void Slot_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            if (e.PropertyName == nameof(MultiSlotVm.IsSelected))
+            if (e.PropertyName is nameof(MultiSlotVm.IsSelected) or nameof(MultiSlotVm.CanBroadcast))
                 UpdateSummary();
         }
 
@@ -199,5 +201,8 @@ namespace sutty.UI.Views
 
         /// <summary>Checked broadcast targets from every page, never placeholder cards.</summary>
         public List<MultiSlotVm> GetTargetSlots() => _selection.GetSelectedSlots();
+
+        public int GetOffPageTargetCount(IReadOnlyCollection<MultiSlotVm> targets) =>
+            targets.Count(slot => !Slots.Contains(slot));
     }
 }

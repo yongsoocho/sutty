@@ -45,7 +45,7 @@
                 FontSize="11"
                 Foreground="{ThemeResource TextMuted}"
                 TextWrapping="Wrap"
-                Text="{x:Bind h:Loc.T('· 체크된 세션에만 명령이 전송됩니다', '· commands go only to checked sessions')}" />
+                Text="{x:Bind h:Loc.T('· 연결된 Sutty SSH만 선택 · 터미널 상태와 별도 실행', '· connected Sutty SSH only · execution is separate from terminal state')}" />
         </controls:WrapPanel>
 
         <controls:WrapPanel Grid.Row="1" Spacing="8">
@@ -54,7 +54,7 @@
                 Padding="10,6"
                 Click="SelectAll_Click"
                 Content="{x:Bind h:Loc.T('전체 선택', 'Select all')}"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('모든 페이지의 세션을 선택합니다', 'Select sessions on every page')}" />
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('모든 페이지의 연결된 Sutty SSH를 선택합니다', 'Select connected Sutty SSH sessions on every page')}" />
             <Button
                 x:Name="ClearSelectionButton"
                 Padding="10,6"
@@ -101,7 +101,7 @@
                     ItemsStretch="Fill"
                     MaximumRowsOrColumns="3"
                     MinColumnSpacing="8"
-                    MinItemHeight="160"
+                    MinItemHeight="210"
                     MinItemWidth="190"
                     MinRowSpacing="8" />
             </ItemsRepeater.Layout>
@@ -142,16 +142,23 @@
                                     FontSize="12"
                                     FontWeight="SemiBold"
                                     Foreground="{ThemeResource TextPrimary}"
+                                    IsEnabled="{x:Bind CanBroadcast, Mode=OneWay}"
+                                    ToolTipService.ToolTip="{x:Bind SelectionHelp, Mode=OneWay}"
                                     IsChecked="{x:Bind IsSelected, Mode=TwoWay}">
                                     <TextBlock Text="{x:Bind Title, Mode=OneWay}" TextWrapping="Wrap" MaxLines="2" />
                                 </CheckBox>
+                                <StackPanel Grid.Row="1" Spacing="2">
                                 <TextBlock
-                                    Grid.Row="1"
                                     FontFamily="Cascadia Mono, Consolas"
                                     FontSize="11"
                                     Foreground="{ThemeResource TextMuted}"
                                     Text="{x:Bind HostText, Mode=OneWay}"
-                                    TextTrimming="CharacterEllipsis" />
+                                    TextTrimming="CharacterEllipsis"
+                                    ToolTipService.ToolTip="{x:Bind HostText, Mode=OneWay}" />
+                                <TextBlock FontSize="10" Foreground="{ThemeResource TextMuted}"
+                                    Text="{x:Bind ExecutionModeText, Mode=OneWay}" TextWrapping="Wrap"
+                                    ToolTipService.ToolTip="{x:Bind SelectionHelp, Mode=OneWay}" />
+                                </StackPanel>
 
                                 <!--  마지막 브로드캐스트 결과: 긴 출력도 스크롤해서 읽는다.  -->
                                 <ScrollViewer

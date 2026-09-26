@@ -33,6 +33,7 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     private SftpTransferState _state = SftpTransferState.Queued;
     private string? _error;
     private bool _userCancellationRequested;
+    private sutty.Core.Sftp.SftpTransferPhase? _phase;
 
     public SftpTransferItemVm(
         string name,
@@ -97,16 +98,18 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     public bool CanResume => State == SftpTransferState.Paused;
     public bool IsActive => State is SftpTransferState.Queued or SftpTransferState.Running or
         SftpTransferState.Pausing or SftpTransferState.Cancelling;
-    public string ProgressText => $"{Progress:P0}";
+    public string ProgressText => State == SftpTransferState.Completed
+        ? "100%"
+        : TransferPhaseLabels.Bytes(Progress * 100);
 
     public string StateText => State switch
     {
         SftpTransferState.Queued => Loc.T("대기", "Queued"),
-        SftpTransferState.Running => Loc.T("전송 중", "Transferring"),
+        SftpTransferState.Running => TransferPhaseLabels.Active(_phase, Progress),
         SftpTransferState.Pausing => Loc.T("일시 정지 중", "Pausing"),
         SftpTransferState.Paused => Loc.T("일시 정지됨", "Paused"),
         SftpTransferState.Cancelling => Loc.T("취소 중", "Cancelling"),
-        SftpTransferState.Completed => Loc.T("완료", "Completed"),
+        SftpTransferState.Completed => TransferPhaseLabels.Complete,
         SftpTransferState.Cancelled => Loc.T("취소됨", "Cancelled"),
         SftpTransferState.Failed => Loc.T("실패", "Failed"),
         _ => "",
@@ -122,6 +125,9 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
                 SftpTransferState.Cancelling or SftpTransferState.Pausing or SftpTransferState.Paused)
                 return $"{DirectionText} · {StateText}";
             if (State != SftpTransferState.Running || _watch.Elapsed.TotalSeconds <= 0)
+                return $"{DirectionText} · {StateText}";
+            if (_phase is sutty.Core.Sftp.SftpTransferPhase.Verifying or
+                sutty.Core.Sftp.SftpTransferPhase.Promoting or sutty.Core.Sftp.SftpTransferPhase.Completed || Progress >= 1)
                 return $"{DirectionText} · {StateText}";
 
             var transferred = TotalBytes * Progress;
@@ -163,6 +169,15 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
         State = SftpTransferState.Cancelled;
     }
 
+    public void Report(sutty.Core.Sftp.SftpTransferProgress progress)
+    {
+        if (State != SftpTransferState.Running) return;
+        _phase = progress.Phase;
+        Report(progress.Fraction);
+        OnPropertyChanged(nameof(StateText));
+        OnPropertyChanged(nameof(DetailText));
+    }
+
     public void MarkPaused()
     {
         if (!PauseRequested)
@@ -199,6 +214,7 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
 
     public void RefreshLanguage()
     {
+        OnPropertyChanged(nameof(ProgressText));
         OnPropertyChanged(nameof(DirectionText));
         OnPropertyChanged(nameof(StateText));
         OnPropertyChanged(nameof(DetailText));

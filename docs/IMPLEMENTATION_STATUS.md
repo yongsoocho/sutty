@@ -2,10 +2,41 @@
 
 This document maps the current repository to Sutty's local-first Windows SSH/SFTP product scope. It is intentionally evidence-based: **Implemented** means code and focused verification exist; it does not imply a GA release.
 
+## Reliability review — 2026-09-26
+
+Source baseline: `90a6e04e6a66898850f0a53b16bd3d43257d963d` plus the current working-tree
+changes. This is Alpha 4 development work, not an exact published or signed candidate.
+
+- Connection headers distinguish Sutty SSH `user@host:port`, local PC shells, and external
+  terminal-only programs. The selected Files browser and the all-session transfer queue have
+  separate scope labels. External programs show saved-host/import guidance instead of a
+  remote-looking local browser. Existing stale-response and pinned-target protection remains.
+- Multi retains the 3×3 layout and 16-tab/two-page model, but commands select only connected
+  Sutty SSH. Every run previews all endpoints, off-page/type counts and the exact command,
+  followed by extra PROD confirmation. Canceled/invalid requests retain drafts; the approved
+  set uses independent SSH exec without inheriting the visible PTY's directory/environment/sudo.
+  Waits are bounded to 60 seconds, including synchronous channel startup. Cancellation requests,
+  unknown outcomes, missing exit codes and truncated output remain explicit; no automatic replay.
+- Remote edits compare bounded remote SHA-256 content before confirmation and queued execution,
+  detecting same-size/time changes without a server shell utility. Read errors stop automatic
+  upload. Retained copies, immutable upload snapshots and failed-reload preservation remain;
+  recovery notes identify the original server and sensitive local files. A write after comparison
+  is still possible without server-side coordination.
+- Transfers separate data percentage, verification, promotion and completion. Disabled controls
+  explain original-host reconnection, Edits review and Multi recovery. Late progress cannot
+  replace terminal queue states. Transfer Center disposal drains an active refresh before return.
+- Debug/Release default to ReadyToRun/trimming disabled, matching existing CI and package
+  workflows. ROADMAP now treats sharing/editing/tunnels as implemented features awaiting
+  acceptance. The [16 workflow scenarios](RELEASE_ACCEPTANCE.md#daily-workflow-review--일상-작업-점검)
+  remain separate from focused automated tests and existing release gates.
+
+기존 구조를 유지한 대상·명령 안전성·편집 복구 개선입니다. 아래 자동 검증과 실제 후보 인수는
+구분하며, 실서버·설치·다른 PC·고배율·수동 입력 결과를 통과로 대신 기록하지 않습니다.
+
 ## Product boundary
 
 - Windows 11 desktop application, local-first, with no account or cloud control plane.
-- The selected local or SSH terminal anchors the workspace. Fresh startup and closing the last tab open PowerShell; the `+` menu offers both PowerShell and CMD. Global Home, Hosts, Transfers, and Commands open on the right in wide windows or below the terminal under 1100 logical pixels. Settings fills the workspace and covers the shell while sessions stay alive. Each SSH tab's Files, Commands, and Tunnels also move below the terminal in narrow layouts. Multi-session tools are an advanced entry under Commands.
+- The selected local or SSH terminal anchors the workspace. Fresh startup and manually closing the last tab open PowerShell; the `+` menu offers both PowerShell and CMD. Global Home, Hosts, Transfers, and Commands open on the right in wide windows or below the terminal under 1100 logical pixels. Settings fills the workspace and covers the shell while sessions stay alive. Each SSH tab's Files, Commands, and Tunnels also move below the terminal in narrow layouts. Multi Command is a separate destination with a 3×3 grid and the shared command library.
 - The current Alpha is centered on per-user local use. Small teams can exchange a reviewed local JSON file containing selected host/route/tunnel/command definitions, then bind their own keys/accounts by authentication alias. No shared credential store, account service, or synchronization backend is added.
 - English and Korean first-party UI.
 - Fresh production storage contains no sample hosts, commands, credentials, or connection history.
@@ -15,18 +46,19 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 | Area | Current evidence |
 | --- | --- |
 | Runtime and architecture | .NET 10; x64 and ARM64 solution platforms; UI, Core, Setting, Command, and the pinned Windows SSH Agent compatibility project have explicit responsibilities. |
-| Application shell | Global and selected-session navigation use explicit view-independent state. Cached Home/Hosts/Transfers/Commands pages open on the right or below the terminal under 1100 logical pixels; full-page Settings covers the shell without closing sessions. SSH tools move below the terminal when narrow. Cards, toolbars, local/remote file panes, and settings controls reflow to available width. Fresh startup and last-tab closure open PowerShell. Seven fixed Alt accelerators are handled explicitly; terminal WebView input forwards application shortcuts instead of sending them to the PTY. Manual GUI acceptance remains unverified. |
-| Real sessions | Production session creation uses the SSH.NET-backed session only. SSH, Terminal, and SFTP states are independent. Unexpected primary-transport errors retire only the current client generation, clear live handshake data, run best-effort owned-resource cleanup, and publish `Failed` without racing explicit disconnect. Failed or disconnected sessions offer an explicit manual reconnect that creates a fresh shell. Saved Hosts are reloaded through the current profile and optional vault; one-off sessions return a credential-free draft to Quick Connect. Commands, terminal input, transient secrets, transport objects, and trust-once decisions are never replayed. |
+| Application shell | Global and selected-session navigation use explicit view-independent state. Cached Home/Hosts/Transfers/Commands pages open on the right or below the terminal under 1100 logical pixels; full-page Settings covers the shell without closing sessions. SSH tools move below the terminal when narrow. Cards, toolbars, local/remote file panes, and settings controls reflow to available width. Fresh startup and manual last-tab closure open PowerShell. Seven fixed Alt accelerators are handled explicitly; terminal WebView input forwards application shortcuts instead of sending them to the PTY. Manual GUI acceptance remains unverified. |
+| Shell tab lifetime | Actual SSH PTY/transport or local/external process termination closes only its owning tab by default. Settings can retain ended tabs without restarting them. Initial failures remain visible; pending transfers/edits retain recovery confirmation. Automatic last-tab closure returns to Home. |
+| Real sessions | Production session creation uses the SSH.NET-backed session only. SSH, Terminal, and SFTP states are independent. Unexpected primary-transport errors retire only the current client generation, clear live handshake data, run best-effort owned-resource cleanup, and publish `Failed` without racing explicit disconnect. Retained failed or disconnected tabs offer an explicit manual reconnect that creates a fresh shell. Saved Hosts are reloaded through the current profile and optional vault; one-off sessions return a credential-free draft to Quick Connect. Commands, terminal input, transient secrets, transport objects, and trust-once decisions are never replayed. |
 | SSH authentication | Password, private keys including PPK v2/v3, Windows SSH Agent, and repeated multi-prompt keyboard-interactive OTP/MFA flows are wired through SSH.NET and the secure UI prompt. |
 | Host identity | Unknown keys fail closed, one-time and persisted trust are explicit, and changed keys are blocked. |
 | Connection information | The primary SSH handshake is captured as an in-memory, credential-free snapshot and exposed in an accessible read-only/copy flyout: server/client identification, KEX, verified host-key algorithm and SHA-256 fingerprint, plus both cipher/MAC/compression directions. Connection alone issues no banner or home-directory discovery command. |
 | Interactive terminal | Persistent SSH PTY and local PowerShell/CMD ConPTY use package-local xterm.js 6.0.0 in a hardened WebView2. Both local shells are available from `+` / `Ctrl+T`. ANSI/VT color/style, alternate screen, mouse/input modes, IME/Unicode cells, search, clipboard shortcuts, measured server-side resize, and bounded acknowledged output delivery are integrated. Manual CMD input/resize acceptance remains unverified. |
 | Latest output copy | One clipboard icon beside the CONPTY/PTY dimensions requests the latest rendered command output, including errors. Runtime PowerShell/CMD prompt markers do not modify profile files; custom or unmarked SSH shell boundaries use best-effort detection. The result reflects PTY expansion/processing of tabs, control sequences, and newlines, not a byte-for-byte stdout/stderr capture. Manual clipboard acceptance remains unverified. |
 | Theme catalog | [36 shared app/terminal palettes](THEMES.md) include VS Code defaults, Dracula, Monokai, GitHub, Nord, Tokyo Night, Catppuccin, and more. Gradient accents remain; button text selects black/white for contrast. Named app-follow mode applies ANSI colors even across dark-to-dark switches. Existing saved ids remain compatible; palette brushes, status colors, tab borders, and tab buttons refresh with theme changes. |
-| Local connection launcher | Home accepts validated one-line direct connection commands such as `ssh worker1` and `multipass connect master` and opens their installed executable in a new local ConPTY terminal without a shell. OpenSSH therefore reads the user's existing `.ssh/config`, `IdentityFile`, SSH Agent, and `PATH` configuration. Favorites (100 maximum) and launch history (250 maximum) are local-only; they retain canonical commands and finite outcomes, never resolved executable paths, terminal output, passwords, tokens, or passphrases. Actual SSH Agent/key/config, Multipass, and UI acceptance remain unverified. |
+| Local connection launcher | A separate Home card replaces its recent-host card and accepts validated one-line direct connection commands such as `ssh worker1` and `multipass connect master` and opens their installed executable in a new local ConPTY terminal without a shell. OpenSSH therefore reads the user's existing `.ssh/config`, `IdentityFile`, SSH Agent, and `PATH` configuration. Saves join Hosts favorites (10,000 shared profiles), with one-time transactional migration from the archived old library. Empty/filled host stars add/remove favorites. External profiles are excluded from sharing and automatic restore; explicit clicks or --host rebuild their launch plan. Launch history (250 maximum) remains local-only; they retain canonical commands and finite outcomes, never resolved executable paths, terminal output, passwords, tokens, or passphrases. Actual SSH Agent/key/config, Multipass, and UI acceptance remain unverified. |
 | Structured commands | Standard output, standard error, exit status/signal, timing, and cancellation are preserved for the user-visible Commands workspace and Multi execution. The existing persisted `Repl` setting value remains compatible. |
 | SFTP baseline | Session-bound dual-pane Files supports absolute paths, back/forward, parent navigation, refresh, hidden toggles, folder-first name/size/modified sorting, multi-selection, and locally persisted host-specific remote favorites. Pane-to-pane file/folder drops, Explorer uploads, and transfer buttons use the same durable collision/staging/checkpoint/verification engine; all drops copy and pin the destination before dialogs. Existing remote search, rename, safe move/delete, permissions, and folder creation remain. The live Transfer Center enables controls only for an exact eligible executor; cross-process queue locks and execution leases remain intact. |
-| Remote editing | Regular text files up to 8 MiB open in a configured external executable. Save detection defaults to manual upload; auto-upload is opt-in per file and stops on failure or conflict. Host/path and upload snapshots are pinned, size/time changes trigger review, and all transfers use the existing durable safe engine. Failed edits require review rather than generic queue retry. Reload commits a fresh working copy only after verification; existing copies survive failed reload, close, or upload errors in the recovery folder. Unsaved editor buffers cannot be inspected; copies may contain sensitive content and are not automatically deleted. Metadata comparison cannot rule out all concurrent edits. |
+| Remote editing | Regular text files up to 8 MiB open in a configured external executable. Save detection defaults to manual upload; auto-upload is opt-in per file and stops on failure or conflict. Host/path and upload snapshots are pinned, size/time or remote SHA-256 content changes trigger review, and all transfers use the existing durable safe engine. Failed edits require review rather than generic queue retry. Reload commits a fresh working copy only after verification; existing copies survive failed reload, close, or upload errors in the recovery folder. Unsaved editor buffers cannot be inspected; copies may contain sensitive content and are not automatically deleted. Bounded content comparison detects same-size/time edits; writes after the preflight comparison still require server-side coordination. |
 | Terminal/Files linkage | Files previews and copies a safely quoted POSIX directory command without a newline; it never injects it into a running TUI or executes it. Terminal → Files uses an explicit absolute path. Automatic shell-output parsing/current-directory tracking is not implemented. |
 | Multi SFTP | Explicitly checked SFTP sessions support 1→N upload and N→1 download. A preflight dialog reviews the targets, source, destination, and conflict policy; server results are isolated, name collisions use deterministic server folders, successful targets remain complete, and retry addresses only failed/incomplete targets with the original policy. New, retry, and restored batches hold a target lease for every executing server until that batch ends; batch-wide global Pause/Cancel remains unavailable. |
 | Saved Hosts | Explicit SQLite profiles support create/update, credential-free duplicate, delete, search, tags, groups, environments, favorites, and authentication aliases. Existing format imports now preview per-item additions, changes, duplicates, and errors with Add/Skip/Copy/Update choices; local credentials are not copied to a different endpoint. |
@@ -66,6 +98,62 @@ This document maps the current repository to Sutty's local-first Windows SSH/SFT
 - A credential-free atomic transfer queue survives process restart, converts abandoned running work to interrupted state, preserves completed targets, and exposes explicit restore/resume actions in Files and Multi. Focused tests also cover competing store instances and queue writers, a 32-contender single-winner claim, stale/idempotent lease disposal, completed-target rejection, eligible cancelled-target retry, and cross-process target exclusion.
 - A credentialed live-server harness now covers isolated connection-information/reconnect checks, smoke, disconnect/resume fault injection, configurable 100 GB/100,000-file scale, and 16-session soak modes. These modes have not been run without an approved server, and their candidate writer cannot promote a successful automated subset beyond `Blocked` until the full gate coverage is recorded.
 - A manual signed-MSIX workflow validates the production PFX, signs and verifies separate x64 and ARM64 outputs, and emits architecture-specific App Installer descriptors that support controlled update and rollback. A production certificate and deployment endpoint are still required.
+
+## Local verification — 2026-09-27
+
+The Home/favorites/disconnect revision passed x64 Debug, x64 Release, and ARM64 Debug UI builds
+with zero warnings/errors (`--no-restore`, `WindowsPackageType=None`, isolated
+`artifacts/home-disconnect-*` outputs). Command, Setting, SFTP, Terminal, Core.Security, and
+credential-free live-evidence self-tests passed. Native terminal tests exercised PowerShell/CMD
+I/O, exit and cleanup. New checks cover unified favorite migration, unavailable executables,
+ID collisions, deduplication, secret filtering, default/legacy/disabled auto-close settings,
+SSH PTY logout with live transport, initial failures, independent tab ownership, duplicate
+notifications, and retaining ended shells without automatic restart.
+
+All nine PowerShell fixture suites and product-scope/evidence/history guards passed. Node output
+checks passed 16 tests; two optional native replay fixtures were skipped because the capture
+directory was not configured. Code review corrected favorite-ID collision and storage-error
+boundaries; automatic tab closes queue around recovery prompts. No new live evidence manifest,
+signed package, or release was produced. GUI layout/input, actual SSH logout/server disconnect,
+editor/drop, installation and the sixteen workflow acceptance scenarios remain unverified.
+
+Home 한 줄 연결 분리·호스트 즐겨찾기 통합·기본 자동 탭 닫기를 구현하고 세 구성 빌드와
+관련 자동 검사를 통과했습니다. 종료 탭을 남겨도 다시 선택만으로 셸을 재실행하지 않습니다.
+화면 조작·실서버·설치 인수는 수행하지 않았으며 기존 미검증 항목을 통과로 바꾸지 않았습니다.
+
+## Local verification — 2026-09-26
+
+Environment: Windows `10.0.26200.0`, .NET SDK `10.0.400`; baseline `90a6e04e6a66` plus
+this working tree. Locked x64 Release and ARM64 Debug restore passed with the aligned default
+ReadyToRun/trimming settings. Final x64 Debug, x64 Release, and ARM64 Debug compilation use
+separate `artifacts/review-v2-*` directories to avoid touching the running trial app.
+
+Command, Setting, SFTP, Terminal, and Core.Security self-tests passed. New regressions cover
+draft revision retention, all-page selection, ignored cancellation, synchronous exec startup,
+blocking transport-cancellation callbacks, unknown exit status, same-size/time remote edits,
+bounded reads, failed reload preservation, verification/promotion order, and late progress after
+success/failure. SFTP testing exposed a refresh-timer disposal race; draining the active refresh
+fixed the locked-file cleanup and the complete SFTP suite passed on rerun. Sixteen JavaScript
+output-copy tests and the credential-free live-evidence writer self-test passed. All nine
+PowerShell policy/fixture suites, product-scope, evidence/history and whitespace checks passed.
+No live result manifest was added.
+
+The first isolated Debug launch exited with `XamlParseException` (`0x802B000A`) before a
+targetable window. A standard Release launch remained running, but **Windows Computer Use was
+stopped by the user's physical Escape input before screenshot/input acceptance**. No further
+UI automation was performed; the final rebuilt outputs were not relaunched. These results are
+compilation and automated-test evidence, not a resolved startup/visual acceptance claim. One
+intermediate build also hit files locked by that trial app; final builds use separate directories.
+
+Live-server environment variables were not configured. SSH interoperability, real editor/drop
+behavior, 100/150/200% DPI and IME, cross-PC sharing, scale/soak, and install/update/rollback remain
+unverified. No ZIP/MSIX was signed, promoted or published. The sixteen workflow acceptance
+scenarios remain Blocked pending the exact candidate and required environments.
+
+명령·설정·SFTP·터미널·보안과 출력 복사·정책 자동 검사를 통과했습니다. 초기 Debug 시작에서
+XAML 오류가 기록됐으며 Release 실행 후 사용자의 Escape로 화면 자동화를 중단했습니다.
+최종 산출물의 시작·화면·입력 인수는 미검증입니다. 실서버 정보가 없어 서버 검증도 수행하지
+않았고 서명·설치·공개 배포 완료로 표시하지 않습니다.
 
 ## Local verification — 2026-09-22
 

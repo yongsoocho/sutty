@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using sutty.Core.Sftp;
 using sutty.Setting;
 using sutty.UI.ViewModels;
+using sutty.UI.Services;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -32,11 +33,13 @@ namespace sutty.UI.Views
         }
 
         private bool _isBroadcastRunning;
+        private readonly BroadcastCommandDraft _broadcastDraft = new();
         public ObservableCollection<MultiSftpTargetVm> SftpTargets { get; } = [];
         public IntPtr OwnerWindowHandle { get; set; }
 
         /// <summary>체크된 모든 세션에서 이 명령을 실행해 달라는 신호.</summary>
-        public event EventHandler<string>? BroadcastRequested;
+        public event EventHandler<BroadcastCommandSubmission>? BroadcastRequested;
+        public event EventHandler? BroadcastStopWaitingRequested;
         public event EventHandler<MultiSftpUploadRequest>? SftpUploadRequested;
         public event EventHandler<MultiSftpDownloadRequest>? SftpDownloadRequested;
         public event EventHandler? SftpRetryFailedRequested;
@@ -61,6 +64,8 @@ namespace sutty.UI.Views
             CommandLibrary.IsEnabled = !isRunning;
             BroadcastProgress.IsActive = isRunning;
             BroadcastProgress.Visibility = isRunning ? Visibility.Visible : Visibility.Collapsed;
+            StopBroadcastButton.Visibility = isRunning ? Visibility.Visible : Visibility.Collapsed;
+            StopBroadcastButton.IsEnabled = false;
             BroadcastStatusText.Text = status ?? (isRunning
                 ? Helpers.Loc.T("세션별로 실행 중…", "Running on each session…")
                 : "");
@@ -73,6 +78,22 @@ namespace sutty.UI.Views
         {
             BroadcastStatusText.Text = status;
             BroadcastStatusPanel.Visibility = Visibility.Visible;
+        }
+
+        public void ApproveBroadcast(BroadcastCommandSubmission submission)
+        {
+            if (_broadcastDraft.TryApprove(submission))
+                BroadcastBox.Text = "";
+            StopBroadcastButton.IsEnabled = true;
+        }
+
+        private void BroadcastBox_TextChanged(object sender, TextChangedEventArgs e)
+            => _broadcastDraft.Update(BroadcastBox.Text);
+
+        private void StopBroadcast_Click(object sender, RoutedEventArgs e)
+        {
+            StopBroadcastButton.IsEnabled = false;
+            BroadcastStopWaitingRequested?.Invoke(this, EventArgs.Empty);
         }
 
         public void SetSftpRunning(bool isRunning, string? status = null)
@@ -156,17 +177,17 @@ namespace sutty.UI.Views
             if (_isBroadcastRunning)
                 return;
 
-            var command = NormalizeNewlines(BroadcastBox.Text).Trim();
-            if (command.Length == 0) return;
-
-            BroadcastBox.Text = "";
-            RequestBroadcast(command);
+            _broadcastDraft.Update(BroadcastBox.Text);
+            var submission = _broadcastDraft.Submit();
+            if (submission.Command.Length == 0) return;
+            BroadcastRequested?.Invoke(this, submission);
         }
 
         private void RequestBroadcast(string command)
         {
             if (!_isBroadcastRunning && !string.IsNullOrWhiteSpace(command))
-                BroadcastRequested?.Invoke(this, command);
+                BroadcastRequested?.Invoke(this, new BroadcastCommandSubmission(
+                    BroadcastCommandDraft.Normalize(command)));
         }
 
         private async void UploadFile_Click(object sender, RoutedEventArgs e)

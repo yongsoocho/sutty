@@ -27,6 +27,14 @@ public enum TransferCenterControlStatus
     Failed,
 }
 
+public enum TransferCenterUnavailableReason
+{
+    None,
+    EditReviewRequired,
+    NoEligibleTargets,
+    OriginalConnectionRequired,
+}
+
 public sealed record TransferCenterExecutorResult(bool Accepted, string? Message = null)
 {
     public static TransferCenterExecutorResult Success(string? message = null) =>
@@ -158,6 +166,19 @@ public sealed class TransferCenterService : IDisposable
                 return true;
         }
         return false;
+    }
+
+    /// <summary>Explains the same fail-closed capability decision without opening a connection.</summary>
+    public TransferCenterUnavailableReason GetUnavailableReason(SftpQueuedJob job, TransferCenterAction action)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        if (job.RequiresEditReview && action != TransferCenterAction.Cancel)
+            return TransferCenterUnavailableReason.EditReviewRequired;
+        if (!EligibleTargets(job, action).Any())
+            return TransferCenterUnavailableReason.NoEligibleTargets;
+        return CanExecute(job, action)
+            ? TransferCenterUnavailableReason.None
+            : TransferCenterUnavailableReason.OriginalConnectionRequired;
     }
 
     public async Task<TransferCenterControlResult> ExecuteAsync(
@@ -317,6 +338,10 @@ public sealed class TransferCenterService : IDisposable
         _queue.Changed -= Queue_Changed;
         _watcher?.Dispose();
         _refreshTimer.Dispose();
+        // Timer.Dispose does not wait for an already-running callback. Drain its queue
+        // read before callers remove/reset the backing storage. Do not hold _gate here:
+        // RefreshNow acquires it while holding _refreshGate to publish its snapshot.
+        lock (_refreshGate) { }
     }
 
     private static IEnumerable<SftpQueuedTarget> EligibleTargets(

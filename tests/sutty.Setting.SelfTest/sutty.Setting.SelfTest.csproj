@@ -21,6 +21,8 @@
              Link="ShellState\NavigationService.cs" />
     <Compile Include="..\..\src\sutty.UI\Services\MultiSessionSelectionState.cs"
              Link="ShellState\MultiSessionSelectionState.cs" />
+    <Compile Include="..\..\src\sutty.UI\Services\BroadcastCommandDraft.cs"
+             Link="ShellState\BroadcastCommandDraft.cs" />
     <Compile Include="..\..\src\sutty.UI\Services\ConnectionPersistencePolicy.cs"
              Link="ShellState\ConnectionPersistencePolicy.cs" />
     <Compile Include="..\..\src\sutty.UI\Services\LocalFileBrowserService.cs"
