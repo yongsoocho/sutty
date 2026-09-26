@@ -16,7 +16,10 @@ public sealed class AppSettings
     public string TerminalTheme { get; set; } = "FollowApplication";
 
     /// <summary>xterm cursor shape: underline, bar, or block.</summary>
-    public string TerminalCursorStyle { get; set; } = "underline";
+    public string TerminalCursorStyle { get; set; } = "bar";
+
+    /// <summary>One-time cursor-default migration; later explicit underline selections are preserved.</summary>
+    public int TerminalCursorPreferenceVersion { get; set; } = 1;
 
     public bool TerminalCursorBlink { get; set; } = true;
 

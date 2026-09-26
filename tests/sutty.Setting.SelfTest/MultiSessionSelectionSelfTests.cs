@@ -7,7 +7,7 @@ internal static class MultiSessionSelectionSelfTests
         PagesRetainEveryTarget();
         RefreshRetainsRunningSlotsWithoutRetargeting();
         EmptyAndDuplicateSessionsAreSafe();
-        HiddenPaginationLimitsMixedSelectionToVisibleSsh();
+        HiddenPaginationLimitsMixedSelectionToVisibleRunningTargets();
         SelectionTracksScopeAndConnectionChanges();
         FixedGridKeepsThreeColumnsAtFractionalWidths();
         DraftIsClearedOnlyAfterExactApproval();
@@ -112,35 +112,36 @@ internal static class MultiSessionSelectionSelfTests
             "a duplicate session reference cannot receive the same broadcast twice");
     }
 
-    private static void HiddenPaginationLimitsMixedSelectionToVisibleSsh()
+    private static void HiddenPaginationLimitsMixedSelectionToVisibleRunningTargets()
     {
         var state = CreateState();
         var sessions = Enumerable.Range(0, 16).Select(_ => new object()).ToArray();
         state.SetSessions(sessions);
-        // Simulate a mix of integrated SSH, external/local tabs, and disconnected SSH.
+        // Running integrated SSH and local/external terminals are eligible. These
+        // three entries model disconnected SSH and closed/starting local terminals.
         state.AllSlots[1].IsEligible = false;
         state.AllSlots[4].IsEligible = false;
         state.AllSlots[8].IsEligible = false;
         state.SetAllSelected(true);
         state.MovePage(1);
         Assert(state.GetSelectedSlots().Count == 13,
-            "future paging mode can still select eligible SSH across every page");
+            "future paging mode can still select available targets across every page");
 
         state.SetPaginationEnabled(false);
         Assert(state.PageIndex == 0 && state.PageCount == 2 && state.HiddenSessionCount == 7,
             "hiding pagination resets the visible page without discarding future paging state");
         Assert(state.EligibleCount == 6 && state.GetSelectedSlots().Count == 6 &&
                state.AllSlots.Skip(9).All(slot => !slot.IsSelected),
-            "hiding pagination clears old off-page selections and counts only visible eligible SSH");
+            "hiding pagination clears old off-page selections and counts only visible available targets");
         state.SetAllSelected(false);
         state.SetAllSelected(true);
         Assert(state.GetSelectedSlots().Select(slot => slot.Session).SequenceEqual(
                 new[] { sessions[0], sessions[2], sessions[3], sessions[5], sessions[6], sessions[7] }),
-            "Select all with mixed tabs selects every eligible visible SSH and no external/local or hidden tab");
+            "Select all with mixed tabs selects every running visible target and no stopped or hidden tab");
         state.SetSelected(state.AllSlots[1], true);
         state.SetSelected(state.AllSlots[12], true);
         Assert(!state.AllSlots[1].IsSelected && !state.AllSlots[12].IsSelected,
-            "individual selection cannot bypass type eligibility or select an invisible target");
+            "individual selection cannot bypass connection eligibility or select an invisible target");
         state.AllSlots[12].IsSelected = true;
         Assert(state.GetSelectedSlots().Count == 6,
             "the execution target snapshot excludes a stale hidden checkbox even before cleanup");

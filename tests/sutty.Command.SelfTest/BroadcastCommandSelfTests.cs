@@ -1,9 +1,12 @@
 using sutty.Core.Commands;
+using sutty.Core.Sessions;
+using sutty.Core.Terminal;
 
 internal static class BroadcastCommandSelfTests
 {
     public static async Task RunAsync()
     {
+        await MixedTargetsRequireFreshTerminalApprovalAsync();
         var zero = await RunResultAsync(Result(0));
         Assert(zero.Outcome == BroadcastCommandOutcome.Completed, "exit zero completes");
         var nonzero = await RunResultAsync(Result(7));
@@ -79,6 +82,48 @@ internal static class BroadcastCommandSelfTests
                outputs[1].Outcome == BroadcastCommandOutcome.ResponseUnknown,
             "one host failure does not hide other host results");
         Console.WriteLine("Broadcast command safety self-tests passed.");
+    }
+
+    private static async Task MixedTargetsRequireFreshTerminalApprovalAsync()
+    {
+        Assert(BroadcastCommandExecution.CanSelectTarget(SessionState.Connected, null) &&
+               BroadcastCommandExecution.CanSelectTarget(null, TerminalState.Open),
+            "connected SSH and running local/external terminals are both selectable");
+        Assert(!BroadcastCommandExecution.CanSelectTarget(null, null) &&
+               !BroadcastCommandExecution.CanSelectTarget(SessionState.Connecting, null) &&
+               !BroadcastCommandExecution.CanSelectTarget(null, TerminalState.Opening) &&
+               !BroadcastCommandExecution.CanSelectTarget(null, TerminalState.Closed),
+            "placeholders, connecting SSH and stopped/starting terminals cannot be selected");
+
+        var inputCount = 0;
+        Task<CommandExecutionResult> SendInput(CancellationToken _) {
+            Interlocked.Increment(ref inputCount);
+            return Task.FromResult(Result(null));
+        }
+        var denied = await BroadcastCommandExecution.RunApprovedAsync(SendInput,
+            TimeSpan.FromSeconds(2), BroadcastCommandMode.TerminalInput, terminalInputApproved: false);
+        Assert(denied.Outcome == BroadcastCommandOutcome.NotStarted && inputCount == 0,
+            "selecting a running terminal alone must not transmit even one input byte");
+
+        var mixed = await Task.WhenAll(
+            BroadcastCommandExecution.RunApprovedAsync(_ => Task.FromResult(Result(0)),
+                TimeSpan.FromSeconds(2), BroadcastCommandMode.SshExec, terminalInputApproved: true),
+            BroadcastCommandExecution.RunApprovedAsync(SendInput,
+                TimeSpan.FromSeconds(2), BroadcastCommandMode.TerminalInput, terminalInputApproved: true));
+        Assert(inputCount == 1 && mixed[0].Outcome == BroadcastCommandOutcome.Completed &&
+               mixed[1].Outcome == BroadcastCommandOutcome.CompletedWithoutExitCode,
+            "an approved mixed batch dispatches terminal input once and retains its unknown exit code");
+
+        var nextAttempt = await BroadcastCommandExecution.RunApprovedAsync(SendInput,
+            TimeSpan.FromSeconds(2), BroadcastCommandMode.TerminalInput, terminalInputApproved: false);
+        Assert(inputCount == 1 && nextAttempt.Outcome == BroadcastCommandOutcome.NotStarted,
+            "a previous batch approval cannot authorize the next terminal-input attempt");
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var stopped = await BroadcastCommandExecution.RunApprovedAsync(SendInput,
+            TimeSpan.FromSeconds(2), BroadcastCommandMode.TerminalInput, true, cancelled.Token);
+        Assert(inputCount == 1 && stopped.Outcome == BroadcastCommandOutcome.NotStarted,
+            "approved terminal input cancelled before dispatch is never sent later");
     }
 
     private static async Task SynchronousDispatchCannotBlockCallerOrOtherTargetsAsync()

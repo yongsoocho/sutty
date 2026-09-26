@@ -181,6 +181,10 @@ jobs:
         if: matrix.configuration == 'Debug'
         run: dotnet run --project .\tests\sutty.Terminal.SelfTest\sutty.Terminal.SelfTest.csproj --configuration Debug --no-restore
 
+      - name: Run packaged terminal output capture regressions
+        if: matrix.configuration == 'Debug'
+        run: node --test tests/terminal-output/terminal-output.test.cjs
+
       - name: Run settings self-tests
         if: matrix.configuration == 'Debug'
         run: dotnet run --project .\tests\sutty.Setting.SelfTest\sutty.Setting.SelfTest.csproj --configuration Debug --no-restore

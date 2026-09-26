@@ -98,6 +98,22 @@ internal static class LauncherStoreSelfTests
             assert(CommandLauncherStore.GetRecentHistory(CommandLauncherStore.MaximumHistoryEntries).Count == CommandLauncherStore.MaximumHistoryEntries,
                 "launch history remains bounded");
 
+            // Model an earlier install with a full 250-row history. All entries
+            // share a timestamp so the ID tie-breaker is exercised as well.
+            using (var connection = Db.Open())
+            using (var seed = connection.CreateCommand())
+            {
+                seed.CommandText = """
+                    DELETE FROM command_launcher_history;
+                    WITH RECURSIVE entries(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM entries WHERE n < 250)
+                    INSERT INTO command_launcher_history
+                        (id, display_name, command_text, launch_kind, launched_at_utc, outcome)
+                    SELECT n, 'Legacy launch ' || n, 'ssh legacy-host', 'OpenSsh',
+                           '2025-01-01T00:00:00Z', 'Exited' FROM entries;
+                    """;
+                seed.ExecuteNonQuery();
+            }
+
             HostProfileStore.Delete(missing.Id);
             var legacySsh = HostProfileStore.GetAll().Single(item => item.LaunchCommand == "ssh legacy-host");
             HostProfileStore.SetFavorite(legacySsh.Id, false);
@@ -113,6 +129,19 @@ internal static class LauncherStoreSelfTests
             }
             Db.PathOverride = testDatabase;
             HostProfileStore.EnsureInitialized();
+            var retainedHistory = CommandLauncherStore.GetRecentHistory(int.MaxValue);
+            assert(retainedHistory.Count == 15 && retainedHistory.Select(item => item.Id)
+                    .SequenceEqual(Enumerable.Range(236, 15).Reverse().Select(id => (long)id)),
+                "opening earlier history retains exactly the newest 15 entries without a new launch");
+            using (var connection = Db.Open())
+            using (var inspect = connection.CreateCommand())
+            {
+                inspect.CommandText = "SELECT COUNT(*) FROM command_launcher_history";
+                assert(Convert.ToInt32(inspect.ExecuteScalar()) == 15,
+                    "history retention removes old rows from storage, not only from the Home view");
+            }
+            assert(HostProfileStore.GetById(savedVm.Id)?.IsFavorite == true,
+                "history retention leaves shared host favorites intact");
             assert(HostProfileStore.GetById(missing.Id) is null && !HostProfileStore.GetById(legacySsh.Id)!.IsFavorite,
                 "migration marker prevents deleted or unpinned favorites from reappearing after reopen");
             assert(changes > 0, "shared host favorite observers receive save, pin and delete events");

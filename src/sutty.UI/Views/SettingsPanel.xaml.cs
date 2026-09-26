@@ -202,8 +202,8 @@ namespace sutty.UI.Views
                 ?? TerminalThemeCombo.Items[0];
 
             CursorStyleCombo.Items.Clear();
-            AddCursorChoice("underline", Loc.T("밑줄 — 글자를 가리지 않음", "Underline — does not cover text"));
             AddCursorChoice("bar", Loc.T("얇은 세로선", "Thin bar"));
+            AddCursorChoice("underline", Loc.T("밑줄 — 글자를 가리지 않음", "Underline — does not cover text"));
             AddCursorChoice("block", Loc.T("블록", "Block"));
             CursorStyleCombo.SelectedItem = CursorStyleCombo.Items
                 .OfType<ComboBoxItem>()

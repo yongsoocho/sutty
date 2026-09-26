@@ -42,7 +42,7 @@
             </Button>
         </Grid>
         <controls:WrapPanel Grid.Row="1" Spacing="8">
-            <Button Click="FollowShell_Click" Content="{x:Bind h:Loc.T('현재 셸 폴더', 'Current shell folder')}" />
+            <Button x:Name="FollowShellButton" Click="FollowShell_Click" Content="{x:Bind h:Loc.T('현재 셸 폴더', 'Current shell folder')}" />
             <Button Click="OpenExplorer_Click" Content="{x:Bind h:Loc.T('탐색기에서 열기', 'Open in Explorer')}" />
             <CheckBox x:Name="ShowHiddenToggle" MinWidth="0" Click="ShowHidden_Click"
                       Content="{x:Bind h:Loc.T('숨김 파일', 'Hidden files')}" />
@@ -53,7 +53,7 @@
                       DragItemsStarting="FileList_DragItemsStarting" DoubleTapped="FileList_DoubleTapped"
                       KeyDown="FileList_KeyDown" AllowDrop="False"
                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                      AutomationProperties.Name="{x:Bind h:Loc.T('현재 셸의 로컬 파일과 폴더', 'Local files and folders for the current shell')}">
+                      AutomationProperties.Name="{x:Bind h:Loc.T('이 PC의 로컬 파일과 폴더', 'Local files and folders on this PC')}">
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem">
                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />

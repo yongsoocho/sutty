@@ -45,7 +45,7 @@
                 FontSize="11"
                 Foreground="{ThemeResource TextMuted}"
                 TextWrapping="Wrap"
-                Text="{x:Bind h:Loc.T('· 연결된 Sutty SSH만 선택 · 터미널 상태와 별도 실행', '· connected Sutty SSH only · execution is separate from terminal state')}" />
+                Text="{x:Bind h:Loc.T('· SSH exec / 터미널 입력 방식 확인 후 실행', '· review SSH exec / terminal input modes before execution')}" />
         </controls:WrapPanel>
 
         <StackPanel Grid.Row="1" Spacing="6">
@@ -54,8 +54,8 @@
                 x:Name="SelectAllButton"
                 Padding="10,6"
                 Click="SelectAll_Click"
-                Content="{x:Bind h:Loc.T('SSH 전체 선택', 'Select all SSH')}"
-                ToolTipService.ToolTip="{x:Bind h:Loc.T('표시된 카드 중 연결된 Sutty SSH만 선택합니다', 'Select connected Sutty SSH among the visible cards')}" />
+                Content="{x:Bind h:Loc.T('전체 선택', 'Select all')}"
+                ToolTipService.ToolTip="{x:Bind h:Loc.T('표시된 카드 중 연결된 SSH와 실행 중인 터미널을 선택합니다. 선택만으로 실행하지 않습니다.', 'Select connected SSH and running terminals among visible cards. Selection does not execute anything.')}" />
             <Button
                 x:Name="ClearSelectionButton"
                 Padding="10,6"

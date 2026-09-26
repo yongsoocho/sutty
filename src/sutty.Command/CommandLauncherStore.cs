@@ -41,7 +41,7 @@ public sealed class CommandLauncherHistoryEntry
 /// </summary>
 public static class CommandLauncherStore
 {
-    public const int MaximumHistoryEntries = 250;
+    public const int MaximumHistoryEntries = 15;
     public const int DefaultHistoryLimit = 8;
     public const int MaximumDisplayNameLength = 128;
 
@@ -76,7 +76,9 @@ public static class CommandLauncherStore
                 return;
 
             using var connection = Db.Open();
+            using var transaction = connection.BeginTransaction();
             using var create = connection.CreateCommand();
+            create.Transaction = transaction;
             create.CommandText = """
                 CREATE TABLE IF NOT EXISTS command_launcher_history (
                     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,6 +93,10 @@ public static class CommandLauncherStore
                     ON command_launcher_history(launched_at_utc DESC, id DESC);
                 """;
             create.ExecuteNonQuery();
+            // Apply the retention limit to databases from earlier versions too,
+            // before the user launches another command.
+            PruneHistory(connection, transaction);
+            transaction.Commit();
             _initialized = true;
             _initializedDatabasePath = databasePath;
         }
@@ -150,7 +156,7 @@ public static class CommandLauncherStore
         return changed;
     }
 
-    /// <summary>Returns compact, newest-first history.  The physical table is capped at 250 rows.</summary>
+    /// <summary>Returns compact, newest-first history. The physical table is capped at 15 rows.</summary>
     public static List<CommandLauncherHistoryEntry> GetRecentHistory(int limit = DefaultHistoryLimit)
     {
         EnsureInitialized();

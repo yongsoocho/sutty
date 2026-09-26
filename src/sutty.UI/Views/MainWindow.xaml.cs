@@ -109,6 +109,7 @@ namespace sutty.UI.Views
                 System.AppContext.BaseDirectory, "Assets", "sutty.ico");
             appWindow.SetIcon(_appIconPath);
             appWindow.Closing += AppWindow_Closing;
+            InitializeTitleBarInteraction();
 
             // sutty를 닫으면 설정 창도 같이 닫고, 저장 안 된 패널 폭이 있으면 마저 저장
             Closed += (_, _) =>
@@ -719,7 +720,7 @@ namespace sutty.UI.Views
             {
                 AppGlobalPage.Home => CreateHomeDashboard(),
                 AppGlobalPage.Hosts => WrapGlobalPage(CreateHostListPanel()),
-                AppGlobalPage.Transfers => new TransfersDashboardPanel(),
+                AppGlobalPage.Transfers => CreateTransfersDashboard(),
                 AppGlobalPage.Commands => CreateCommandsDashboard(),
                 AppGlobalPage.MultiCommand => _multiCommandPanel ??= CreateMultiPanel(),
                 AppGlobalPage.Settings => CreateEmbeddedSettingsPanel(),
@@ -748,6 +749,17 @@ namespace sutty.UI.Views
                 _sessionWorkspaces.TryGetValue(active, out var activeWorkspace) ? activeWorkspace : null;
             var local = (TitleTabs.SelectedItem as TabViewItem)?.DataContext as LocalTerminalView;
             panel.SetActiveShell(workspace, local);
+        }
+
+        private TransfersDashboardPanel CreateTransfersDashboard()
+        {
+            var panel = new TransfersDashboardPanel();
+            panel.ConnectSshRequested += (_, _) =>
+            {
+                SelectNavigationItem("Home");
+                DispatcherQueue.TryEnqueue(() => _homeDashboard?.FocusQuickConnect());
+            };
+            return panel;
         }
 
         private void ReleaseLocalFileBrowser(LocalTerminalView local)
@@ -1721,7 +1733,8 @@ namespace sutty.UI.Views
         }
 
         private sealed record BroadcastTarget(
-            MultiSlotVm Slot, ISshSession Session, string Identity, string Title, bool IsProduction);
+            MultiSlotVm Slot, ISshSession? Session, LocalTerminalView? LocalView,
+            BroadcastCommandMode Mode, string Identity, string Title, bool IsProduction);
 
         private void RequestBroadcastCancellation()
         {
@@ -1794,8 +1807,8 @@ namespace sutty.UI.Views
                 {
                     Title = Helpers.Loc.T("대상 세션 없음", "No target sessions"),
                     Content = Helpers.Loc.T(
-                        "체크된 Sutty SSH가 없습니다. 연결된 SSH 세션을 선택하세요. 로컬·외부 터미널은 일괄 입력에서 제외됩니다.",
-                        "No Sutty SSH sessions are checked. Select connected SSH sessions. Local and external terminals are excluded."),
+                        "체크된 대상이 없습니다. 연결된 SSH 또는 실행 중인 터미널을 선택하세요.",
+                        "No targets are checked. Select connected SSH sessions or running terminals."),
                     CloseButtonText = "OK",
                     XamlRoot = Content.XamlRoot,
                 };
@@ -1803,37 +1816,40 @@ namespace sutty.UI.Views
                 return null;
             }
 
-            if (selected.Any(slot => !slot.CanBroadcast || slot.View is null))
-                return Helpers.Loc.T("연결 상태가 바뀌었습니다. SSH 대상을 다시 선택하세요. 실행하지 않았습니다.",
-                    "Connection state changed. Select SSH targets again. Nothing was executed.");
+            if (selected.Any(slot => !slot.CanBroadcast))
+                return Helpers.Loc.T("연결 상태가 바뀌었습니다. 대상을 다시 선택하세요. 실행하지 않았습니다.",
+                    "Connection state changed. Select targets again. Nothing was executed.");
 
             var targets = selected.Select(slot => new BroadcastTarget(
-                slot, slot.View!.Session, slot.HostText, slot.Title, slot.IsProduction)).ToArray();
+                slot, slot.View?.Session, slot.LocalView, slot.ExecutionMode,
+                slot.HostText, slot.Title, slot.IsProduction)).ToArray();
+            var terminalInputCount = targets.Count(target => target.Mode == BroadcastCommandMode.TerminalInput);
+            var sshExecCount = targets.Length - terminalInputCount;
             var offPage = MultiGrid.GetOffPageTargetCount(selected);
             var review = new StackPanel { Spacing = 10 };
             review.Children.Add(new TextBlock
             {
                 Text = Helpers.Loc.T(
                     MultiGrid.IsPaginationEnabled
-                        ? $"전체 선택 {targets.Length}개 · 다른 페이지 {offPage}개\nSutty SSH {targets.Length} · 로컬/외부 터미널 0"
-                        : $"화면에서 선택한 Sutty SSH {targets.Length}개\n로컬/외부 터미널 0 · 숨겨진 탭 0",
+                        ? $"전체 선택 {targets.Length}개 · 다른 페이지 {offPage}개\nSSH exec {sshExecCount}개 · 터미널 입력 {terminalInputCount}개"
+                        : $"화면에서 선택한 대상 {targets.Length}개 · 숨겨진 탭 0\nSSH exec {sshExecCount}개 · 터미널 입력 {terminalInputCount}개",
                     MultiGrid.IsPaginationEnabled
-                        ? $"{targets.Length} selected in total · {offPage} on other pages\nSutty SSH {targets.Length} · local/external terminals 0"
-                        : $"{targets.Length} visible Sutty SSH sessions selected\nLocal/external terminals 0 · hidden tabs 0"),
+                        ? $"{targets.Length} selected in total · {offPage} on other pages\nSSH exec {sshExecCount} · terminal input {terminalInputCount}"
+                        : $"{targets.Length} visible targets selected · hidden tabs 0\nSSH exec {sshExecCount} · terminal input {terminalInputCount}"),
                 TextWrapping = TextWrapping.Wrap,
             });
             review.Children.Add(new TextBlock
             {
                 Text = string.Join("\n", targets.Select(target =>
-                    $"{(target.IsProduction ? "[PROD] " : "")}{target.Title} · {target.Identity}")),
+                    $"{(target.IsProduction ? "[PROD] " : "")}[{(target.Mode == BroadcastCommandMode.SshExec ? "SSH exec" : "Terminal input")}] {target.Title} · {target.Identity}")),
                 TextWrapping = TextWrapping.Wrap,
                 IsTextSelectionEnabled = true,
             });
             review.Children.Add(new TextBlock
             {
                 Text = Helpers.Loc.T(
-                    "각 서버에서 아래 명령을 독립 SSH exec로 실행합니다. 터미널의 cd·환경변수·sudo 상태는 공유되지 않으며 서버의 기본 작업 폴더에서 시작합니다. 응답 대기는 최대 60초입니다. 취소·대기 종료가 원격 작업 종료를 보장하지는 않습니다.",
-                    "Runs the command below through independent SSH exec on each server, starting in the server's default directory. Terminal cd, environment and sudo state are not shared. Waits up to 60 seconds. Cancellation or stopping the wait does not guarantee remote termination."),
+                    "SSH exec 대상은 서버의 기본 작업 폴더에서 독립 실행하며 터미널의 cd·환경변수·sudo 상태를 공유하지 않습니다. 응답 대기는 최대 60초이며 취소·대기 종료가 작업 종료를 보장하지 않습니다.",
+                    "SSH exec targets run independently in the server's default directory without sharing terminal cd, environment, or sudo state. Waits up to 60 seconds; cancellation or stopping the wait does not guarantee termination."),
                 TextWrapping = TextWrapping.Wrap,
             });
             review.Children.Add(new TextBlock
@@ -1843,6 +1859,30 @@ namespace sutty.UI.Views
                 TextWrapping = TextWrapping.Wrap,
                 IsTextSelectionEnabled = true,
             });
+            CheckBox? terminalInputConsent = null;
+            if (terminalInputCount > 0)
+            {
+                review.Children.Add(new TextBlock
+                {
+                    Text = Helpers.Loc.T(
+                        "고급: 터미널 입력은 현재 전경 프로그램에 명령·Enter와 앞뒤 echo 출력 표시자를 보냅니다. vim·top·인증 입력 대기 중이면 그 프로그램에 입력될 수 있습니다. 실제 원격 서버와 셸 프롬프트를 직접 확인하세요. 종료 코드는 확인할 수 없고 취소·시간 초과 시 Ctrl+C를 보낼 수 있으며, 작업 종료는 보장하지 않습니다.",
+                        "Advanced: terminal input sends the command, Enter, and surrounding echo output markers to the foreground program. In vim, top, or an authentication prompt, that program may receive the input. Verify the actual remote server and shell prompt yourself. Exit codes are unavailable. Cancellation or timeout may send Ctrl+C and does not guarantee termination."),
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Helpers.ThemeResources.Brush(Root, "StatusAmber"),
+                });
+                terminalInputConsent = new CheckBox
+                {
+                    IsChecked = false,
+                    Content = new TextBlock
+                    {
+                        Text = Helpers.Loc.T(
+                            $"선택한 터미널 {terminalInputCount}개의 셸 프롬프트와 대상을 확인했으며 이번 입력 전송을 승인합니다.",
+                            $"I checked the shell prompt and target of all {terminalInputCount} selected terminals and approve this input transmission."),
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                };
+                review.Children.Add(terminalInputConsent);
+            }
             var preview = new ContentDialog
             {
                 Title = Helpers.Loc.T("일괄 실행 대상·명령 확인", "Review broadcast targets and command"),
@@ -1851,9 +1891,17 @@ namespace sutty.UI.Views
                 PrimaryButtonText = Helpers.Loc.T($"{targets.Length}개 대상 승인", $"Approve {targets.Length} targets"),
                 CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
                 DefaultButton = ContentDialogButton.Close,
+                IsPrimaryButtonEnabled = terminalInputCount == 0,
                 XamlRoot = Content.XamlRoot,
             };
+            if (terminalInputConsent is { } consent)
+            {
+                consent.Checked += (_, _) => preview.IsPrimaryButtonEnabled = true;
+                consent.Unchecked += (_, _) => preview.IsPrimaryButtonEnabled = false;
+            }
             if (await preview.ShowAsync() != ContentDialogResult.Primary) return null;
+            var terminalInputApproved = terminalInputConsent?.IsChecked == true;
+            if (terminalInputCount > 0 && !terminalInputApproved) return null;
 
             var productionTargets = targets.Where(target => target.IsProduction).ToArray();
             if (productionTargets.Length > 0)
@@ -1901,32 +1949,38 @@ namespace sutty.UI.Views
             }
 
             if (_windowClosing || cancellationToken.IsCancellationRequested ||
-                targets.Any(target => target.Session.State != SessionState.Connected ||
-                    target.Slot.View is null || !_sessionWorkspaces.ContainsKey(target.Slot.View)))
+                targets.Any(target => target.Mode == BroadcastCommandMode.SshExec
+                    ? target.Session?.State != SessionState.Connected || target.Slot.View is null ||
+                      !_sessionWorkspaces.ContainsKey(target.Slot.View)
+                    : target.LocalView?.Terminal.TerminalState != TerminalState.Open ||
+                      !TitleTabs.TabItems.OfType<TabViewItem>().Any(tab => ReferenceEquals(tab.DataContext, target.LocalView))))
                 return Helpers.Loc.T("대상이 닫혔거나 연결 상태가 바뀌었습니다. 실행하지 않았습니다. 초안을 유지합니다.",
                     "A target closed or its connection changed. Nothing was executed. Draft retained.");
 
             panel.ApproveBroadcast(submission);
-            panel.ShowBroadcastStatus(Helpers.Loc.T($"승인한 SSH {targets.Length}개 실행 중 · 최대 60초 대기",
-                $"Running on {targets.Length} approved SSH targets · waiting up to 60 seconds"));
+            panel.ShowBroadcastStatus(Helpers.Loc.T($"승인한 대상 {targets.Length}개 실행 중 · 최대 60초 대기",
+                $"Running on {targets.Length} approved targets · waiting up to 60 seconds"));
             foreach (var target in targets)
             {
                 target.Slot.LastOutput = $"$ {command}";
                 target.Slot.ResultText = Helpers.Loc.T("대기", "waiting");
             }
-            await Task.WhenAll(targets.Select(target => RunBroadcastOnTargetAsync(target, command, cancellationToken)));
+            await Task.WhenAll(targets.Select(target => RunBroadcastOnTargetAsync(
+                target, command, terminalInputApproved, cancellationToken)));
             return Helpers.Loc.T("대상별 응답 대기가 끝났습니다. 결과·종료 코드·미확정 상태를 확인하세요. 자동 재실행하지 않습니다.",
                 "Finished waiting for each target. Check results, exit codes and uncertain outcomes. No automatic replay.");
         }
 
         private static async Task RunBroadcastOnTargetAsync(
-            BroadcastTarget target, string command, CancellationToken cancellationToken)
+            BroadcastTarget target, string command, bool terminalInputApproved, CancellationToken cancellationToken)
         {
             var slot = target.Slot;
             slot.ResultText = Helpers.Loc.T("실행 중", "running");
-            var result = await BroadcastCommandExecution.RunAsync(
-                token => target.Session.ExecuteCommandAsync(command, token),
-                BroadcastCommandTimeout, cancellationToken);
+            var result = await BroadcastCommandExecution.RunApprovedAsync(
+                token => target.Session is { } session
+                    ? session.ExecuteCommandAsync(command, token)
+                    : target.LocalView!.RunExternalCommandDetailedAsync(command, token),
+                BroadcastCommandTimeout, target.Mode, terminalInputApproved, cancellationToken);
             slot.ResultText = result.Outcome switch
             {
                 BroadcastCommandOutcome.NotStarted => Helpers.Loc.T("미실행", "not started"),
@@ -1935,13 +1989,13 @@ namespace sutty.UI.Views
                 BroadcastCommandOutcome.Failed => Helpers.Loc.T("실패", "failed") +
                     (result.Execution?.ExitCode is int exitCode ? $" · exit {exitCode}" : $" · {result.Execution?.ExitSignal}"),
                 BroadcastCommandOutcome.CancellationRequested => Helpers.Loc.T("취소 요청 · 종료 미확인", "cancellation requested · termination unknown"),
-                _ => Helpers.Loc.T("응답 불명 · 확인 필요", "response unknown · check server"),
+                _ => Helpers.Loc.T("응답 불명 · 확인 필요", "response unknown · check target"),
             };
             var output = result.Execution?.CombinedOutput ?? result.Error ?? "";
             if (result.Outcome is BroadcastCommandOutcome.ResponseUnknown or BroadcastCommandOutcome.CancellationRequested)
                 output += "\n" + Helpers.Loc.T(
-                    "대기를 끝냈지만 원격 작업 종료는 확인되지 않았습니다. 서버에서 결과를 확인한 뒤 다음 실행을 결정하세요. 자동 재실행하지 않습니다.",
-                    "Stopped waiting; remote termination is unconfirmed. Check the server before deciding to run again. No automatic replay.");
+                    "대기를 끝냈지만 작업 종료는 확인되지 않았습니다. 대상 서버·터미널에서 결과를 확인한 뒤 다음 실행을 결정하세요. 자동 재실행하지 않습니다.",
+                    "Stopped waiting; termination is unconfirmed. Check the target server or terminal before deciding to run again. No automatic replay.");
             if (string.IsNullOrWhiteSpace(output)) output = Helpers.Loc.T("(출력 없음)", "(no output)");
             if (output.Length > BroadcastOutputPreviewLimit)
                 output = output[..BroadcastOutputPreviewLimit] + "\n" + Helpers.Loc.T("[출력 잘림]", "[output truncated]");

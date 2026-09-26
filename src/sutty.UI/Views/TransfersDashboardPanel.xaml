@@ -18,43 +18,31 @@
                            Foreground="{ThemeResource TextPrimary}"
                            Text="{x:Bind h:Loc.T('파일 전송', 'File transfers')}" />
                 <TextBlock Foreground="{ThemeResource TextMuted}" FontSize="11.5" TextWrapping="Wrap"
-                           Text="{x:Bind h:Loc.T('현재 선택한 셸의 파일과 폴더를 표시합니다.', 'Files and folders for the currently selected shell.')}" />
+                           Text="{x:Bind h:Loc.T('선택한 SSH의 원격 파일 또는 이 PC의 로컬 파일을 탐색합니다.', 'Browse remote files for the selected SSH connection or local files on this PC.')}" />
                 <TextBlock x:Name="ActiveShellText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                            Foreground="{ThemeResource TextPrimary}" AutomationProperties.LiveSetting="Polite" />
                 <TextBlock x:Name="BrowserScopeText" Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
                            AutomationProperties.LiveSetting="Polite" />
                 <TextBlock x:Name="BrowserError" Foreground="{ThemeResource StatusRed}" TextWrapping="Wrap"
                            AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
+                <StackPanel x:Name="ExternalTerminalState" Spacing="6" Visibility="Collapsed">
+                    <TextBlock Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                               Text="{x:Bind h:Loc.T('외부 터미널의 원격 SFTP·Tunnels는 연결되지 않았습니다. 아래에서는 이 PC의 파일을 사용할 수 있습니다.', 'Remote SFTP and Tunnels are not connected to this external terminal. The browser below remains available for this PC.')}" />
+                    <Button HorizontalAlignment="Left" Click="ConnectSsh_Click"
+                            Content="{x:Bind h:Loc.T('원격 파일용 SSH 연결…', 'Connect SSH for remote files…')}" />
+                </StackPanel>
+                <StackPanel x:Name="NoTargetState" Spacing="6" Visibility="Collapsed">
+                    <TextBlock Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
+                               Text="{x:Bind h:Loc.T('열린 셸이 없어도 로컬 파일을 탐색할 수 있습니다. 원격 파일은 SSH 연결을 선택하세요.', 'Local files are available without an open shell. Select an SSH connection for remote files.')}" />
+                    <Button HorizontalAlignment="Left" Click="ConnectSsh_Click"
+                            Content="{x:Bind h:Loc.T('SSH 연결…', 'Connect SSH…')}" />
+                </StackPanel>
             </StackPanel>
 
             <Border x:Name="BrowserCard" Grid.Row="1" BorderBrush="{ThemeResource CardBorder}" BorderThickness="1"
                     Background="{ThemeResource CardBg}" CornerRadius="10">
                 <ContentControl x:Name="BrowserHost"
                                 HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-            </Border>
-
-            <Border x:Name="ExternalTerminalState" Grid.Row="1" Padding="20" Visibility="Collapsed"
-                    Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
-                    BorderThickness="1" CornerRadius="10">
-                <StackPanel Spacing="10" VerticalAlignment="Center">
-                    <TextBlock FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"
-                               Foreground="{ThemeResource TextPrimary}"
-                               Text="{x:Bind h:Loc.T('외부 터미널에는 원격 파일이 연결되지 않습니다.', 'Remote files are not connected to this external terminal.')}" />
-                    <TextBlock Foreground="{ThemeResource TextMuted}" TextWrapping="Wrap"
-                               Text="{x:Bind h:Loc.T('이 탭은 설치된 ssh 또는 다른 프로그램을 실행합니다. 원격 SFTP · Tunnels는 자동 통합되지 않습니다.', 'This tab runs the installed ssh or another program. Remote SFTP and Tunnels are not automatically integrated.')}" />
-                    <TextBlock Foreground="{ThemeResource TextPrimary}" TextWrapping="Wrap"
-                               Text="{x:Bind h:Loc.T('Hosts에서 저장한 호스트에 연결하거나 기존 호스트를 가져온 뒤 Sutty SSH 연결의 Files · Tunnels를 사용하세요. 이 PC의 파일은 PowerShell 또는 CMD 탭에서 탐색할 수 있습니다.', 'Connect to a saved host in Hosts, or import an existing host, then use Files and Tunnels in its Sutty SSH connection. To browse files on this PC, select a PowerShell or CMD tab.')}" />
-                </StackPanel>
-            </Border>
-
-            <Border x:Name="NoTargetState" Grid.Row="1" Padding="20" Background="{ThemeResource CardBg}"
-                    BorderBrush="{ThemeResource CardBorder}" BorderThickness="1" CornerRadius="10">
-                <StackPanel Spacing="8">
-                    <FontIcon Glyph="&#xE8B7;" FontSize="24" Foreground="{ThemeResource AccentBlue}" />
-                    <TextBlock TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
-                               Foreground="{ThemeResource TextMuted}"
-                               Text="{x:Bind h:Loc.T('셸 탭을 선택하면 현재 위치의 파일과 폴더가 표시됩니다.', 'Select a shell tab to browse the files and folders at its current location.')}" />
-                </StackPanel>
             </Border>
 
             <Border Grid.Row="2" Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"

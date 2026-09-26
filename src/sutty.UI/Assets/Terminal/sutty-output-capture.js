@@ -38,6 +38,7 @@
     reset() {
       this.disposeMarkers();
       this.latest = '';
+      this.latestKnown = false;
       this.parts = [];
       this.active = false;
       this.awaitingEcho = false;
@@ -220,6 +221,7 @@
 
     finish(end, shellBoundary = false) {
       this.latest = this.parts.join('') + this.pendingText(end);
+      this.latestKnown = true;
       // cmd.exe prints one separator before PROMPT, even for `cd .`. Remove only
       // that shell-owned separator; preserve every blank line from the command.
       if (shellBoundary && this.shell === 'cmd' && this.latest.endsWith('\r\n')) {
@@ -236,7 +238,7 @@
       if (this.terminal.buffer.active.type !== 'normal') return;
       const position = this.position();
       const text = this.lineText(position.line, 0, position.column);
-      const conventional = /^(?:PS (?:[^\r\n]*?)> ?|[A-Za-z]:\\[^\r\n]*>|[^\r\n]*[@:][^\r\n]*[$#%] |[$#%] )$/.test(text);
+      const conventional = /^(?:PS (?:[^\r\n]*?)> ?|[A-Za-z]:\\[^\r\n]*>|[^\r\n]*[@:][^\r\n]*[$#%] |[$#%] |[^\r\n]*[❯›] ?)$/.test(text);
       const learned = this.commandPrompt && text === this.commandPrompt;
       // An integrated parent may launch a markerless nested SSH shell. Its first
       // recognizable prompt ends the launch output; subsequent submissions then
@@ -259,6 +261,13 @@
       this.parsed();
       if (this.terminal.buffer.active.type !== 'normal') return this.latest;
       return this.active ? this.parts.join('') + this.pendingText(this.position()) : this.latest;
+    }
+
+    hasSnapshot() {
+      if (this.terminal.buffer.active.type !== 'normal') return this.latestKnown;
+      return this.active
+        ? !this.awaitingEcho || this.pendingText(this.position()).length > 0
+        : this.latestKnown;
     }
   }
 

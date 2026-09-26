@@ -10,8 +10,28 @@ try
 {
     Assert(new AppSettings().TerminalMode == "Terminal", "fresh terminal default");
     Assert(new AppSettings().AutoCloseDisconnectedTabs, "ended shell tabs close by default");
+    Assert(new AppSettings().TerminalCursorStyle == "bar", "fresh cursor is a thin vertical bar");
     Assert(new AppSettings { TerminalMode = "Repl" }.TerminalMode == "Repl",
         "legacy Repl preference preserved");
+
+    foreach (var (settingsJson, expectedCursor) in new[]
+    {
+        ("{}", "bar"),
+        ("{\"TerminalCursorStyle\":\"underline\"}", "bar"),
+        ("{\"TerminalCursorStyle\":\"block\"}", "block"),
+        ("{\"TerminalCursorStyle\":\"underline\",\"TerminalCursorPreferenceVersion\":1}", "underline"),
+    })
+    {
+        File.WriteAllText(SettingsService.SettingsPath, settingsJson);
+        var cursorSettings = SettingsService.Load();
+        Assert(cursorSettings.TerminalCursorStyle == expectedCursor,
+            "legacy cursor default migrates once while explicit versioned choices survive");
+        Assert(cursorSettings.TerminalCursorPreferenceVersion == 1, "cursor migration is marked");
+        cursorSettings.TerminalCursorStyle = "underline";
+        Assert(SettingsService.Save(cursorSettings).Succeeded &&
+               SettingsService.Load().TerminalCursorStyle == "underline",
+            "an underline chosen after migration survives save and reload");
+    }
 
     File.WriteAllText(SettingsService.SettingsPath, """
         {
@@ -65,7 +85,7 @@ try
     Assert(loaded.EnableSeverityHighlighting, "severity highlighting setting load");
     Assert(loaded.EnableCommandSuggestions, "suggestion setting load");
     Assert(loaded.TerminalTheme == "FollowApplication", "terminal theme allowlist normalization");
-    Assert(loaded.TerminalCursorStyle == "underline", "terminal cursor normalization");
+    Assert(loaded.TerminalCursorStyle == "bar", "terminal cursor normalization");
     Assert(loaded.TerminalScrollbackLines == 50_000, "terminal scrollback upper bound");
     Assert(!loaded.TerminalCursorBlink, "terminal cursor-blink setting load");
     Assert(loaded.TerminalScreenReaderMode, "terminal accessibility setting load");
