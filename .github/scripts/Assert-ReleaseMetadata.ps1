@@ -172,14 +172,22 @@ if ($null -ne $readmeText) {
             Add-Violation 'README candidate contract requires a previously published Alpha tag.'
         }
         else {
-            $previousTag = "v$($tagIdentity.Groups['version'].Value)-alpha.$($alphaNumber - 1)"
-            $expectedLatestUrl = "https://github.com/yongsoocho/sutty/releases/tag/$previousTag"
+            $latestMatch = [regex]::Match($candidateLine,
+                '^>\s+\*\*Latest published / 최신 공개본:\*\*\s+\[`(?<tag>v(?<version>[0-9]+\.[0-9]+\.[0-9]+)-alpha\.(?<alpha>[0-9]+))`\]\(https://github\.com/yongsoocho/sutty/releases/tag/\k<tag>\)')
+            $latestTag = $latestMatch.Groups['tag'].Value
+            if (-not $latestMatch.Success -or
+                $latestMatch.Groups['version'].Value -cne $tagIdentity.Groups['version'].Value -or
+                [int]$latestMatch.Groups['alpha'].Value -lt 1 -or
+                [int]$latestMatch.Groups['alpha'].Value -ge $alphaNumber) {
+                Add-Violation 'README latest published must be a matching linked earlier Alpha, not an assumed previous tag.'
+            }
+            $expectedLatestUrl = "https://github.com/yongsoocho/sutty/releases/tag/$latestTag"
             $expectedCandidateTarget = "docs/releases/$Tag.md"
             $lineTags = @([regex]::Matches($candidateLine, $alphaTagPattern) | ForEach-Object Value)
             if ($lineTags.Count -ne 4 -or
-                @($lineTags | Where-Object { $_ -ceq $previousTag }).Count -ne 2 -or
+                @($lineTags | Where-Object { $_ -ceq $latestTag }).Count -ne 2 -or
                 @($lineTags | Where-Object { $_ -ceq $Tag }).Count -ne 2) {
-                Add-Violation "README candidate line must identify exactly latest $previousTag and candidate $Tag."
+                Add-Violation "README candidate line must identify exactly latest $latestTag and candidate $Tag."
             }
             if (-not $candidateLine.Contains($expectedLatestUrl, [StringComparison]::Ordinal) -or
                 -not $candidateLine.Contains($expectedCandidateTarget, [StringComparison]::Ordinal)) {

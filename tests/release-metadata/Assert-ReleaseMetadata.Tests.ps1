@@ -161,6 +161,26 @@ try {
     $sourcePass = New-FixtureRepository 'source-pass'
     Assert-Result ($null -eq (Get-ValidationFailure -Root $sourcePass)) 'consistent source metadata passes'
 
+    $skippedTag = New-FixtureRepository 'skipped-unpublished-tag'
+    (Get-Content -LiteralPath (Join-Path $skippedTag 'README.md') -Raw).
+        Replace('v1.2.3-alpha.3', 'v1.2.3-alpha.2') |
+        Set-Content -LiteralPath (Join-Path $skippedTag 'README.md') -Encoding utf8NoBOM
+    Assert-Result ($null -eq (Get-ValidationFailure -Root $skippedTag)) 'an unpublished intermediate tag can be skipped without claiming its publication'
+
+    foreach ($invalidLatest in @('v1.2.3-alpha.4', 'v1.2.3-alpha.5', 'v1.2.3-alpha.0', 'v9.9.9-alpha.3')) {
+        $invalidLatestRoot = New-FixtureRepository "invalid-latest-$invalidLatest"
+        (Get-Content -LiteralPath (Join-Path $invalidLatestRoot 'README.md') -Raw).
+            Replace('v1.2.3-alpha.3', $invalidLatest) |
+            Set-Content -LiteralPath (Join-Path $invalidLatestRoot 'README.md') -Encoding utf8NoBOM
+        Assert-Result ($null -ne (Get-ValidationFailure -Root $invalidLatestRoot)) "invalid latest published identity $invalidLatest is rejected"
+    }
+
+    $latestLinkMismatch = New-FixtureRepository 'latest-link-mismatch'
+    (Get-Content -LiteralPath (Join-Path $latestLinkMismatch 'README.md') -Raw).
+        Replace('releases/tag/v1.2.3-alpha.3', 'releases/tag/v1.2.3-alpha.2') |
+        Set-Content -LiteralPath (Join-Path $latestLinkMismatch 'README.md') -Encoding utf8NoBOM
+    Assert-Result ($null -ne (Get-ValidationFailure -Root $latestLinkMismatch)) 'latest published label and URL must match'
+
     $artifactPass = New-FixtureRepository 'artifact-pass'
     Add-Payloads -Root $artifactPass
     Add-Packages -Root $artifactPass
@@ -414,7 +434,7 @@ try {
     Assert-Result ($workflow -match 'assets\)\.Count\s+-ne\s+5') 'promotion requires the exact five-asset immutable release inventory'
     Assert-Result (@([regex]::Matches($workflow, 'ls-remote origin')).Count -ge 2) 'promotion verifies the exact tag target before and after publication'
 
-    Write-Host 'Release-metadata guard self-tests passed (16 fixture cases plus two-phase pipeline contract).'
+    Write-Host 'Release-metadata guard self-tests passed (including skipped-tag and latest-publication identity fixtures plus two-phase pipeline contract).'
 }
 finally {
     $resolvedScratch = [System.IO.Path]::GetFullPath($scratch)
