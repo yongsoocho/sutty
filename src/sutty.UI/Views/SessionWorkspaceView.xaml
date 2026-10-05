@@ -45,7 +45,8 @@
                         Foreground="{ThemeResource TextMuted}"
                         Text="{x:Bind ViewModel.ConnectionIdentity}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-                <controls:WrapPanel x:Name="WorkspaceNavigation" Grid.Column="1" Spacing="4">
+                <controls:WrapPanel x:Name="WorkspaceNavigation" Grid.Column="1" Spacing="4"
+                    SizeChanged="Workspace_SizeChanged">
                     <ToggleButton
                         x:Name="TerminalButton"
                         MinHeight="34"
@@ -122,7 +123,9 @@
                     <Button Margin="12,6" HorizontalAlignment="Right"
                         Click="TerminalButton_Click"
                         AutomationProperties.Name="{x:Bind h:Loc.T('보조 패널 닫기', 'Close tool panel')}"
-                        Content="{x:Bind h:Loc.T('패널 닫기', 'Close panel')}" />
+                        ToolTipService.ToolTip="{x:Bind h:Loc.T('보조 패널 닫기', 'Close tool panel')}">
+                        <FontIcon Glyph="&#xE711;" FontSize="12" />
+                    </Button>
                     <Grid x:Name="CommandsPane" Grid.Row="1" Visibility="Collapsed">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="2*" />

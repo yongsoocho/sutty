@@ -35,7 +35,7 @@
                     Foreground="{ThemeResource AccentTeal}"
                     Glyph="&#xE756;" />
 
-                <Grid Grid.Column="1" HorizontalAlignment="Left"
+                <Grid Grid.Column="1" HorizontalAlignment="Stretch"
                       VerticalAlignment="Center" ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />

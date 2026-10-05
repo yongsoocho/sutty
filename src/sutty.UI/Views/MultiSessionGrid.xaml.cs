@@ -47,7 +47,16 @@ namespace sutty.UI.Views
         public void RefreshLanguage()
         {
             Bindings.Update();
-            SetSessions(_views);
+            foreach (var slot in _selection.AllSlots)
+                slot.RefreshSessionDetails();
+            UpdateSummary();
+        }
+
+        /// <summary>Start a new Multi visit with no targets while retaining per-session results.</summary>
+        public void ResetSelection()
+        {
+            _selection.ResetSelection();
+            UpdateSummary();
         }
 
         private void Cells_LayoutUpdated(object? sender, object e)
@@ -128,10 +137,20 @@ namespace sutty.UI.Views
 
         private void ShowPage()
         {
-            Slots.Clear();
-            foreach (var slot in _selection.GetPageSlots())
-                Slots.Add(slot ?? new MultiSlotVm());
-            CellsScrollViewer.ChangeView(0, 0, null, true);
+            var page = _selection.GetPageSlots();
+            while (Slots.Count < SlotCount)
+                Slots.Add(new MultiSlotVm());
+            for (var index = 0; index < SlotCount; index++)
+            {
+                if (page[index] is { } slot)
+                {
+                    if (!ReferenceEquals(Slots[index], slot)) Slots[index] = slot;
+                }
+                else if (Slots[index].HasSession)
+                {
+                    Slots[index] = new MultiSlotVm();
+                }
+            }
             UpdateSummary();
         }
 
@@ -199,12 +218,14 @@ namespace sutty.UI.Views
         {
             _selection.MovePage(-1);
             ShowPage();
+            CellsScrollViewer.ChangeView(0, 0, null, true);
         }
 
         private void NextPage_Click(object sender, RoutedEventArgs e)
         {
             _selection.MovePage(1);
             ShowPage();
+            CellsScrollViewer.ChangeView(0, 0, null, true);
         }
 
         /// <summary>Checked eligible targets in the active display scope, never placeholders or hidden cards.</summary>

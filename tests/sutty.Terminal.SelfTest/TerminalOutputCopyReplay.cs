@@ -40,7 +40,10 @@ internal static class TerminalOutputCopyReplay
                 await RunAsync(command, "\r\n  stdout  \r\n  stderr  \r\n\r\n");
                 await RunAsync(shell == LocalShellKind.PowerShell ? "$null = 1" : "cd .", "");
                 await RunAsync(shell == LocalShellKind.PowerShell
-                    ? "[Console]::Write('  no newline  ')"
+                    // ConPTY/PSReadLine versions differ in whether unmarked trailing
+                    // blank cells survive prompt repaint. Explicit newline cases above
+                    // cover trailing spaces; this case isolates unterminated output.
+                    ? "[Console]::Write('  no newline')"
                     : "<nul set /p \"=  no newline  \"",
                     shell == LocalShellKind.PowerShell ? "  no newline\r\n" : "no newline  ");
                 await File.WriteAllTextAsync(Path.Combine(directory, shell + ".json"),

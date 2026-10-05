@@ -140,6 +140,50 @@ test('selected cursor shape survives shell DECSCUSR and terminal reset', { skip:
   } finally { await f.close(); }
 });
 
+test('terminal and host sizes agree at split-pane and oversized viewport limits', { skip: !chromium }, async () => {
+  const f = await fixture();
+  try {
+    for (const viewport of [{ width: 150, height: 55 }, { width: 5000, height: 4000 }]) {
+      await f.page.evaluate(() => { window.__suttyTest.messages.length = 0; });
+      await f.page.setViewportSize(viewport);
+      await f.page.waitForFunction(() => window.__suttyTest.messages.some(message => message.type === 'resize'));
+      const size = await f.page.evaluate(() => {
+        const state = window.__suttyTest;
+        const message = state.messages.filter(message => message.type === 'resize').at(-1);
+        return { columns: state.terminal.cols, rows: state.terminal.rows, message };
+      });
+      assert.ok(size.columns >= 20 && size.columns <= 500);
+      assert.ok(size.rows >= 5 && size.rows <= 200);
+      assert.equal(size.message.columns, size.columns);
+      assert.equal(size.message.rows, size.rows);
+      const count = await f.page.evaluate(() => window.__suttyTest.messages.length);
+      await f.page.waitForTimeout(200);
+      assert.equal(await f.page.evaluate(() => window.__suttyTest.messages.length), count,
+        'clamped fitting must settle without recurring bridge messages');
+    }
+  } finally { await f.close(); }
+});
+
+test('terminal search fits narrow panes and retains focus when the window regains focus', { skip: !chromium }, async () => {
+  const f = await fixture();
+  try {
+    await f.page.setViewportSize({ width: 190, height: 210 });
+    await f.send({ type: 'findNext', text: 'result' });
+    const bounds = await f.page.evaluate(() => {
+      const search = document.getElementById('search').getBoundingClientRect();
+      const input = document.getElementById('search-input').getBoundingClientRect();
+      return { left: search.left, right: search.right, width: innerWidth, inputWidth: input.width };
+    });
+    assert.ok(bounds.left >= 0 && bounds.right <= bounds.width);
+    assert.ok(bounds.inputWidth > 0, 'search input stays usable beside all three actions');
+    await f.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    assert.equal(await f.page.evaluate(() => document.activeElement.id), 'search-input');
+    await f.page.locator('#search-close').click();
+    await f.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    assert.ok(await f.page.evaluate(() => document.activeElement.classList.contains('xterm-helper-textarea')));
+  } finally { await f.close(); }
+});
+
 for (const shell of ['PowerShell', 'CommandPrompt']) {
   test(`production browser bridge replays actual ${shell} ConPTY traffic`,
     { skip: !chromium || !process.env.SUTTY_COPY_REPLAY_DIRECTORY }, async () => {

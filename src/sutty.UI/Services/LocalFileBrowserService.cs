@@ -113,6 +113,7 @@ public sealed class LocalFileBrowserService : ILocalFileBrowserService
         throw new DirectoryNotFoundException("No readable local folder is available.");
     }
 
+    /// <summary>Normalizes syntax without filesystem I/O; background enumeration validates access.</summary>
     public string NormalizeDirectoryPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -123,9 +124,6 @@ public sealed class LocalFileBrowserService : ILocalFileBrowserService
             throw new ArgumentException("The local folder path must be absolute.", nameof(path));
 
         var normalized = Path.GetFullPath(candidate);
-        if (!Directory.Exists(normalized))
-            throw new DirectoryNotFoundException($"The local folder does not exist: {normalized}");
-
         var root = Path.GetPathRoot(normalized);
         if (!string.IsNullOrWhiteSpace(root) && string.Equals(
                 normalized.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),

@@ -20,6 +20,15 @@ internal static class LocalFileBrowserSelfTests
             "local browser exposes file size without file content");
         Assert(service.GetParentPath(folder) == normalized,
             "local browser resolves parent navigation");
+        var missingFolder = Path.Combine(root, "not-present");
+        Assert(service.NormalizeDirectoryPath(missingFolder) == missingFolder,
+            "path normalization is lexical so unavailable network folders are checked by background enumeration");
+        try
+        {
+            await service.ListDirectoryAsync(missingFolder);
+            throw new InvalidOperationException("Self-test failed: missing folders must fail enumeration.");
+        }
+        catch (DirectoryNotFoundException) { }
         Assert(LocalFilePathRules.TryResolveDirectChild(root, "safe.txt", out var safePath) &&
                Path.GetDirectoryName(safePath) == normalized,
             "remote download path remains a direct local child");
@@ -40,6 +49,14 @@ internal static class LocalFileBrowserSelfTests
             "local browser rejects relative paths");
         Assert(viewModel.CurrentPath == normalized && viewModel.Items.Count == 2,
             "failed navigation preserves the last good snapshot");
+        await viewModel.RefreshAsync();
+        using (var canceledPath = new CancellationTokenSource())
+        {
+            canceledPath.Cancel();
+            Assert(!await viewModel.NavigateAsync("relative-folder", canceledPath.Token) &&
+                   viewModel.ErrorMessage is null && viewModel.CurrentPath == normalized,
+                "an already canceled request does not normalize its path or publish a validation error");
+        }
 
         await VerifyViewAndHistoryAsync(service, root, folder);
         await VerifyCancellationAndSupersededNavigationAsync(root);
@@ -128,6 +145,15 @@ internal static class LocalFileBrowserSelfTests
             "leaving a shell tab cancels pending enumeration even if the provider completes afterward");
 
         service.ResetDelayed();
+        using var canceledFailure = new CancellationTokenSource();
+        var failedAfterCancel = browser.NavigateAsync(Path.Combine(root, "delayed"), canceledFailure.Token);
+        canceledFailure.Cancel();
+        service.FailDelayed();
+        Assert(!await failedAfterCancel && browser.ErrorMessage is null &&
+               browser.CurrentPath == latest && browser.Items[0].Name == "latest" && !browser.IsLoading,
+            "a provider failure after cancellation cannot publish a stale error or change the last good snapshot");
+
+        service.ResetDelayed();
         var disposed = browser.NavigateAsync(Path.Combine(root, "delayed"));
         browser.Dispose();
         service.CompleteDelayed();
@@ -186,6 +212,7 @@ internal static class LocalFileBrowserSelfTests
                 Task.FromResult<IReadOnlyList<LocalFileEntry>>([new(Path.GetFileName(path), path, false, 1, DateTime.UtcNow, false)]);
         }
         public void CompleteDelayed() => _delayed.SetResult([new("delayed", root, false, 2, DateTime.UtcNow, false)]);
+        public void FailDelayed() => _delayed.SetException(new IOException("Canceled enumeration failed."));
         public void ResetDelayed() => _delayed = NewCompletion();
         private static TaskCompletionSource<IReadOnlyList<LocalFileEntry>> NewCompletion() =>
             new(TaskCreationOptions.RunContinuationsAsynchronously);

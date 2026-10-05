@@ -30,4 +30,5 @@ internal sealed class BroadcastCommandDraft
         text.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
 }
 
-public sealed record BroadcastCommandSubmission(string Command, long? DraftRevision = null);
+public sealed record BroadcastCommandSubmission(
+    string Command, long? DraftRevision = null, long? TemplateId = null);

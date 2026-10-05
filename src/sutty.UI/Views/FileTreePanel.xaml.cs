@@ -163,6 +163,7 @@ public sealed partial class FileTreePanel : UserControl
         {
             if (_isAvailable)
                 FileTree.IsEnabled = true;
+            UpdateTransferButtons();
             RefreshRestoredTransfers();
             return;
         }
@@ -195,6 +196,7 @@ public sealed partial class FileTreePanel : UserControl
             SftpUnavailableState.Visibility = Visibility.Collapsed;
             EmptyState.Visibility = Visibility.Visible;
             ResumeRestoredButton.Visibility = Visibility.Collapsed;
+            UpdateTransferButtons();
             return;
         }
 
@@ -214,6 +216,7 @@ public sealed partial class FileTreePanel : UserControl
             ShowStatus(session.State == SessionState.Failed
                 ? Loc.T("SSH 연결에 실패했습니다.", "SSH connection failed.")
                 : null);
+            UpdateTransferButtons();
             return;
         }
 
@@ -248,6 +251,7 @@ public sealed partial class FileTreePanel : UserControl
                 ShowStatus(Loc.T("SFTP에 연결하는 중입니다…", "Connecting to SFTP…"));
                 break;
         }
+        UpdateTransferButtons();
     }
 
     /// <summary>Navigate the active SFTP browser to an absolute remote path.</summary>
@@ -267,6 +271,7 @@ public sealed partial class FileTreePanel : UserControl
 
         LoadingRing.IsActive = true;
         FileTree.IsEnabled = false;
+        UpdateTransferButtons();
         ShowStatus(null);
         try
         {
@@ -306,6 +311,8 @@ public sealed partial class FileTreePanel : UserControl
             {
                 LoadingRing.IsActive = false;
                 FileTree.IsEnabled = _isAvailable && RootNodes.Count > 0 && _sftp is not null;
+                if (RootNodes.Count > 0) PathBox.Text = _currentPath;
+                UpdateTransferButtons();
             }
         }
     }
@@ -313,13 +320,19 @@ public sealed partial class FileTreePanel : UserControl
     private void OnSessionStateChanged(object? sender, SessionState state)
     {
         if (sender is not ISshSession session || !ReferenceEquals(session, _session)) return;
-        DispatcherQueue.TryEnqueue(() => _ = LoadAsync(session));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (ReferenceEquals(session, _session)) _ = LoadAsync(session);
+        });
     }
 
     private void OnSftpStateChanged(object? sender, SftpConnectionState state)
     {
         if (sender is not ISshSession session || !ReferenceEquals(session, _session)) return;
-        DispatcherQueue.TryEnqueue(() => _ = LoadAsync(session));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (ReferenceEquals(session, _session)) _ = LoadAsync(session);
+        });
     }
 
     private void DetachSession()
@@ -465,6 +478,9 @@ public sealed partial class FileTreePanel : UserControl
         var sftp = _sftp;
         if (sftp is null || !_isAvailable)
             return;
+        var sessionVersion = _sessionVersion;
+        var initialNavigationVersion = _navigationVersion;
+        var searchDirectory = _currentPath;
 
         var queryBox = new TextBox
         {
@@ -486,23 +502,24 @@ public sealed partial class FileTreePanel : UserControl
         queryBox.TextChanged += (_, _) =>
             queryDialog.IsPrimaryButtonEnabled = IsValidSearchQuery(queryBox.Text);
         queryDialog.Opened += (_, _) => queryBox.Focus(FocusState.Programmatic);
-        if (await ShowDialogSafelyAsync(queryDialog) != ContentDialogResult.Primary)
+        if (await ShowDialogSafelyAsync(queryDialog) != ContentDialogResult.Primary ||
+            !IsCurrent(sftp, sessionVersion, initialNavigationVersion, CancellationToken.None))
             return;
 
         var query = queryBox.Text.Trim();
         CancelNavigation();
         var cts = new CancellationTokenSource();
         _navigationCts = cts;
-        var sessionVersion = _sessionVersion;
         var navigationVersion = ++_navigationVersion;
         LoadingRing.IsActive = true;
         FileTree.IsEnabled = false;
+        UpdateTransferButtons();
         ShowStatus(Loc.T(
             $"'{query}' 파일명을 검색하는 중…",
             $"Searching filenames for '{query}'…"));
         try
         {
-            var matches = await sftp.SearchByNameAsync(_currentPath, query, 500, cts.Token);
+            var matches = await sftp.SearchByNameAsync(searchDirectory, query, 500, cts.Token);
             if (!IsCurrent(sftp, sessionVersion, navigationVersion, cts.Token))
                 return;
             if (matches.Count == 0)
@@ -522,15 +539,14 @@ public sealed partial class FileTreePanel : UserControl
                 ItemsSource = choices,
                 DisplayMemberPath = nameof(RemoteSearchChoice.Display),
                 SelectionMode = ListViewSelectionMode.Single,
-                MinWidth = 420,
                 MaxHeight = 420,
             };
             var content = new StackPanel { Spacing = 8 };
             content.Children.Add(new TextBlock
             {
                 Text = Loc.T(
-                    $"{_currentPath} 아래에서 {matches.Count:N0}개를 찾았습니다. 열 항목을 선택하세요.",
-                    $"Found {matches.Count:N0} item(s) below {_currentPath}. Select one to open."),
+                    $"{searchDirectory} 아래에서 {matches.Count:N0}개를 찾았습니다. 열 항목을 선택하세요.",
+                    $"Found {matches.Count:N0} item(s) below {searchDirectory}. Select one to open."),
                 Foreground = ThemeResources.Brush(this, "TextMuted"),
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -600,6 +616,7 @@ public sealed partial class FileTreePanel : UserControl
             {
                 LoadingRing.IsActive = false;
                 FileTree.IsEnabled = _isAvailable && RootNodes.Count > 0 && _sftp is not null;
+                UpdateTransferButtons();
             }
         }
     }
@@ -619,25 +636,20 @@ public sealed partial class FileTreePanel : UserControl
             return;
         }
 
-        LocalLoadingRing.IsActive = true;
-        var loaded = await LocalBrowser.InitializeAsync();
-        _localInitialized = loaded;
-        ApplyLocalBrowserState();
+        await RunLocalNavigationAsync(() => LocalBrowser.InitializeAsync());
     }
 
-    private async Task NavigateLocalAsync(string path)
-    {
-        LocalLoadingRing.IsActive = true;
-        await LocalBrowser.NavigateAsync(path);
-        if (!string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
-            _localInitialized = true;
-        ApplyLocalBrowserState();
-    }
+    private Task NavigateLocalAsync(string path) =>
+        RunLocalNavigationAsync(() => LocalBrowser.NavigateAsync(path));
 
-    private async Task RefreshLocalBrowserAsync()
+    private Task RefreshLocalBrowserAsync() =>
+        RunLocalNavigationAsync(() => LocalBrowser.RefreshAsync());
+
+    private async Task RunLocalNavigationAsync(Func<Task<bool>> action)
     {
-        LocalLoadingRing.IsActive = true;
-        await LocalBrowser.RefreshAsync();
+        var request = action();
+        ApplyLocalBrowserState();
+        await request;
         if (!string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
             _localInitialized = true;
         ApplyLocalBrowserState();
@@ -646,9 +658,10 @@ public sealed partial class FileTreePanel : UserControl
     private void ApplyLocalBrowserState()
     {
         LocalLoadingRing.IsActive = LocalBrowser.IsLoading;
-        if (!string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
+        LocalList.IsEnabled = !LocalBrowser.IsLoading;
+        if (!LocalBrowser.IsLoading && !string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath))
             LocalPathBox.Text = LocalBrowser.CurrentPath;
-        LocalParentButton.IsEnabled = LocalBrowser.CanNavigateParent;
+        LocalParentButton.IsEnabled = LocalBrowser.CanNavigateParent && !LocalBrowser.IsLoading;
         ApplyBrowserNavigationState();
         LocalEmptyState.Visibility = !LocalBrowser.IsLoading &&
             LocalBrowser.Items.Count == 0 && string.IsNullOrWhiteSpace(LocalBrowser.ErrorMessage)
@@ -669,9 +682,7 @@ public sealed partial class FileTreePanel : UserControl
             return;
         }
 
-        LocalLoadingRing.IsActive = true;
-        await LocalBrowser.NavigateParentAsync();
-        ApplyLocalBrowserState();
+        await RunLocalNavigationAsync(() => LocalBrowser.NavigateParentAsync());
     }
 
     private async void LocalGoPath_Click(object sender, RoutedEventArgs e) =>
@@ -717,7 +728,8 @@ public sealed partial class FileTreePanel : UserControl
 
     private async void LocalItem_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (LocalList.SelectedItem is not LocalFileItemViewModel { IsDirectory: true } item)
+        if (LocalBrowser.IsLoading ||
+            (sender as FrameworkElement)?.DataContext is not LocalFileItemViewModel { IsDirectory: true } item)
             return;
         e.Handled = true;
         await NavigateLocalAsync(item.FullPath);
@@ -768,10 +780,10 @@ public sealed partial class FileTreePanel : UserControl
             ? Loc.T("선택 없음", "No selection")
             : Loc.T($"{remoteCount}개 선택", $"{remoteCount} selected");
 
-        var remoteReady = _isAvailable && _sftp is not null && RootNodes.Count > 0;
-        UploadSelectedButton.IsEnabled = remoteReady && localCount > 0;
+        var remoteReady = _isAvailable && !LoadingRing.IsActive && _sftp is not null && RootNodes.Count > 0;
+        UploadSelectedButton.IsEnabled = remoteReady && !LocalBrowser.IsLoading && localCount > 0;
         DownloadSelectedButton.IsEnabled = remoteReady && remoteCount > 0 &&
-            !string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath);
+            !LocalBrowser.IsLoading && !string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath);
         ApplyBrowserNavigationState();
     }
 
@@ -1203,16 +1215,19 @@ public sealed partial class FileTreePanel : UserControl
             else
             {
                 var extension = Path.GetExtension(node.Name);
-                var picker = new FileSavePicker
+                // The desktop picker returns a path without creating a placeholder;
+                // staging and collision handling belong to the transfer pipeline.
+                var picker = new Microsoft.Windows.Storage.Pickers.FileSavePicker(
+                    Microsoft.UI.Win32Interop.GetWindowIdFromWindow(OwnerWindowHandle))
                 {
-                    SuggestedStartLocation = PickerLocationId.Downloads,
+                    SuggestedStartLocation = Microsoft.Windows.Storage.Pickers.PickerLocationId.Downloads,
                     SuggestedFileName = node.Name,
+                    ShowOverwritePrompt = false,
                 };
                 if (!string.IsNullOrEmpty(extension))
                     picker.DefaultFileExtension = extension;
                 picker.FileTypeChoices.Add(Loc.T("파일", "File"),
                     [string.IsNullOrEmpty(extension) ? "*" : extension]);
-                InitializeWithWindow.Initialize(picker, OwnerWindowHandle);
                 localPath = (await picker.PickSaveFileAsync())?.Path;
             }
         }

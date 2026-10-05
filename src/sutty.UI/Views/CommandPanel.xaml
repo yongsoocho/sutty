@@ -134,6 +134,7 @@
                                             BorderThickness="0"
                                             Click="Run_Click"
                                             CornerRadius="5"
+                                            AutomationProperties.Name="{x:Bind h:Loc.T('명령 실행', 'Run command')}"
                                             ToolTipService.ToolTip="{x:Bind h:Loc.T('명령 실행', 'Run command')}">
                                             <FontIcon
                                                 FontSize="11"
@@ -148,6 +149,7 @@
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Click="Delete_Click"
+                                            AutomationProperties.Name="{x:Bind h:Loc.T('명령 삭제', 'Delete command')}"
                                             ToolTipService.ToolTip="{x:Bind h:Loc.T('삭제', 'Delete')}">
                                             <FontIcon
                                                 FontSize="11"
@@ -179,7 +181,8 @@
                                                         CornerRadius="6"
                                                         FontFamily="Cascadia Mono, Consolas"
                                                         FontSize="11.5"
-                                                        PlaceholderText="{x:Bind Label}"
+                                                        AutomationProperties.Name="{x:Bind Label, Mode=OneWay}"
+                                                        PlaceholderText="{x:Bind Label, Mode=OneWay}"
                                                         Text="{x:Bind Value, Mode=TwoWay}" />
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>

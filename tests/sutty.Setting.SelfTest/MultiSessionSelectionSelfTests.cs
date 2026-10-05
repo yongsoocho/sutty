@@ -9,6 +9,7 @@ internal static class MultiSessionSelectionSelfTests
         EmptyAndDuplicateSessionsAreSafe();
         HiddenPaginationLimitsMixedSelectionToVisibleRunningTargets();
         SelectionTracksScopeAndConnectionChanges();
+        ReentryClearsTargetsWithoutLosingResults();
         FixedGridKeepsThreeColumnsAtFractionalWidths();
         DraftIsClearedOnlyAfterExactApproval();
         Console.WriteLine("Multi-session selection and paging self-tests passed.");
@@ -205,6 +206,25 @@ internal static class MultiSessionSelectionSelfTests
         }
     }
 
+    private static void ReentryClearsTargetsWithoutLosingResults()
+    {
+        var state = CreateState();
+        var sessions = Enumerable.Range(0, 12).Select(_ => new object()).ToArray();
+        state.SetSessions(sessions);
+        state.SetAllSelected(true);
+        var resultSlot = state.AllSlots[0];
+        resultSlot.Output = "previous result";
+        state.AllSlots[2].IsEligible = false;
+        state.ResetSelection();
+        Assert(state.GetSelectedSlots().Count == 0 && state.AllSlots.All(slot => !slot.IsSelected),
+            "a new Multi visit clears connected, unavailable and off-page targets");
+        Assert(ReferenceEquals(state.AllSlots[0], resultSlot) && resultSlot.Output == "previous result",
+            "resetting targets retains slot identity and previous command results");
+        state.SetSessions(sessions);
+        Assert(state.GetSelectedSlots().Count == 0 && ReferenceEquals(state.AllSlots[0], resultSlot),
+            "refreshing after reentry cannot revive target selection");
+    }
+
     private static void DraftIsClearedOnlyAfterExactApproval()
     {
         var draft = new BroadcastCommandDraft();
@@ -216,6 +236,8 @@ internal static class MultiSessionSelectionSelfTests
             "submitting without approval retains the draft on zero targets, invalid state or cancelled confirmation");
         Assert(!draft.TryApprove(new BroadcastCommandSubmission("saved command")) && draft.Text.Length > 0,
             "approving a saved command never clears an unrelated input draft");
+        Assert(!draft.TryApprove(new BroadcastCommandSubmission(submitted.Command, TemplateId: 42)) && draft.Text.Length > 0,
+            "approving a saved template with matching command text cannot clear the independently typed draft");
         draft.Update("new draft");
         Assert(!draft.TryApprove(submitted) && draft.Text == "new draft",
             "approving an old command cannot discard a newer draft");

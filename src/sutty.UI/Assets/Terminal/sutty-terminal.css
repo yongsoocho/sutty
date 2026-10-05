@@ -44,9 +44,12 @@ body {
   position: absolute;
   z-index: 20;
   top: 10px;
-  right: 18px;
+  left: 12px;
+  right: 12px;
+  max-width: 386px;
+  margin-left: auto;
   display: grid;
-  grid-template-columns: minmax(180px, 280px) repeat(3, 30px);
+  grid-template-columns: minmax(0, 1fr) repeat(3, 30px);
   gap: 4px;
   padding: 6px;
   border: 1px solid var(--border);

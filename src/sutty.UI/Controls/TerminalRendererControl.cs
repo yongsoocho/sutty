@@ -44,6 +44,9 @@ public sealed class TerminalRendererControl : UserControl
     private long _outputCopyId;
     private StringBuilder? _outputCopy;
     private CancellationTokenSource? _outputCopyCancellation;
+    private int _closed;
+
+    private bool IsClosed => Volatile.Read(ref _closed) != 0;
 
     public TerminalRendererControl()
     {
@@ -52,7 +55,7 @@ public sealed class TerminalRendererControl : UserControl
         IsTabStop = true;
         Content = _webView;
         Loaded += TerminalRendererControl_Loaded;
-        ActualThemeChanged += (_, _) => ApplyCurrentSettings();
+        ActualThemeChanged += TerminalRendererControl_ActualThemeChanged;
     }
 
     public event EventHandler<string>? InputReceived;
@@ -67,9 +70,61 @@ public sealed class TerminalRendererControl : UserControl
     public string? OutputShell { get; set; }
     public TerminalSize ViewportSize { get; private set; } = new(120, 40);
 
+    /// <summary>Release this tab's renderer. Navigation and Unloaded do not close it.</summary>
+    public void Close()
+    {
+        if (Interlocked.Exchange(ref _closed, 1) != 0)
+            return;
+
+        Loaded -= TerminalRendererControl_Loaded;
+        ActualThemeChanged -= TerminalRendererControl_ActualThemeChanged;
+        _rendererReady = false;
+        CancelOutputCopy();
+        _pendingWrites.Clear();
+        _queuedOutputBytes = 0;
+        _inFlightId = 0;
+        _inFlightBytes = 0;
+        _pendingOptions = null;
+        _resetPending = false;
+        _resetText = null;
+        InputReceived = null;
+        TerminalSizeChanged = null;
+        TitleChanged = null;
+        AppShortcutRequested = null;
+        RendererReady = null;
+        RendererFailed = null;
+        OutputCopyCompleted = null;
+
+        try
+        {
+            if (_webView.CoreWebView2 is { } core)
+            {
+                core.NavigationStarting -= Core_NavigationStarting;
+                core.WebMessageReceived -= Core_WebMessageReceived;
+                core.ProcessFailed -= Core_ProcessFailed;
+            }
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Terminal renderer callback detach failed: {error.GetType().Name}");
+        }
+        finally
+        {
+            try { _webView.Close(); }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Terminal renderer close failed: {error.GetType().Name}");
+            }
+            Content = null;
+        }
+    }
+
+    private void TerminalRendererControl_ActualThemeChanged(FrameworkElement sender, object args) =>
+        ApplyCurrentSettings();
+
     public void Write(ReadOnlyMemory<byte> data)
     {
-        if (data.IsEmpty || _failed)
+        if (data.IsEmpty || _failed || IsClosed)
             return;
 
         var copy = data.ToArray();
@@ -84,6 +139,7 @@ public sealed class TerminalRendererControl : UserControl
 
     public void Reset(string? notice = null)
     {
+        if (IsClosed) return;
         if (!DispatcherQueue.HasThreadAccess)
         {
             DispatcherQueue.TryEnqueue(() => Reset(notice));
@@ -100,6 +156,7 @@ public sealed class TerminalRendererControl : UserControl
 
     public void ApplyCurrentSettings()
     {
+        if (IsClosed) return;
         if (!DispatcherQueue.HasThreadAccess)
         {
             DispatcherQueue.TryEnqueue(ApplyCurrentSettings);
@@ -128,6 +185,7 @@ public sealed class TerminalRendererControl : UserControl
 
     public void FocusTerminal()
     {
+        if (IsClosed) return;
         Focus(FocusState.Programmatic);
         if (_rendererReady)
             Post(new TerminalBridgeMessage { Type = "focus" });
@@ -136,6 +194,7 @@ public sealed class TerminalRendererControl : UserControl
     /// <summary>Copy the entire latest rendered command output after pending PTY writes.</summary>
     public void CopyLatestOutput()
     {
+        if (IsClosed) return;
         if (!_rendererReady || _failed)
         {
             OutputCopyCompleted?.Invoke(this, false);
@@ -158,23 +217,24 @@ public sealed class TerminalRendererControl : UserControl
         _outputCopy = null;
         _copyLatestOutputPending = false;
         _copyWritesRemaining = 0;
-        if (pending) OutputCopyCompleted?.Invoke(this, false);
+        if (pending && !IsClosed) OutputCopyCompleted?.Invoke(this, false);
     }
 
     public void FindNext(string? text = null)
     {
-        if (_rendererReady)
+        if (_rendererReady && !IsClosed)
             Post(new TerminalBridgeMessage { Type = "findNext", Text = text });
     }
 
     public void FindPrevious(string? text = null)
     {
-        if (_rendererReady)
+        if (_rendererReady && !IsClosed)
             Post(new TerminalBridgeMessage { Type = "findPrevious", Text = text });
     }
 
     private async void TerminalRendererControl_Loaded(object sender, RoutedEventArgs e)
     {
+        if (IsClosed) return;
         if (_rendererReady)
         {
             FocusTerminal();
@@ -193,6 +253,7 @@ public sealed class TerminalRendererControl : UserControl
                 throw new FileNotFoundException("The packaged terminal renderer is missing.", entryPoint);
 
             await _webView.EnsureCoreWebView2Async();
+            if (IsClosed) return;
             var core = _webView.CoreWebView2 ??
                 throw new InvalidOperationException("WebView2 initialization returned no CoreWebView2 instance.");
 
@@ -210,7 +271,7 @@ public sealed class TerminalRendererControl : UserControl
             core.PermissionRequested += (_, args) => args.State = CoreWebView2PermissionState.Deny;
             core.DownloadStarting += (_, args) => args.Cancel = true;
             core.WebMessageReceived += Core_WebMessageReceived;
-            core.ProcessFailed += (_, args) => Fail($"WebView2 process failed: {args.ProcessFailedKind}");
+            core.ProcessFailed += Core_ProcessFailed;
             core.SetVirtualHostNameToFolderMapping(
                 VirtualHost,
                 assetFolder,
@@ -219,6 +280,7 @@ public sealed class TerminalRendererControl : UserControl
         }
         catch (Exception error)
         {
+            if (IsClosed) return;
             Fail(error.Message);
             Debug.WriteLine($"Terminal renderer initialization failed: {error}");
         }
@@ -227,6 +289,9 @@ public sealed class TerminalRendererControl : UserControl
             _initializing = false;
         }
     }
+
+    private void Core_ProcessFailed(CoreWebView2 sender, CoreWebView2ProcessFailedEventArgs args) =>
+        Fail($"WebView2 process failed: {args.ProcessFailedKind}");
 
     private static void Core_NavigationStarting(
         CoreWebView2 sender,
@@ -244,6 +309,7 @@ public sealed class TerminalRendererControl : UserControl
         CoreWebView2 sender,
         CoreWebView2WebMessageReceivedEventArgs args)
     {
+        if (IsClosed) return;
         try
         {
             var json = args.WebMessageAsJson;
@@ -324,7 +390,7 @@ public sealed class TerminalRendererControl : UserControl
                         {
                             var copied = await ClipboardHelper.CopyTextAsync(
                                 textToCopy, allowEmpty: true, cancellation.Token);
-                            if (message.Id == _outputCopyId)
+                            if (!IsClosed && message.Id == _outputCopyId)
                                 OutputCopyCompleted?.Invoke(this, copied);
                         }
                         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
@@ -346,7 +412,7 @@ public sealed class TerminalRendererControl : UserControl
 
                 case "pasteRequest":
                     var text = await ClipboardHelper.GetTextAsync();
-                    if (!string.IsNullOrEmpty(text) && text.Length <= 4 * 1024 * 1024)
+                    if (!IsClosed && !string.IsNullOrEmpty(text) && text.Length <= 4 * 1024 * 1024)
                         Post(new TerminalBridgeMessage { Type = "paste", Text = text });
                     break;
 
@@ -390,7 +456,7 @@ public sealed class TerminalRendererControl : UserControl
 
     private void QueueWrite(byte[] data)
     {
-        if (_failed || data.Length == 0)
+        if (_failed || IsClosed || data.Length == 0)
             return;
 
         if (data.Length > MaxQueuedOutputBytes)
@@ -426,7 +492,7 @@ public sealed class TerminalRendererControl : UserControl
 
     private void SendNextWrite()
     {
-        if (!_rendererReady || _failed || _inFlightId != 0)
+        if (!_rendererReady || _failed || IsClosed || _inFlightId != 0)
             return;
 
         if (_resetPending)
@@ -462,7 +528,7 @@ public sealed class TerminalRendererControl : UserControl
 
     private void Post(TerminalBridgeMessage message)
     {
-        if (_webView.CoreWebView2 is null || _failed)
+        if (IsClosed || _failed || _webView.CoreWebView2 is null)
             return;
 
         message.Version = ProtocolVersion;
@@ -474,7 +540,7 @@ public sealed class TerminalRendererControl : UserControl
 
     private void Fail(string message)
     {
-        if (_failed)
+        if (_failed || IsClosed)
             return;
 
         _failed = true;

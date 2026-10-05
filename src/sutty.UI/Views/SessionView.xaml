@@ -36,7 +36,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <Grid HorizontalAlignment="Left" VerticalAlignment="Center" ColumnSpacing="10">
+                <Grid HorizontalAlignment="Stretch" VerticalAlignment="Center" ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -93,8 +93,10 @@
                         <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock
                                 x:Name="RoutePillText"
+                                MaxWidth="100"
                                 VerticalAlignment="Center"
                                 FontSize="10.5"
+                                TextTrimming="CharacterEllipsis"
                                 Foreground="{ThemeResource AccentViolet}" />
                             <FontIcon
                                 VerticalAlignment="Center"
@@ -163,13 +165,18 @@
             x:Name="TerminalView"
             Grid.Row="1"
             Background="{ThemeResource TerminalBg}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
             <controls:TerminalRendererControl
                 x:Name="TerminalSurface"
+                Grid.Row="1"
                 Loaded="TerminalSurface_Loaded"
                 AutomationProperties.Name="SSH terminal" />
             <Border
                 x:Name="TerminalStatus"
-                Margin="12"
+                Margin="12,4"
                 Padding="8,4"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Top"

@@ -728,6 +728,11 @@ namespace sutty.UI.Views
                 CommitChangesNow(_pendingChanges);
         }
 
+        private void SettingsPanel_Loaded(object sender, RoutedEventArgs e)
+        {
+            LoadSettingsControls(SettingsService.Current);
+        }
+
         private void SettingsPanel_Unloaded(object sender, RoutedEventArgs e)
         {
             if (_pendingChanges != SettingChangeKind.None)

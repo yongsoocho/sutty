@@ -74,7 +74,16 @@
     }
 
     try {
-      fitAddon.fit();
+      const proposed = fitAddon.proposeDimensions();
+      if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) {
+        return;
+      }
+      // Match the PTY contract even when a split pane is very small or very large.
+      const columns = Math.max(20, Math.min(500, proposed.cols));
+      const rows = Math.max(5, Math.min(200, proposed.rows));
+      if (columns !== terminal.cols || rows !== terminal.rows) {
+        terminal.resize(columns, rows);
+      }
       const pixelWidth = Math.max(0, Math.floor(terminalRoot.clientWidth));
       const pixelHeight = Math.max(0, Math.floor(terminalRoot.clientHeight));
       if (terminal.cols === lastColumns && terminal.rows === lastRows &&
@@ -357,7 +366,10 @@
 
   const resizeObserver = new ResizeObserver(scheduleFit);
   resizeObserver.observe(terminalRoot);
-  window.addEventListener('focus', function () { terminal.focus(); });
+  window.addEventListener('focus', function () {
+    if (searchElement.hidden) terminal.focus();
+    else searchInput.focus();
+  });
   applyOptions({});
   scheduleFit();
   post({ type: 'ready', text: 'xterm.js 6.0.0' });

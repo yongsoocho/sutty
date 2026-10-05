@@ -36,8 +36,10 @@ the central shell with a 3×3 session grid while open shells keep running. It sh
 of up to 16 local/SSH tabs and reuses the existing command library on the right. Pagination controls
 are hidden; their internal implementation remains. Narrow
 windows retain the 3×3 layout with scrolling. Free-form and saved commands go only to checked,
-connected Sutty SSH sessions in the visible grid after an exact-target/command preview. Local
-and external terminals cannot receive Multi command input. Select all / Clear all applies to
+connected Sutty SSH or running local/external sessions in the visible grid after an exact-target/command preview.
+Local/external terminal input additionally requires separate default-off approval on every run,
+because the foreground program and exit status cannot be guaranteed. Entering Multi Command clears
+all targets while retaining session results. Select all / Clear all applies to
 the visible grid; hidden tabs never become execution targets. Structured SSH exec does not share the visible terminal's directory, environment,
 or sudo state. A finite wait and cancellation leave unconfirmed remote outcomes explicit.
 
@@ -127,8 +129,9 @@ PowerShell을 열며, `+` 메뉴에서 CMD도 선택할 수 있습니다. 전역
 **Multi Command**는 별도 이동 탭(`Alt+8`)이며 중앙 셸을 가리고 3×3 세션 그리드를 표시합니다.
 열린 셸은 계속 실행되고, 최대 16개 로컬/SSH 탭 중 첫 9개를 표시하며 오른쪽에는
 기존 명령 모음집 UI를 재사용합니다. 좁은 화면에서도 3×3 배치를 유지하고 스크롤할 수 있습니다.
-페이지 이동 UI는 숨기고 내부 구현을 유지합니다. 직접 입력·저장 명령은 보이는 연결된 Sutty SSH만 대상으로 하며 정확한 대상·명령을
-확인한 뒤 실행합니다. 로컬·외부 터미널에는 Multi 입력을 보내지 않습니다. 전체 선택 / 전체 해제도
+페이지 이동 UI는 숨기고 내부 구현을 유지합니다. 직접 입력·저장 명령은 보이는 연결된 Sutty SSH 또는 실행 중인 로컬·외부 세션을 대상으로 하며 정확한 대상·명령을
+확인한 뒤 실행합니다. 로컬·외부 입력은 전경 프로그램과 종료 코드를 보장할 수 없어 매 실행마다 기본 해제된 별도 승인을 요구합니다.
+Multi Command에 진입하면 결과를 유지하고 모든 대상을 해제합니다. 전체 선택 / 전체 해제도
 보이는 그리드에 적용하며 숨겨진 탭은 실행하지 않습니다. SSH exec는 보이는 터미널의 경로·환경변수·sudo 상태를 공유하지 않으며
 유한 대기와 취소 뒤에도 확인되지 않은 원격 결과를 명시합니다.
 

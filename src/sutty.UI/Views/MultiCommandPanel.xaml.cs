@@ -53,7 +53,7 @@ namespace sutty.UI.Views
             BroadcastBox.FontFamily = new FontFamily(settings.TerminalFontFamily + ", Consolas");
 
             CommandLibrary.SetBroadcastMode(true);
-            CommandLibrary.RunRequested += (_, command) => RequestBroadcast(command);
+            CommandLibrary.ReviewRequested += (_, submission) => RequestBroadcast(submission);
         }
 
         public void SetBroadcastRunning(bool isRunning, string? status = null)
@@ -84,6 +84,8 @@ namespace sutty.UI.Views
         {
             if (_broadcastDraft.TryApprove(submission))
                 BroadcastBox.Text = "";
+            if (submission.TemplateId is long templateId)
+                CommandLibrary.ApproveExecution(templateId);
             StopBroadcastButton.IsEnabled = true;
         }
 
@@ -141,7 +143,7 @@ namespace sutty.UI.Views
         public void SetRecoveredJobCount(int count)
         {
             ResumePendingButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            ResumePendingButton.Content = Helpers.Loc.T(
+            ResumePendingText.Text = Helpers.Loc.T(
                 $"복원된 전송 {count}개 재개",
                 $"Resume {count} restored transfer(s)");
         }
@@ -183,11 +185,13 @@ namespace sutty.UI.Views
             BroadcastRequested?.Invoke(this, submission);
         }
 
-        private void RequestBroadcast(string command)
+        private void RequestBroadcast(BroadcastCommandSubmission submission)
         {
-            if (!_isBroadcastRunning && !string.IsNullOrWhiteSpace(command))
-                BroadcastRequested?.Invoke(this, new BroadcastCommandSubmission(
-                    BroadcastCommandDraft.Normalize(command)));
+            if (!_isBroadcastRunning && !string.IsNullOrWhiteSpace(submission.Command))
+                BroadcastRequested?.Invoke(this, submission with
+                {
+                    Command = BroadcastCommandDraft.Normalize(submission.Command),
+                });
         }
 
         private async void UploadFile_Click(object sender, RoutedEventArgs e)

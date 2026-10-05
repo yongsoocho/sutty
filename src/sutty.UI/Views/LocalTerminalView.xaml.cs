@@ -205,6 +205,11 @@ public sealed partial class LocalTerminalView : UserControl
         if (_workingDirectorySource is not null)
             _workingDirectorySource.WorkingDirectoryChanged -= OnWorkingDirectoryChanged;
         ClearTerminalBacklog();
+        TerminalSurface.Loaded -= TerminalSurface_Loaded;
+        TerminalSurface.TerminalSizeChanged -= TerminalSurface_TerminalSizeChanged;
+        AppShortcutRequested = null;
+        WorkingDirectoryChanged = null;
+        TerminalSurface.Close();
 
         try
         {
@@ -270,6 +275,7 @@ public sealed partial class LocalTerminalView : UserControl
         CaptureBroadcastOutput(data);
         lock (_terminalOutputGate)
         {
+            if (Volatile.Read(ref _closed) != 0) return;
             if (data.Length > MaxTerminalBacklogBytes)
             {
                 _terminalDroppedBytes += _terminalQueuedBytes + data.LongLength;
@@ -316,6 +322,12 @@ public sealed partial class LocalTerminalView : UserControl
 
     private void DrainTerminalOutput(bool allOutput)
     {
+        if (Volatile.Read(ref _closed) != 0)
+        {
+            Interlocked.Exchange(ref _terminalDrainQueued, 0);
+            ClearTerminalBacklog();
+            return;
+        }
         List<byte[]> batch = [];
         long droppedBytes;
         bool resetScreen;
@@ -440,6 +452,7 @@ public sealed partial class LocalTerminalView : UserControl
 
     private void CopyOutput_Click(object sender, RoutedEventArgs e)
     {
+        if (Volatile.Read(ref _closed) != 0) return;
         DrainTerminalOutput(allOutput: true);
         TerminalSurface.CopyLatestOutput();
     }
@@ -585,6 +598,7 @@ public sealed partial class LocalTerminalView : UserControl
 
     private void TerminalSurface_TerminalSizeChanged(object? sender, TerminalSize size)
     {
+        if (Volatile.Read(ref _closed) != 0) return;
         _requestedTerminalSize = size.Clamp();
         UpdateTerminalStatus(Terminal.TerminalState);
 
@@ -638,6 +652,7 @@ public sealed partial class LocalTerminalView : UserControl
 
     private void UpdateTerminalStatus(TerminalState state)
     {
+        if (Volatile.Read(ref _closed) != 0) return;
         var (pillLabel, statusLabel, resourceKey) = state switch
         {
             TerminalState.Opening =>

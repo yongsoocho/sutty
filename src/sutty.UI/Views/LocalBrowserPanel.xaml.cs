@@ -23,6 +23,8 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
     private bool _hasDirectory;
     private bool _disposed;
     private bool _followsShell = true;
+    private bool _navigating;
+    private string? _navigationError;
     private CancellationTokenSource? _navigationCancellation;
 
     public LocalFileBrowserViewModel Browser { get; } = new(new LocalFileBrowserService());
@@ -72,7 +74,9 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
         _navigationCancellation?.Cancel();
         _navigationCancellation?.Dispose();
         _navigationCancellation = null;
+        _navigating = false;
         LoadingRing.IsActive = false;
+        UpdateState();
     }
 
     private async Task NavigateAsync(Func<CancellationToken, Task<bool>> action, bool shellNavigation = false)
@@ -82,6 +86,8 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
         var version = _navigationVersion;
         var cancellation = new CancellationTokenSource();
         _navigationCancellation = cancellation;
+        _navigating = true;
+        _navigationError = null;
         if (shellNavigation) _hasDirectory = false;
         UpdateState();
         LoadingRing.IsActive = true;
@@ -90,7 +96,6 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
             var loaded = await action(cancellation.Token);
             if (_disposed || cancellation.IsCancellationRequested || version != _navigationVersion) return;
             if (loaded) _hasDirectory = true;
-            UpdateState();
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception error)
@@ -98,7 +103,17 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
             if (!_disposed && version == _navigationVersion)
             {
                 LoadingRing.IsActive = false;
-                StatusText.Text = error.Message;
+                _navigationError = error.Message;
+            }
+        }
+        finally
+        {
+            if (!_disposed && version == _navigationVersion)
+            {
+                _navigating = false;
+                _navigationCancellation = null;
+                cancellation.Dispose();
+                UpdateState();
             }
         }
     }
@@ -114,18 +129,19 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
         if (_disposed) return;
         // The view-model can finish cancellation after this panel has switched tabs or
         // cleared an unknown shell directory. Only this panel's current request is loading.
-        var loading = _navigationCancellation is { IsCancellationRequested: false } && Browser.IsLoading;
+        var loading = _navigating;
         FileList.Visibility = _hasDirectory ? Visibility.Visible : Visibility.Collapsed;
+        FileList.IsEnabled = !loading;
         EmptyText.Visibility = _hasDirectory && !loading && Browser.Items.Count == 0
             ? Visibility.Visible : Visibility.Collapsed;
         LoadingRing.IsActive = loading;
         BackButton.IsEnabled = Browser.CanGoBack && !loading;
         ForwardButton.IsEnabled = Browser.CanGoForward && !loading;
         ParentButton.IsEnabled = _hasDirectory && Browser.CanNavigateParent && !loading;
-        if (_hasDirectory) PathBox.Text = Browser.CurrentPath;
+        if (_hasDirectory && !loading) PathBox.Text = Browser.CurrentPath;
         StatusText.Text = _followsShell && !_hasDirectory && string.IsNullOrWhiteSpace(_shellDirectory)
             ? Loc.T("현재 셸 폴더를 확인하는 중입니다.", "Waiting for the current shell directory.")
-            : Browser.ErrorMessage ?? "";
+            : _navigationError ?? Browser.ErrorMessage ?? "";
     }
 
     private async void Back_Click(object sender, RoutedEventArgs e) =>
@@ -157,17 +173,23 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
         UpdateState();
     }
 
-    private async void FileList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e) => await OpenSelectedAsync();
+    private async void FileItem_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (_disposed || _navigating || !_hasDirectory ||
+            (sender as FrameworkElement)?.DataContext is not LocalFileItemViewModel item) return;
+        e.Handled = true;
+        await OpenItemAsync(item);
+    }
     private async void FileList_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != VirtualKey.Enter) return;
         e.Handled = true;
-        await OpenSelectedAsync();
+        if (FileList.SelectedItem is LocalFileItemViewModel item) await OpenItemAsync(item);
     }
 
-    private async Task OpenSelectedAsync()
+    private async Task OpenItemAsync(LocalFileItemViewModel item)
     {
-        if (FileList.SelectedItem is not LocalFileItemViewModel item) return;
+        if (_disposed || _navigating || !_hasDirectory) return;
         if (item.IsDirectory)
             await NavigateAsync(token => Browser.NavigateAsync(item.FullPath, token));
         else
@@ -187,7 +209,7 @@ public sealed partial class LocalBrowserPanel : UserControl, IDisposable
     private void FileList_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
     {
         var items = e.Items.OfType<LocalFileItemViewModel>().ToArray();
-        if (items.Length == 0 || !_hasDirectory || _disposed) { e.Cancel = true; return; }
+        if (items.Length == 0 || !_hasDirectory || _disposed || _navigating) { e.Cancel = true; return; }
         e.Data.RequestedOperation = DataPackageOperation.Copy;
         e.Data.SetDataProvider(StandardDataFormats.StorageItems, async request =>
         {

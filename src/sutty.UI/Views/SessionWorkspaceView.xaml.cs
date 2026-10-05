@@ -111,7 +111,11 @@ public sealed partial class SessionWorkspaceView : UserControl
     private void UpdateWorkspaceLayout()
     {
         if (AuxiliaryBorder is null) return;
-        var compactHeader = ActualWidth < 740;
+        var navigationWidth = 0d;
+        foreach (var item in WorkspaceNavigation.Children)
+            navigationWidth += item.DesiredSize.Width;
+        navigationWidth += WorkspaceNavigation.Spacing * (WorkspaceNavigation.Children.Count - 1);
+        var compactHeader = ActualWidth < Math.Max(740, navigationWidth + 280);
         Grid.SetRow(WorkspaceNavigation, compactHeader ? 1 : 0);
         Grid.SetColumn(WorkspaceNavigation, compactHeader ? 0 : 1);
         Grid.SetColumnSpan(WorkspaceNavigation, compactHeader ? 2 : 1);
@@ -188,6 +192,7 @@ public sealed partial class SessionWorkspaceView : UserControl
     {
         if (_detached) return;
         _detached = true;
+        SessionView.Detach();
         if (_externalFilesHost is { } externalHost)
             RestoreFileBrowser(externalHost);
         FilesPanel.StopRemoteEditing();
