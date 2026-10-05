@@ -45,7 +45,7 @@ public sealed partial class FileTreePanel
         if (LocalBackButton is null || RemoteBackButton is null) return;
         LocalBackButton.IsEnabled = LocalBrowser.CanGoBack && !LocalBrowser.IsLoading;
         LocalForwardButton.IsEnabled = LocalBrowser.CanGoForward && !LocalBrowser.IsLoading;
-        var ready = _isAvailable && _sftp is not null && RootNodes.Count > 0;
+        var ready = _isAvailable && !LoadingRing.IsActive && _sftp is not null && RootNodes.Count > 0;
         RemoteBackButton.IsEnabled = ready && _remoteHistory.CanGoBack;
         RemoteForwardButton.IsEnabled = ready && _remoteHistory.CanGoForward;
         RemoteFavoritesButton.IsEnabled = ready;
@@ -67,14 +67,12 @@ public sealed partial class FileTreePanel
 
     private async void LocalBack_Click(object sender, RoutedEventArgs e)
     {
-        await LocalBrowser.GoBackAsync();
-        ApplyLocalBrowserState();
+        await RunLocalNavigationAsync(() => LocalBrowser.GoBackAsync());
     }
 
     private async void LocalForward_Click(object sender, RoutedEventArgs e)
     {
-        await LocalBrowser.GoForwardAsync();
-        ApplyLocalBrowserState();
+        await RunLocalNavigationAsync(() => LocalBrowser.GoForwardAsync());
     }
 
     private async void RemoteBack_Click(object sender, RoutedEventArgs e)
@@ -132,7 +130,7 @@ public sealed partial class FileTreePanel
     private void LocalDragItems_Starting(object sender, DragItemsStartingEventArgs e)
     {
         var items = e.Items.OfType<LocalFileItemViewModel>().ToArray();
-        if (items.Length == 0 || !_isAvailable || _sftp is null) { e.Cancel = true; return; }
+        if (items.Length == 0 || !_isAvailable || _sftp is null || LocalBrowser.IsLoading) { e.Cancel = true; return; }
         _browserDrag = new(Guid.NewGuid().ToString("N"), _sessionVersion, items, []);
         e.Data.SetData(LocalDragFormat, _browserDrag.Token);
         e.Data.RequestedOperation = DataPackageOperation.Copy;
@@ -158,13 +156,13 @@ public sealed partial class FileTreePanel
             ? payload : null;
     }
 
-    private bool CanAcceptLocalUpload(DataPackageView data) => _isAvailable && _sftp is not null &&
+    private bool CanAcceptLocalUpload(DataPackageView data) => _isAvailable && !LoadingRing.IsActive && _sftp is not null &&
         RootNodes.Count > 0 && (data.Contains(StandardDataFormats.StorageItems) ||
             data.Contains(LocalDragFormat) && _browserDrag is { LocalItems.Count: > 0 } payload && payload.SessionVersion == _sessionVersion);
 
     private void LocalList_DragOver(object sender, DragEventArgs e)
     {
-        if (!_isAvailable || _sftp is null || string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath) ||
+        if (!_isAvailable || _sftp is null || LocalBrowser.IsLoading || string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath) ||
             !e.DataView.Contains(RemoteDragFormat) || _browserDrag is not { RemoteItems.Count: > 0 } payload ||
             payload.SessionVersion != _sessionVersion) return;
         if ((sender as FrameworkElement)?.DataContext is LocalFileItemViewModel { IsDirectory: true, IsReparsePoint: true })
@@ -182,7 +180,7 @@ public sealed partial class FileTreePanel
 
     private async void LocalList_Drop(object sender, DragEventArgs e)
     {
-        if (e.Handled || !e.DataView.Contains(RemoteDragFormat)) return;
+        if (e.Handled || !_isAvailable || LocalBrowser.IsLoading || !e.DataView.Contains(RemoteDragFormat)) return;
         e.Handled = true;
         if ((sender as FrameworkElement)?.DataContext is LocalFileItemViewModel { IsDirectory: true, IsReparsePoint: true })
         {

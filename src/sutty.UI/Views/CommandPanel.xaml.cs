@@ -2,8 +2,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using sutty.Command;
 using sutty.UI.ViewModels;
+using sutty.UI.Services;
 using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 
 namespace sutty.UI.Views
 {
@@ -14,17 +16,38 @@ namespace sutty.UI.Views
     /// </summary>
     public sealed partial class CommandPanel : UserControl
     {
-        public void RefreshLanguage() => Bindings.Update();
+        public void RefreshLanguage()
+        {
+            Bindings.Update();
+            foreach (var item in _all)
+                item.RefreshLanguage();
+        }
 
         public void SetBroadcastMode(bool enabled)
-            => RunTargetHint.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        {
+            _isBroadcastMode = enabled;
+            RunTargetHint.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        }
 
         private readonly System.Collections.Generic.List<CommandItemVm> _all = [];
         private bool _subscribed;
+        private bool _isBroadcastMode;
         public ObservableCollection<CommandItemVm> Items { get; } = [];
 
         /// <summary>치환 완료된 최종 명령을 호스트가 정한 대상에서 실행해 달라는 신호.</summary>
         public event EventHandler<string>? RunRequested;
+        public event EventHandler<BroadcastCommandSubmission>? ReviewRequested;
+
+        public void ApproveExecution(long templateId)
+        {
+            if (_all.FirstOrDefault(item => item.Template.Id == templateId) is { } item)
+                item.ShowParams = false;
+            try { CommandStore.IncrementUsage(templateId); }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine($"Could not update command usage: {error.GetType().Name}");
+            }
+        }
 
         public CommandPanel()
         {
@@ -62,9 +85,16 @@ namespace sutty.UI.Views
 
         private void Load()
         {
+            var previous = _all.ToDictionary(item => item.Template.Id);
             _all.Clear();
             foreach (var template in CommandStore.GetAll())
-                _all.Add(new CommandItemVm(template));
+            {
+                if (previous.TryGetValue(template.Id, out var item))
+                    item.UpdateTemplate(template);
+                else
+                    item = new CommandItemVm(template);
+                _all.Add(item);
+            }
             ApplyFilter(SearchBox?.Text ?? "");
         }
 
@@ -80,16 +110,29 @@ namespace sutty.UI.Views
         {
             var q = query.Trim();
 
-            Items.Clear();
+            var filtered = new System.Collections.Generic.List<CommandItemVm>();
             foreach (var vm in _all)
             {
                 if (q.Length == 0 ||
                     vm.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                     vm.CommandText.Contains(q, StringComparison.OrdinalIgnoreCase))
                 {
-                    Items.Add(vm);
+                    filtered.Add(vm);
                 }
             }
+
+            // Preserve card/input instances when usage ordering or another view changes.
+            for (var index = 0; index < filtered.Count; index++)
+            {
+                if (index < Items.Count && ReferenceEquals(Items[index], filtered[index])) continue;
+                var previousIndex = Items.IndexOf(filtered[index]);
+                if (previousIndex >= 0)
+                    Items.Move(previousIndex, index);
+                else
+                    Items.Insert(index, filtered[index]);
+            }
+            while (Items.Count > filtered.Count)
+                Items.RemoveAt(Items.Count - 1);
 
             EmptyText.Visibility = Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -139,6 +182,11 @@ namespace sutty.UI.Views
         private void Execute(CommandItemVm vm)
         {
             var command = vm.BuildCommand();
+            if (_isBroadcastMode)
+            {
+                ReviewRequested?.Invoke(this, new BroadcastCommandSubmission(command, TemplateId: vm.Template.Id));
+                return;
+            }
             CommandStore.IncrementUsage(vm.Template.Id); // 다음에 위로 올라오게
             vm.ShowParams = false;
             RunRequested?.Invoke(this, command);

@@ -61,12 +61,11 @@
                     Text="{x:Bind h:Loc.T('Sutty SSH는 독립 exec로 실행합니다. 로컬·외부 터미널 입력은 실행 전 별도 승인이 필요합니다. 응답은 최대 60초 기다립니다.', 'Sutty SSH runs independent exec. Local/external terminal input requires separate approval before execution. Waits up to 60 seconds.')}" />
                 <Button
                     x:Name="RunBroadcastButton"
-                    Height="32"
+                    MinHeight="32"
                     HorizontalAlignment="Stretch"
                     Background="{ThemeResource AccentGradient}"
                     BorderThickness="0"
                     Click="RunBroadcast_Click"
-                    Content="{x:Bind h:Loc.T('대상·명령 확인 후 실행', 'Review targets and command')}"
                     CornerRadius="7"
                     FontSize="12"
                     FontWeight="SemiBold"
@@ -76,11 +75,13 @@
                         <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
                         <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
                     </Button.Resources>
+                    <TextBlock Text="{x:Bind h:Loc.T('대상·명령 확인 후 실행', 'Review targets and command')}" TextWrapping="Wrap" />
                 </Button>
                 <Button x:Name="StopBroadcastButton" HorizontalAlignment="Stretch"
                     Visibility="Collapsed" Click="StopBroadcast_Click"
-                    Content="{x:Bind h:Loc.T('취소 요청 · 대기 종료', 'Request cancellation · stop waiting')}"
-                    ToolTipService.ToolTip="{x:Bind h:Loc.T('작업 종료는 보장되지 않습니다. 대상 서버·터미널에서 결과를 확인하세요. 자동 재실행하지 않습니다.', 'Termination is not guaranteed. Check the target server or terminal. No automatic replay.')}" />
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('작업 종료는 보장되지 않습니다. 대상 서버·터미널에서 결과를 확인하세요. 자동 재실행하지 않습니다.', 'Termination is not guaranteed. Check the target server or terminal. No automatic replay.')}">
+                    <TextBlock Text="{x:Bind h:Loc.T('취소 요청 · 대기 종료', 'Request cancellation · stop waiting')}" TextWrapping="Wrap" />
+                </Button>
                 </StackPanel>
                 <controls:WrapPanel
                     x:Name="BroadcastStatusPanel"
@@ -156,20 +157,22 @@
                 </Button>
                 <Button
                     x:Name="RetryFailedButton"
-                    Height="30"
+                    MinHeight="30"
                     HorizontalAlignment="Stretch"
                     Click="RetryFailed_Click"
-                    Content="{x:Bind h:Loc.T('실패한 서버만 재시도', 'Retry failed servers only')}"
                     CornerRadius="7"
-                    Visibility="Collapsed" />
+                    Visibility="Collapsed">
+                    <TextBlock Text="{x:Bind h:Loc.T('실패한 서버만 재시도', 'Retry failed servers only')}" TextWrapping="Wrap" />
+                </Button>
                 <Button
                     x:Name="ResumePendingButton"
-                    Height="30"
+                    MinHeight="30"
                     HorizontalAlignment="Stretch"
                     Click="ResumePending_Click"
-                    Content="{x:Bind h:Loc.T('복원된 전송 재개', 'Resume restored transfer')}"
                     CornerRadius="7"
-                    Visibility="Collapsed" />
+                    Visibility="Collapsed">
+                    <TextBlock x:Name="ResumePendingText" Text="{x:Bind h:Loc.T('복원된 전송 재개', 'Resume restored transfer')}" TextWrapping="Wrap" />
+                </Button>
                 <TextBlock
                     x:Name="SftpStatusText"
                     FontSize="10.5"

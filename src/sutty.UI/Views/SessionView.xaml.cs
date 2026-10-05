@@ -66,6 +66,8 @@ namespace sutty.UI.Views
         private readonly object _terminalOutputGate = new();
         private readonly Queue<byte[]> _terminalOutputQueue = new();
         private readonly SemaphoreSlim _commandGate = new(1, 1);
+        private readonly CancellationTokenSource _lifetimeCancellation = new();
+        private readonly CancellationToken _lifetimeToken;
         private readonly ShellTabLifetimePolicy _shellLifetime = new();
         private readonly CommandSuggestionEngine _suggestionEngine = new();
         private readonly List<string> _commandHistory = [];
@@ -77,6 +79,8 @@ namespace sutty.UI.Views
         private int _cellIndex;
         private string _cwd = "~"; // 현재 원격 작업 디렉터리 (cd로 갱신)
         private int _terminalDrainQueued;
+        private int _detached;
+        private bool IsDetached => Volatile.Read(ref _detached) != 0;
         private bool _terminalResizeInProgress;
         private bool _reconnectPending;
         private long _workingDirectoryRequestVersion;
@@ -88,6 +92,7 @@ namespace sutty.UI.Views
         public SessionView(ISshSession session)
         {
             Session = session;
+            _lifetimeToken = _lifetimeCancellation.Token;
             _shellLifetime.ObserveTerminal(session.TerminalState);
             var user = string.IsNullOrWhiteSpace(session.Info.Username) ? "root" : session.Info.Username;
             _prompt = $"{user}@{session.Info.Host}";
@@ -96,11 +101,7 @@ namespace sutty.UI.Views
             ReloadSavedCommandSuggestions();
 
             ApplyTerminalSettings();
-            ActualThemeChanged += (_, _) =>
-            {
-                UpdateStatusPill(Session.State);
-                UpdateSftpPill(Session.SftpState);
-            };
+            ActualThemeChanged += SessionView_ActualThemeChanged;
 
             TitleText.Text = $"Sutty SSH · {user}@{Session.Info.Host}:{Session.Info.Port} · {Session.Info.Title}";
             RoutePillText.Text = Session.Info.Route?.DisplayName ??
@@ -112,7 +113,7 @@ namespace sutty.UI.Views
             _uptimeTimer = DispatcherQueue.CreateTimer();
             _uptimeTimer.Interval = TimeSpan.FromSeconds(1);
             _uptimeTimer.IsRepeating = true;
-            _uptimeTimer.Tick += (_, _) => UpdateStatusPill(Session.State);
+            _uptimeTimer.Tick += UptimeTimer_Tick;
 
             // StateChanged는 백그라운드 스레드에서 올 수 있으므로 UI 스레드로 마샬링
             Session.StateChanged += OnStateChanged;
@@ -130,6 +131,7 @@ namespace sutty.UI.Views
             TerminalSurface.RendererFailed += (_, message) =>
                 DispatcherQueue.TryEnqueue(() =>
                 {
+                    if (IsDetached) return;
                     TerminalStatusText.Text = Loc.T("터미널 렌더러 오류", "Terminal renderer error");
                     ToolTipService.SetToolTip(TerminalStatus, message);
                 });
@@ -137,9 +139,51 @@ namespace sutty.UI.Views
             UpdateTerminalStatus(Session.TerminalState);
         }
 
+        /// <summary>Stop UI callbacks at tab closure, before asynchronous transport cleanup.</summary>
+        internal void Detach()
+        {
+            if (Interlocked.Exchange(ref _detached, 1) != 0)
+                return;
+
+            Session.StateChanged -= OnStateChanged;
+            Session.SftpStateChanged -= OnSftpStateChanged;
+            Session.TerminalStateChanged -= OnTerminalStateChanged;
+            Session.TerminalDataReceived -= OnTerminalDataReceived;
+            _uptimeTimer.Stop();
+            _uptimeTimer.Tick -= UptimeTimer_Tick;
+            ActualThemeChanged -= SessionView_ActualThemeChanged;
+            TerminalSurface.Loaded -= TerminalSurface_Loaded;
+            TerminalSurface.TerminalSizeChanged -= TerminalSurface_TerminalSizeChanged;
+            Interlocked.Increment(ref _workingDirectoryRequestVersion);
+            ClearTerminalBacklog();
+            WorkingDirectoryChanged = null;
+            AppShortcutRequested = null;
+            ReconnectRequested = null;
+            TerminalSurface.Close();
+            try { _lifetimeCancellation.Cancel(); }
+            catch (Exception error)
+            {
+                Debug.WriteLine($"Session view cancellation failed: {error.GetType().Name}");
+            }
+            finally { _lifetimeCancellation.Dispose(); }
+        }
+
+        private void UptimeTimer_Tick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+        {
+            if (!IsDetached) UpdateStatusPill(Session.State);
+        }
+
+        private void SessionView_ActualThemeChanged(FrameworkElement sender, object args)
+        {
+            if (IsDetached) return;
+            UpdateStatusPill(Session.State);
+            UpdateSftpPill(Session.SftpState);
+        }
+
         /// <summary>Apply terminal-related settings to this already-open session.</summary>
         public void ApplyTerminalSettings()
         {
+            if (IsDetached) return;
             var settings = SettingsService.Current;
             var familyName = string.IsNullOrWhiteSpace(settings.TerminalFontFamily)
                 ? "Cascadia Mono"
@@ -164,6 +208,7 @@ namespace sutty.UI.Views
         /// <summary>Refresh one-time localized bindings without recreating the session.</summary>
         public void RefreshLanguage()
         {
+            if (IsDetached) return;
             Bindings.Update();
             UpdateSftpPill(Session.SftpState);
             UpdateTerminalStatus(Session.TerminalState);
@@ -184,12 +229,14 @@ namespace sutty.UI.Views
 
         public void FocusCommandRunner()
         {
+            if (IsDetached) return;
             ScrollToBottom();
             CommandBox.Focus(FocusState.Programmatic);
         }
 
         public void FocusTerminal()
         {
+            if (IsDetached) return;
             if (Session.State == SessionState.Connected && TerminalSurface.IsLoaded)
             {
                 _ = EnsureTerminalStartedAsync();
@@ -200,16 +247,23 @@ namespace sutty.UI.Views
         // ── 세션 상태 / 업타임 필 ──
 
         private void OnStateChanged(object? sender, SessionState state)
-            => DispatcherQueue.TryEnqueue(() => ApplyState(state));
+        {
+            if (!IsDetached) DispatcherQueue.TryEnqueue(() => ApplyState(state));
+        }
 
         private void OnSftpStateChanged(object? sender, SftpConnectionState state)
-            => DispatcherQueue.TryEnqueue(() => UpdateSftpPill(state));
+            => DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!IsDetached) UpdateSftpPill(state);
+            });
 
         private void OnTerminalStateChanged(object? sender, TerminalState state)
         {
+            if (IsDetached) return;
             _shellLifetime.ObserveTerminal(state);
             DispatcherQueue.TryEnqueue(() =>
             {
+                if (IsDetached) return;
                 if (state == TerminalState.Opening)
                 {
                     // Retire output queued by the previous PTY generation before the new
@@ -225,9 +279,11 @@ namespace sutty.UI.Views
 
         private void OnTerminalDataReceived(object? sender, TerminalDataReceivedEventArgs e)
         {
+            if (IsDetached) return;
             var data = e.Data.ToArray();
             lock (_terminalOutputGate)
             {
+                if (IsDetached) return;
                 if (data.Length > MaxTerminalBacklogBytes)
                 {
                     _terminalDroppedBytes += _terminalQueuedBytes + data.LongLength;
@@ -257,7 +313,7 @@ namespace sutty.UI.Views
 
         private void QueueTerminalDrain()
         {
-            if (Interlocked.Exchange(ref _terminalDrainQueued, 1) != 0)
+            if (IsDetached || Interlocked.Exchange(ref _terminalDrainQueued, 1) != 0)
                 return;
 
             if (!DispatcherQueue.TryEnqueue(DrainTerminalOutput))
@@ -271,6 +327,12 @@ namespace sutty.UI.Views
 
         private void DrainTerminalOutput(bool allOutput)
         {
+            if (IsDetached)
+            {
+                Interlocked.Exchange(ref _terminalDrainQueued, 0);
+                ClearTerminalBacklog();
+                return;
+            }
             List<byte[]> batch = [];
             long droppedBytes;
             bool resetScreen;
@@ -463,6 +525,7 @@ namespace sutty.UI.Views
 
         private void ApplyState(SessionState state, bool initial = false)
         {
+            if (IsDetached) return;
             var info = Session.Info;
 
             if (state == SessionState.Connected)
@@ -549,6 +612,7 @@ namespace sutty.UI.Views
 
         private void AddSystemCell(string message)
         {
+            if (IsDetached) return;
             Cells.Add(new CommandCell { Output = message });
             ScrollToBottom();
         }
@@ -589,11 +653,15 @@ namespace sutty.UI.Views
             string remotePath,
             long? expectedRequestVersion = null)
         {
-            await _commandGate.WaitAsync();
+            if (IsDetached) return null;
+            try { await _commandGate.WaitAsync(_lifetimeToken); }
+            catch (OperationCanceledException) when (IsDetached) { return null; }
             try
             {
-                return await ResolveWorkingDirectoryCoreAsync(remotePath, expectedRequestVersion);
+                return await ResolveWorkingDirectoryCoreAsync(
+                    remotePath, expectedRequestVersion, cancellationToken: _lifetimeToken);
             }
+            catch (OperationCanceledException) when (IsDetached) { return null; }
             finally
             {
                 _commandGate.Release();
@@ -606,7 +674,7 @@ namespace sutty.UI.Views
             Action<CommandExecutionResult>? resultCaptured = null,
             CancellationToken cancellationToken = default)
         {
-            if (Session.State != SessionState.Connected || string.IsNullOrWhiteSpace(remotePath))
+            if (IsDetached || Session.State != SessionState.Connected || string.IsNullOrWhiteSpace(remotePath))
                 return null;
 
             var requestVersion = expectedRequestVersion ??
@@ -627,7 +695,7 @@ namespace sutty.UI.Views
 
             if (resolved is null || !resolved.StartsWith('/'))
                 return null;
-            if (Volatile.Read(ref _workingDirectoryRequestVersion) != requestVersion)
+            if (IsDetached || Volatile.Read(ref _workingDirectoryRequestVersion) != requestVersion)
                 return null;
 
             _cwd = resolved;
@@ -649,11 +717,15 @@ namespace sutty.UI.Views
             string command,
             CancellationToken cancellationToken = default)
         {
+            if (IsDetached) return ClosedCommandResult(command);
             RememberCommand(command);
-            await _commandGate.WaitAsync(cancellationToken);
+            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, _lifetimeToken);
+            try { await _commandGate.WaitAsync(cancellation.Token); }
+            catch (OperationCanceledException) when (IsDetached) { return ClosedCommandResult(command); }
             try
             {
-                return await RunCommandCoreLockedAsync(command, cancellationToken);
+                return await RunCommandCoreLockedAsync(command, cancellation.Token);
             }
             finally
             {
@@ -665,6 +737,7 @@ namespace sutty.UI.Views
             string command,
             CancellationToken cancellationToken)
         {
+            if (IsDetached) return ClosedCommandResult(command);
             if (Session.State != SessionState.Connected)
             {
                 var message = Loc.T("연결되어 있지 않습니다.", "Not connected.");
@@ -747,18 +820,25 @@ namespace sutty.UI.Views
                 result ??= new CommandExecutionResult(
                     command, "", Loc.T("명령 결과를 확인할 수 없습니다.", "Command result unavailable."),
                     null, null, DateTimeOffset.UtcNow, watch.Elapsed);
-                cell.StandardOutput = result.StandardOutput;
-                cell.StandardError = result.StandardError;
-                cell.ExitCode = result.ExitCode;
-                cell.Output = result.CombinedOutput.TrimEnd();
-                cell.IsRunning = false;
-                cell.TimeText = $"{cell.StartedAt:HH:mm:ss} · {FormatDuration(watch.ElapsedMilliseconds)}";
+                if (!IsDetached)
+                {
+                    cell.StandardOutput = result.StandardOutput;
+                    cell.StandardError = result.StandardError;
+                    cell.ExitCode = result.ExitCode;
+                    cell.Output = result.CombinedOutput.TrimEnd();
+                    cell.IsRunning = false;
+                    cell.TimeText = $"{cell.StartedAt:HH:mm:ss} · {FormatDuration(watch.ElapsedMilliseconds)}";
+                }
             }
 
             ScrollToBottom();
 
             return result!;
         }
+
+        private static CommandExecutionResult ClosedCommandResult(string command) => new(
+            command, "", Loc.T("세션이 종료되었습니다.", "The session is closed."),
+            null, "CANCELLED", DateTimeOffset.UtcNow, TimeSpan.Zero);
 
         private static string FormatDuration(long ms) =>
             ms < 1000 ? $"{ms}ms" : $"{ms / 1000.0:0.#}s";
@@ -795,6 +875,7 @@ namespace sutty.UI.Views
 
         private async Task RunFromInputAsync()
         {
+            if (IsDetached) return;
             var command = NormalizeNewlines(CommandBox.Text).Trim();
             if (command.Length == 0) return;
 
@@ -810,6 +891,7 @@ namespace sutty.UI.Views
 
         public void RefreshSavedCommandSuggestions()
         {
+            if (IsDetached) return;
             ReloadSavedCommandSuggestions();
             UpdateCommandSuggestion();
         }
@@ -916,7 +998,7 @@ namespace sutty.UI.Views
             }
 
             var clipboardText = await ClipboardHelper.GetTextAsync();
-            if (string.IsNullOrEmpty(clipboardText))
+            if (IsDetached || string.IsNullOrEmpty(clipboardText))
                 return;
 
             ClipboardHelper.InsertAtSelection(CommandBox, clipboardText);
@@ -927,7 +1009,7 @@ namespace sutty.UI.Views
 
         private async Task EnsureTerminalStartedAsync()
         {
-            if (Session.State != SessionState.Connected ||
+            if (IsDetached || Session.State != SessionState.Connected ||
                 Session.TerminalState == TerminalState.Open)
                 return;
 
@@ -945,7 +1027,7 @@ namespace sutty.UI.Views
 
             try
             {
-                await Session.OpenTerminalAsync(_requestedTerminalSize);
+                await Session.OpenTerminalAsync(_requestedTerminalSize, _lifetimeToken);
             }
             catch (OperationCanceledException)
             {
@@ -954,12 +1036,13 @@ namespace sutty.UI.Views
             catch (Exception ex)
             {
                 Debug.WriteLine($"Terminal open failed: {ex}");
-                UpdateTerminalStatus(Session.TerminalState);
+                if (!IsDetached) UpdateTerminalStatus(Session.TerminalState);
             }
         }
 
         private async Task<bool> WaitForTerminalOpeningAsync()
         {
+            if (IsDetached) return false;
             if (Session.TerminalState == TerminalState.Open)
                 return true;
             if (Session.TerminalState != TerminalState.Opening)
@@ -984,7 +1067,12 @@ namespace sutty.UI.Views
                 if (current != TerminalState.Opening)
                     completion.TrySetResult(current == TerminalState.Open);
 
-                return await completion.Task.WaitAsync(TerminalOpenWaitTimeout);
+                var opened = await completion.Task.WaitAsync(TerminalOpenWaitTimeout, _lifetimeToken);
+                return !IsDetached && opened;
+            }
+            catch (OperationCanceledException) when (IsDetached)
+            {
+                return false;
             }
             catch (TimeoutException)
             {
@@ -998,12 +1086,12 @@ namespace sutty.UI.Views
 
         private async Task SendTerminalTextAsync(string text)
         {
-            if (Session.TerminalState != TerminalState.Open || string.IsNullOrEmpty(text))
+            if (IsDetached || Session.TerminalState != TerminalState.Open || string.IsNullOrEmpty(text))
                 return;
 
             try
             {
-                await Session.SendTerminalInputAsync(Encoding.UTF8.GetBytes(text));
+                await Session.SendTerminalInputAsync(Encoding.UTF8.GetBytes(text), _lifetimeToken);
             }
             catch (OperationCanceledException)
             {
@@ -1012,18 +1100,20 @@ namespace sutty.UI.Views
             catch (Exception ex)
             {
                 Debug.WriteLine($"Terminal input failed: {ex}");
-                UpdateTerminalStatus(Session.TerminalState);
+                if (!IsDetached) UpdateTerminalStatus(Session.TerminalState);
             }
         }
 
         private void CopyOutput_Click(object sender, RoutedEventArgs e)
         {
+            if (IsDetached) return;
             DrainTerminalOutput(allOutput: true);
             TerminalSurface.CopyLatestOutput();
         }
 
         private void TerminalSurface_Loaded(object sender, RoutedEventArgs e)
         {
+            if (IsDetached) return;
             _requestedTerminalSize = TerminalSurface.ViewportSize;
 
             if (Session.State == SessionState.Connected)
@@ -1032,6 +1122,7 @@ namespace sutty.UI.Views
 
         private void TerminalSurface_TerminalSizeChanged(object? sender, TerminalSize size)
         {
+            if (IsDetached) return;
             _requestedTerminalSize = size.Clamp();
             UpdateTerminalStatus(Session.TerminalState);
 
@@ -1046,17 +1137,19 @@ namespace sutty.UI.Views
 
         private async Task ResizeTerminalToLatestAsync()
         {
-            if (_terminalResizeInProgress)
+            if (IsDetached || _terminalResizeInProgress)
                 return;
             _terminalResizeInProgress = true;
 
             try
             {
-                while (Session.TerminalState == TerminalState.Open)
+                while (!IsDetached && Session.TerminalState == TerminalState.Open)
                 {
                     var pending = _requestedTerminalSize;
-                    if (!await Session.ResizeTerminalAsync(pending))
+                    if (!await Session.ResizeTerminalAsync(pending, _lifetimeToken))
                         break;
+
+                    if (IsDetached) break;
 
                     UpdateTerminalStatus(Session.TerminalState);
 
@@ -1097,7 +1190,7 @@ namespace sutty.UI.Views
 
         private void ScrollToBottom()
         {
-            if (CommandRunnerPane.IsLoaded)
+            if (!IsDetached && CommandRunnerPane.IsLoaded)
             {
                 CellsScroll.UpdateLayout();
                 CellsScroll.ChangeView(null, CellsScroll.ScrollableHeight, null, true);

@@ -84,6 +84,8 @@ internal sealed class MultiSessionSelectionState<TSession, TSlot>(
             setSelected(slot, selected && scope.Contains(slot) && CanSelect(slot));
     }
 
+    public void ResetSelection() => SetAllSelected(false);
+
     public List<TSlot> GetSelectedSlots() => InScopeSlots().Where(slot => CanSelect(slot) && isSelected(slot)).ToList();
 
     private IEnumerable<TSlot> InScopeSlots() => IsPaginationEnabled ? _slots : _slots.Take(PageSize);

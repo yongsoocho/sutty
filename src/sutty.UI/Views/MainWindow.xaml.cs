@@ -51,7 +51,7 @@ namespace sutty.UI.Views
         private HomeDashboardPanel? _homeDashboard;
         private SettingsPanel? _embeddedSettings;
         private MultiCommandPanel? _multiCommandPanel;
-        private double _detailsPaneWidth = 460;
+        private readonly DetailsPaneWidthState _detailsPaneWidth = new();
         private bool _isBottomDetailsPane;
         private bool _updatingDetailsLayout;
         private string _appIconPath = "";
@@ -486,17 +486,14 @@ namespace sutty.UI.Views
         private void RestoreRightPanelWidth()
         {
             var saved = SettingsService.Current.RightPanelWidth;
-            if (saved > 0)
-                _detailsPaneWidth = Math.Clamp(saved, 300, 800);
+            _detailsPaneWidth.Restore(saved);
 
             _panelWidthSaveTimer = DispatcherQueue.CreateTimer();
             _panelWidthSaveTimer.Interval = TimeSpan.FromMilliseconds(600);
             _panelWidthSaveTimer.IsRepeating = false;
             _panelWidthSaveTimer.Tick += (_, _) =>
             {
-                if (RightPanelHost.Visibility != Visibility.Visible || _isBottomDetailsPane)
-                    return;
-                SettingsService.Current.RightPanelWidth = (int)RightPanelColumn.ActualWidth;
+                SettingsService.Current.RightPanelWidth = (int)_detailsPaneWidth.PreferredWidth;
                 SettingsService.Save();
             };
 
@@ -505,7 +502,11 @@ namespace sutty.UI.Views
                 if (_updatingDetailsLayout || _isBottomDetailsPane ||
                     RightPanelHost.Visibility != Visibility.Visible)
                     return;
-                _detailsPaneWidth = RightPanelColumn.ActualWidth;
+                // The splitter changes the column's requested width. Arrangement-only
+                // size changes must not replace the saved preference after a window resize.
+                if (!RightPanelColumn.Width.IsAbsolute ||
+                    !_detailsPaneWidth.CaptureResize(RightPanelColumn.Width.Value))
+                    return;
                 _panelWidthSaveTimer.Stop();
                 _panelWidthSaveTimer.Start(); // 드래그 중 이벤트 폭주 → 마지막만 저장
             };
@@ -514,12 +515,10 @@ namespace sutty.UI.Views
         // 창을 닫는 순간 디바운스 대기 중이던 폭을 놓치지 않게 즉시 저장
         private void FlushRightPanelWidth()
         {
-            if (_panelWidthSaveTimer is { IsRunning: true } &&
-                !_isBottomDetailsPane &&
-                RightPanelHost.Visibility == Visibility.Visible)
+            if (_panelWidthSaveTimer is { IsRunning: true })
             {
                 _panelWidthSaveTimer.Stop();
-                SettingsService.Current.RightPanelWidth = (int)RightPanelColumn.ActualWidth;
+                SettingsService.Current.RightPanelWidth = (int)_detailsPaneWidth.PreferredWidth;
                 SettingsService.Save();
             }
         }
@@ -559,13 +558,13 @@ namespace sutty.UI.Views
                 else
                 {
                     var available = Math.Max(1, Root.ActualWidth - 48);
-                    var minimum = _isMultiView ? Math.Min(280, available * 0.45) : 360;
+                    var minimum = _isMultiView ? Math.Min(280, available * 0.45) : 300;
                     var maximum = _isMultiView
                         ? Math.Min(600, Math.Max(minimum, available * 0.4))
-                        : Math.Min(800, Math.Max(360, available - 520));
+                        : Math.Min(800, Math.Max(minimum, available - 520));
                     RightPanelColumn.MaxWidth = maximum;
                     RightPanelColumn.MinWidth = minimum;
-                    RightPanelColumn.Width = new GridLength(Math.Clamp(_detailsPaneWidth, minimum, maximum));
+                    RightPanelColumn.Width = new GridLength(_detailsPaneWidth.ApplyLayout(minimum, maximum));
                 }
             }
             finally { _updatingDetailsLayout = false; }
@@ -573,8 +572,7 @@ namespace sutty.UI.Views
 
         private void HideDetailsPane()
         {
-            if (!_isBottomDetailsPane && RightPanelHost.Visibility == Visibility.Visible && RightPanelColumn.ActualWidth >= 300)
-                _detailsPaneWidth = RightPanelColumn.ActualWidth;
+            FlushRightPanelWidth();
             RightPanelHost.Visibility = Visibility.Collapsed;
             RightPanelSplitter.Visibility = Visibility.Collapsed;
             RightPanelColumn.MinWidth = 0;
@@ -678,10 +676,14 @@ namespace sutty.UI.Views
 
         private void NavigateGlobal(AppGlobalPage page)
         {
+            var enteringMultiCommand = page == AppGlobalPage.MultiCommand &&
+                !_shellState.IsMultiCommandVisible;
             if (page != AppGlobalPage.Home)
                 ClearCachedHomeSecrets();
             _navigation.NavigateGlobal(page);
             _isMultiView = page == AppGlobalPage.MultiCommand;
+            if (enteringMultiCommand)
+                MultiGrid.ResetSelection();
             MultiGrid.Visibility = Visibility.Collapsed;
             CollapseSessionTools();
             HideDetailsPane();
@@ -4279,7 +4281,7 @@ namespace sutty.UI.Views
             // Remember the preferred tool width without covering the central shell.
             if (s.RightPanelWidth > 0)
             {
-                _detailsPaneWidth = Math.Clamp(s.RightPanelWidth, 300, 800);
+                _detailsPaneWidth.Restore(s.RightPanelWidth);
                 UpdateDetailsPaneWidth();
             }
         }

@@ -6,6 +6,7 @@ internal static class ShellStateSelfTests
     public static void Run()
     {
         InitialStateIsGlobalHome();
+        DetailsPaneWidthPreservesUserIntent();
         AcceleratorMapIsStable();
         PersistedTerminalModeMapsToWorkspaceSection();
         ConnectionPersistenceRequiresSuccessAndConsent();
@@ -15,6 +16,33 @@ internal static class ShellStateSelfTests
         InvalidEnumValuesAreRejected();
         ForgettingOnlyClearsTheActiveWorkspace();
         Console.WriteLine("Shell state and navigation self-tests passed.");
+    }
+
+    private static void DetailsPaneWidthPreservesUserIntent()
+    {
+        var width = new DetailsPaneWidthState();
+        width.Restore(720);
+        Assert(width.ApplyLayout(300, 560) == 560 && width.PreferredWidth == 720,
+            "narrow layout does not persist its temporary width");
+        Assert(!width.CaptureResize(560),
+            "deferred layout notifications do not count as a user resize");
+        Assert(width.ApplyLayout(280, 420) == 420 && width.PreferredWidth == 720,
+            "Multi Command layout does not replace the normal preferred width");
+        Assert(width.ApplyLayout(300, 800) == 720,
+            "widening the window restores the user's preferred width");
+        Assert(width.CaptureResize(650) && width.PreferredWidth == 650 &&
+               !width.CaptureResize(650),
+            "a splitter resize updates the preference once");
+        Assert(width.ApplyLayout(300, 500) == 500 && width.PreferredWidth == 650 &&
+               width.ApplyLayout(300, 800) == 650,
+            "dragged preference survives subsequent responsive transitions");
+        width.Restore(316);
+        Assert(width.ApplyLayout(300, 800) == 316,
+            "a valid legacy or typed width below 360 is respected");
+        width.Restore(double.NaN);
+        Assert(!width.CaptureResize(double.NaN) && !width.CaptureResize(0) &&
+               width.PreferredWidth == 316,
+            "invalid or unarranged width events cannot damage the preference");
     }
 
     private static void ConnectionPersistenceRequiresSuccessAndConsent()

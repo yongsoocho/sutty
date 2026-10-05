@@ -46,7 +46,7 @@ public sealed partial class FileTreePanel
         panel.Children.Add(_editSelector);
         _editDetails = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontSize = 12 };
         panel.Children.Add(_editDetails);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var actions = new sutty.UI.Controls.WrapPanel { Spacing = 6 };
         _applyEdit = EditButton(Loc.T("서버에 반영", "Upload changes"), async () =>
         {
             if (SelectedEdit is { } item) await ApplyEditAsync(item, automatic: false);
@@ -74,15 +74,24 @@ public sealed partial class FileTreePanel
         });
         actions.Children.Add(_recoveryEdit);
         actions.Children.Add(_finishEdit);
-        panel.Children.Add(new ScrollViewer { Content = actions, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled });
-        _autoEdit = new CheckBox { Content = Loc.T("이번 파일만 저장 시 자동 반영", "Automatically upload saves for this file only") };
+        panel.Children.Add(actions);
+        _autoEdit = new CheckBox { HorizontalContentAlignment = HorizontalAlignment.Stretch };
         _autoEdit.Checked += (_, _) => { if (!_updatingEditUi && SelectedEdit is { } item) item.AutoUpload = true; };
         _autoEdit.Unchecked += (_, _) => { if (!_updatingEditUi && SelectedEdit is { } item) item.AutoUpload = false; };
         panel.Children.Add(_autoEdit);
-        RemoteEditsHost.Content = panel;
+        RemoteEditsHost.Content = new ScrollViewer
+        {
+            Content = panel,
+            MaxHeight = 280,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
         _editTimer = DispatcherQueue.CreateTimer();
         _editTimer.Interval = TimeSpan.FromSeconds(2);
         _editTimer.Tick += EditTimer_Tick;
+        RefreshRemoteEditingLanguage();
     }
 
     private Button EditButton(string text, Func<Task> action)
@@ -443,7 +452,9 @@ public sealed partial class FileTreePanel
             button.Content = text;
             AutomationProperties.SetName(button, text);
         }
-        _autoEdit.Content = Loc.T("이번 파일만 저장 시 자동 반영", "Automatically upload saves for this file only");
+        var autoLabel = Loc.T("이번 파일만 저장 시 자동 반영", "Automatically upload saves for this file only");
+        _autoEdit.Content = new TextBlock { Text = autoLabel, TextWrapping = TextWrapping.Wrap };
+        AutomationProperties.SetName(_autoEdit, autoLabel);
         AutomationProperties.SetName(_editSelector, Loc.T("원격 편집본", "Remote working copies"));
         UpdateEditUi();
     }

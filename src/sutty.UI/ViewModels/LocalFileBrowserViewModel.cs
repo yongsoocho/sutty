@@ -144,6 +144,7 @@ public sealed class LocalFileBrowserViewModel : ObservableObject, IDisposable
 
         try
         {
+            cts.Token.ThrowIfCancellationRequested();
             var normalized = _service.NormalizeDirectoryPath(path);
             var entries = await _service.ListDirectoryAsync(normalized, cts.Token);
             if (cts.IsCancellationRequested || version != _navigationVersion)
@@ -164,7 +165,7 @@ public sealed class LocalFileBrowserViewModel : ObservableObject, IDisposable
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or
                                       ArgumentException or NotSupportedException)
         {
-            if (version == _navigationVersion)
+            if (!cts.IsCancellationRequested && version == _navigationVersion)
                 ErrorMessage = error.Message;
             return false;
         }
@@ -172,6 +173,11 @@ public sealed class LocalFileBrowserViewModel : ObservableObject, IDisposable
         {
             if (version == _navigationVersion)
                 IsLoading = false;
+            if (ReferenceEquals(_navigationCts, cts))
+            {
+                _navigationCts = null;
+                cts.Dispose();
+            }
         }
     }
 

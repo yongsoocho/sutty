@@ -22,14 +22,17 @@
                 <ColumnDefinition Width="32" />
             </Grid.ColumnDefinitions>
             <Button x:Name="BackButton" Padding="0" Click="Back_Click"
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('뒤로', 'Back')}"
                     AutomationProperties.Name="{x:Bind h:Loc.T('뒤로', 'Back')}">
                 <FontIcon FontSize="12" Glyph="&#xE72B;" />
             </Button>
             <Button x:Name="ForwardButton" Grid.Column="1" Padding="0" Click="Forward_Click"
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('앞으로', 'Forward')}"
                     AutomationProperties.Name="{x:Bind h:Loc.T('앞으로', 'Forward')}">
                 <FontIcon FontSize="12" Glyph="&#xE72A;" />
             </Button>
             <Button x:Name="ParentButton" Grid.Column="2" Padding="0" Click="Parent_Click"
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('상위 폴더', 'Parent folder')}"
                     AutomationProperties.Name="{x:Bind h:Loc.T('상위 폴더', 'Parent folder')}">
                 <FontIcon FontSize="12" Glyph="&#xE74A;" />
             </Button>
@@ -37,6 +40,7 @@
                      FontSize="11.5" KeyDown="PathBox_KeyDown"
                      AutomationProperties.Name="{x:Bind h:Loc.T('로컬 폴더 경로', 'Local folder path')}" />
             <Button Grid.Column="4" Padding="0" Click="Refresh_Click"
+                    ToolTipService.ToolTip="{x:Bind h:Loc.T('새로 고침', 'Refresh')}"
                     AutomationProperties.Name="{x:Bind h:Loc.T('새로 고침', 'Refresh')}">
                 <FontIcon FontSize="12" Glyph="&#xE72C;" />
             </Button>
@@ -50,7 +54,7 @@
         <Grid Grid.Row="2">
             <ListView x:Name="FileList" ItemsSource="{x:Bind Browser.Items}"
                       SelectionMode="Extended" CanDragItems="True" CanReorderItems="False"
-                      DragItemsStarting="FileList_DragItemsStarting" DoubleTapped="FileList_DoubleTapped"
+                      DragItemsStarting="FileList_DragItemsStarting"
                       KeyDown="FileList_KeyDown" AllowDrop="False"
                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                       AutomationProperties.Name="{x:Bind h:Loc.T('이 PC의 로컬 파일과 폴더', 'Local files and folders on this PC')}">
@@ -62,7 +66,7 @@
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="vm:LocalFileItemViewModel">
-                        <Grid ColumnSpacing="8" RowSpacing="3">
+                        <Grid ColumnSpacing="8" RowSpacing="3" DoubleTapped="FileItem_DoubleTapped">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="20" />
                                 <ColumnDefinition Width="*" />

@@ -580,8 +580,10 @@ try
             readerWriterErrors.Add(error);
         }
     });
-    Assert(readerWriterErrors.IsEmpty,
-        "cross-instance concurrent readers and atomic-replace writers do not conflict");
+    if (!readerWriterErrors.IsEmpty)
+        throw new AggregateException(
+            "Cross-instance concurrent readers and atomic-replace writers conflicted.",
+            readerWriterErrors);
 
     await TransferCenterServiceSelfTests.RunAsync(scratch);
 

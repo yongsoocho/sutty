@@ -203,6 +203,7 @@ try
     SettingsResetSelfTests.Run(scratch);
     ShellStateSelfTests.Run();
     MultiSessionSelectionSelfTests.Run();
+    CommandItemSelfTests.Run();
     await LocalFileBrowserSelfTests.RunAsync(scratch);
 
     File.WriteAllText(SettingsService.SettingsPath, "{broken");
