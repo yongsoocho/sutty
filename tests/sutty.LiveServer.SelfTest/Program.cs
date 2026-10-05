@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -1078,7 +1079,7 @@ static async Task RunEvidenceSelfTestsAsync()
 
         var candidatePackage = Path.Combine(
             scratch,
-            "Sutty-v0.1.0-alpha.4-win-x64.zip");
+            LiveConfiguration.CandidateArchiveName);
         await using (var package = new FileStream(
                          candidatePackage,
                          FileMode.CreateNew,
@@ -1097,7 +1098,7 @@ static async Task RunEvidenceSelfTestsAsync()
                 buildInfoEntry.Open(),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             await buildInfo.WriteAsync(
-                $"Sutty v0.1.0-alpha.4\nCommit: {new string('a', 40)}\nArchitecture: x64\n");
+                $"Sutty {LiveConfiguration.CandidateTag}\nCommit: {new string('a', 40)}\nArchitecture: x64\n");
         }
         var candidateSha256 = (await HashFileAsync(candidatePackage)).ToLowerInvariant();
         await VerifyCandidatePackageAsync(candidatePackage, candidateSha256, new string('a', 40));
@@ -2036,6 +2037,14 @@ sealed record LiveConfiguration(
     int FileCount,
     int FaultMegabytes)
 {
+    public static string CandidateTag { get; } = "v" +
+        (typeof(LiveConfiguration).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? throw new InvalidOperationException("The candidate source version is missing."))
+        .Split('+', 2)[0];
+
+    public static string CandidateArchiveName => $"Sutty-{CandidateTag}-win-x64.zip";
+
     public IEnumerable<string> SensitiveValues => new[]
     {
         Host,
@@ -2105,7 +2114,7 @@ sealed record LiveConfiguration(
                 !Path.IsPathFullyQualified(packagePath) || !File.Exists(packagePath) ||
                 !string.Equals(
                     Path.GetFileName(packagePath),
-                    "Sutty-v0.1.0-alpha.4-win-x64.zip",
+                    CandidateArchiveName,
                     StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(

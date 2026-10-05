@@ -262,8 +262,11 @@ function Stage-CandidateHarness {
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\..')).Path
 $resolvedPackage = (Resolve-Path -LiteralPath $PackagePath).Path
 $resolvedEvidenceRoot = [IO.Path]::GetFullPath($EvidenceOutputRoot)
-if ([IO.Path]::GetFileName($resolvedPackage) -cne 'Sutty-v0.1.0-alpha.4-win-x64.zip') {
-    throw 'SSH-LIVE-001 requires the exact Alpha 4 x64 candidate archive name.'
+[xml]$versionDocument = Get-Content -LiteralPath (Join-Path $repositoryRoot 'Directory.Build.props') -Raw
+$candidateTag = "v$($versionDocument.Project.PropertyGroup.VersionPrefix)-$($versionDocument.Project.PropertyGroup.VersionSuffix)"
+if ($candidateTag -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$' -or
+    [IO.Path]::GetFileName($resolvedPackage) -cne "Sutty-$candidateTag-win-x64.zip") {
+    throw 'SSH-LIVE-001 requires the exact source-version x64 candidate archive name.'
 }
 
 $headOutput = @(& git -C $repositoryRoot rev-parse --verify HEAD 2>$null)
