@@ -108,7 +108,10 @@ public sealed class SftpTransferQueueStore
     private static readonly string ProcessRuntimeOwnerId = Guid.NewGuid().ToString("N");
     private static readonly object TargetLeaseGate = new();
     private static readonly Dictionary<TargetLeaseKey, TargetLeaseClaim> TargetLeases = [];
-    private readonly object _gate = new();
+    // Bounded stripes serialize store instances before competing for the OS file lock.
+    private static readonly object[] DocumentGates = Enumerable.Range(0, 64)
+        .Select(_ => new object()).ToArray();
+    private readonly object _gate;
     private readonly string _path;
     private readonly string _targetLeaseScope;
     private readonly string _lockDirectory;
@@ -124,6 +127,8 @@ public sealed class SftpTransferQueueStore
             "sutty",
             "sftp-transfer-queue.json"));
         _targetLeaseScope = NormalizeTargetLeaseScope(_path);
+        _gate = DocumentGates[(uint)StringComparer.Ordinal.GetHashCode(_targetLeaseScope)
+            % (uint)DocumentGates.Length];
         _lockDirectory = Path.Combine(Path.GetDirectoryName(_path)!, ".sutty-transfer-locks");
         _documentLockPath = Path.Combine(
             _lockDirectory,
