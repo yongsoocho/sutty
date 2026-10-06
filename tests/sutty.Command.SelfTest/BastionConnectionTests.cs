@@ -16,6 +16,31 @@ internal static class BastionConnectionTests
         VerifyCredentialMapping(assert);
         VerifyLiveProfileLookup(assert, scratch);
         VerifyRouteDisplay(assert);
+        VerifyOneTimeConnection(assert);
+    }
+
+    private static void VerifyOneTimeConnection(Action<bool, string> assert)
+    {
+        var connection = new SshConnectionInfo
+        {
+            Host = "destination.invalid", Username = "target-user", Password = "synthetic-target",
+            SavedHostId = "original-host", CredentialId = "original-vault",
+            SaveProfile = true, RememberCredential = true,
+            Route = new ConnectionRoute { Type = ConnectionRouteType.SshJump,
+                Host = "gateway.invalid", Password = "synthetic-gateway" },
+        };
+        BastionConnectionService.PrepareOneTimeConnection(connection);
+        assert(connection.IsOneTimeBastion && !connection.SaveProfile && !connection.RememberCredential &&
+               connection.SavedHostId is null && connection.CredentialId is null,
+            "one-time Bastion cannot update the original profile or credential ownership");
+        assert(connection.RoutePolicy.DisableDirect && connection.Host == "destination.invalid" &&
+               connection.Password == "synthetic-target" && connection.Route.Host == "gateway.invalid" &&
+               connection.Route.Password == "synthetic-gateway",
+            "one-time Bastion preserves current target/gateway authentication and requires its route");
+        var direct = new SshConnectionInfo { SavedHostId = "original-host", SaveProfile = true };
+        assert(Rejects(() => BastionConnectionService.PrepareOneTimeConnection(direct)) &&
+               direct.SavedHostId == "original-host" && direct.SaveProfile && !direct.IsOneTimeBastion,
+            "one-time Bastion rejects Direct before changing ownership or persistence");
     }
 
     private static void VerifyEligibility(Action<bool, string> assert)

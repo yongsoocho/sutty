@@ -3056,7 +3056,7 @@ namespace sutty.UI.Views
 
         private async Task<sutty.Command.HostProfile?> PersistSavedProfileAsync(SshConnectionInfo info)
         {
-            if (!info.SaveProfile) return null;
+            if (info.IsOneTimeBastion || !info.SaveProfile) return null;
 
             var originalCredentialId = info.CredentialId;
             string? credentialId = null;
@@ -3618,7 +3618,7 @@ namespace sutty.UI.Views
 
         private async Task OfferSaveAfterSuccessAsync(SshConnectionInfo info)
         {
-            if (info.SaveProfile || !string.IsNullOrWhiteSpace(info.SavedHostId))
+            if (info.IsOneTimeBastion || info.SaveProfile || !string.IsNullOrWhiteSpace(info.SavedHostId))
                 return;
 
             var nameBox = new TextBox

@@ -33,6 +33,20 @@ public sealed class BastionConnectionService(
     Func<string, HostProfile?> readProfile,
     Func<string, CredentialSecret?> readCredential)
 {
+    public static void PrepareOneTimeConnection(SshConnectionInfo connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        if (connection.Route.Type != ConnectionRouteType.SshJump)
+            throw new InvalidOperationException("A one-time Bastion connection requires SSH Jump.");
+
+        connection.IsOneTimeBastion = true;
+        connection.SaveProfile = false;
+        connection.RememberCredential = false;
+        connection.SavedHostId = null;
+        connection.CredentialId = null;
+        connection.RoutePolicy.DisableDirect = true;
+    }
+
     private readonly Func<string, HostProfile?> _readProfile =
         readProfile ?? throw new ArgumentNullException(nameof(readProfile));
     private readonly Func<string, CredentialSecret?> _readCredential =

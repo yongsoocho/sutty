@@ -20,6 +20,83 @@ public sealed partial class HomePanel
         id => LocalCredentialVault.Default.TryRead(id, out var secret) ? secret : null);
     private bool _updatingBastion;
     private bool _savingBastion;
+    private BastionFormState? _oneTimeBastionBaseline;
+    private bool _changingOneTimeBastion;
+
+    private sealed record BastionFormState(ConnectionRouteType Type, string Host, string Port,
+        string Username, SshAuthMethod Auth, string KeyPath, string Command,
+        bool Strict, bool SaveProfile, bool RememberCredential);
+
+    private void OneTimeBastionCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_changingOneTimeBastion) return;
+        if (OneTimeBastionCheck.IsChecked != true)
+        {
+            EndOneTimeBastion();
+            return;
+        }
+
+        // Retain only form metadata, never another route's credentials.
+        _oneTimeBastionBaseline = new(SelectedRouteType(), ProxyHostBox.Text, ProxyPortBox.Text,
+            ProxyUsernameBox.Text, SelectedJumpAuthMethod(), JumpKeyPathBox.Text, ProxyCommandBox.Text,
+            StrictRouteCheck.IsChecked == true, SaveProfileCheck.IsChecked == true,
+            RememberCredentialCheck.IsChecked == true);
+        ResetBastionSelection(clearSecrets: true);
+        if (_oneTimeBastionBaseline.Type == ConnectionRouteType.SshJump)
+            SelectRoute(ConnectionRouteType.SshJump);
+        else
+            ApplyBastionRoute(new ConnectionRoute { Type = ConnectionRouteType.SshJump, Port = 22 });
+        StrictRouteCheck.IsChecked = true;
+        SaveProfileCheck.IsChecked = false;
+        RememberCredentialCheck.IsChecked = false;
+        UpdateOneTimeBastionControls();
+    }
+
+    private void EndOneTimeBastion()
+    {
+        if (_oneTimeBastionBaseline is not { } baseline) return;
+        _oneTimeBastionBaseline = null;
+        _changingOneTimeBastion = true;
+        _updatingBastion = true;
+        try
+        {
+            OneTimeBastionCheck.IsChecked = false;
+            SelectRoute(baseline.Type);
+            ProxyHostBox.Text = baseline.Host;
+            ProxyPortBox.Text = baseline.Port;
+            ProxyUsernameBox.Text = baseline.Username;
+            JumpAuthCombo.SelectedItem = JumpAuthCombo.Items.OfType<ComboBoxItem>()
+                .First(item => string.Equals(item.Tag as string, baseline.Auth.ToString(), StringComparison.Ordinal));
+            JumpKeyPathBox.Text = baseline.KeyPath;
+            ProxyCommandBox.Text = baseline.Command;
+            ProxyPasswordBox.Password = "";
+            JumpPassphraseBox.Password = "";
+            StrictRouteCheck.IsChecked = baseline.Strict;
+            SaveProfileCheck.IsChecked = baseline.SaveProfile;
+            RememberCredentialCheck.IsChecked = baseline.RememberCredential && _authMethod != SshAuthMethod.Agent;
+        }
+        finally
+        {
+            _updatingBastion = false;
+            _changingOneTimeBastion = false;
+        }
+        ResetBastionSelection(clearSecrets: true);
+        RefreshJumpAuthenticationUi();
+        RefreshProxyCommandPreview();
+        RefreshBastionPath();
+        UpdateOneTimeBastionControls();
+    }
+
+    private void UpdateOneTimeBastionControls()
+    {
+        var editable = !_connectInFlight;
+        var regularRoute = _oneTimeBastionBaseline is null;
+        OneTimeBastionCheck.IsEnabled = editable;
+        RouteCombo.IsEnabled = editable && regularRoute;
+        StrictRouteCheck.IsEnabled = editable && regularRoute;
+        SaveProfileCheck.IsEnabled = editable && regularRoute;
+        UpdateProfileOptions();
+    }
 
     private void BastionPanel_Loaded(object sender, RoutedEventArgs e)
     {

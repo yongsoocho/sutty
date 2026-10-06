@@ -93,6 +93,7 @@ public sealed partial class HomePanel : UserControl
     /// <summary>Loads a saved-host or history draft. Secrets are supplied only from the encrypted vault.</summary>
     public void ApplyConnectionDraft(SshConnectionInfo draft)
     {
+        EndOneTimeBastion();
         HostBox.Text = draft.Host?.Trim() ?? "";
         PortBox.Text = (draft.Port is >= 1 and <= 65535 ? draft.Port : 22).ToString();
         DisplayNameBox.Text = draft.DisplayName?.Trim() ?? "";
@@ -281,6 +282,7 @@ public sealed partial class HomePanel : UserControl
         ProxyPasswordBox.Password = "";
         JumpPassphraseBox.Password = "";
         ResetBastionSelection(clearSecrets: false);
+        EndOneTimeBastion();
     }
 
     private void ProxyCommandInput_TextChanged(object sender, TextChangedEventArgs e)
@@ -441,7 +443,7 @@ public sealed partial class HomePanel : UserControl
 
     private void UpdateProfileOptions()
     {
-        var saveProfile = SaveProfileCheck.IsChecked == true;
+        var saveProfile = SaveProfileCheck.IsChecked == true && _oneTimeBastionBaseline is null;
         ProfileOptionsPanel.Visibility = saveProfile ? Visibility.Visible : Visibility.Collapsed;
         RememberCredentialCheck.IsEnabled = saveProfile && _authMethod != SshAuthMethod.Agent;
         if (!RememberCredentialCheck.IsEnabled)
@@ -665,7 +667,7 @@ public sealed partial class HomePanel : UserControl
         if (Tags.Count > 0)
             RememberTags();
 
-        var saveProfile = SaveProfileCheck.IsChecked == true;
+        var saveProfile = SaveProfileCheck.IsChecked == true && _oneTimeBastionBaseline is null;
         var rememberCredential = saveProfile && RememberCredentialCheck.IsChecked == true;
         var selectedEnvironment = (EnvironmentCombo.SelectedItem as ComboBoxItem)?.Tag as string
             ?? "Unclassified";
@@ -813,9 +815,9 @@ public sealed partial class HomePanel : UserControl
             SaveProfile = saveProfile,
             RememberCredential = rememberCredential,
             CredentialId = _credentialId,
-            GroupName = saveProfile ? GroupBox.Text.Trim() : "",
-            Environment = saveProfile ? selectedEnvironment : "Unclassified",
-            IsFavorite = saveProfile && FavoriteCheck.IsChecked == true,
+            GroupName = saveProfile || _oneTimeBastionBaseline is not null ? GroupBox.Text.Trim() : "",
+            Environment = saveProfile || _oneTimeBastionBaseline is not null ? selectedEnvironment : "Unclassified",
+            IsFavorite = (saveProfile || _oneTimeBastionBaseline is not null) && FavoriteCheck.IsChecked == true,
             Route = new ConnectionRoute
             {
                 Id = routeType == ConnectionRouteType.Direct
@@ -848,12 +850,15 @@ public sealed partial class HomePanel : UserControl
             },
         };
 
+        if (_oneTimeBastionBaseline is not null)
+            sutty.Command.BastionConnectionService.PrepareOneTimeConnection(info);
         await InvokeConnectRequestedAsync(info);
     }
 
     private async Task InvokeConnectRequestedAsync(SshConnectionInfo info)
     {
         _connectInFlight = true;
+        UpdateOneTimeBastionControls();
         ConnectButton.IsEnabled = false;
         SavedBastionCombo.IsEnabled = false;
         SaveBastionButton.IsEnabled = false;
@@ -888,6 +893,7 @@ public sealed partial class HomePanel : UserControl
             SavedBastionCombo.IsEnabled = true;
             SaveBastionButton.IsEnabled = !_savingBastion;
             _connectInFlight = false;
+            UpdateOneTimeBastionControls();
         }
 
         // PasswordChanged clears stale validation text. Publish the callback error only

@@ -353,6 +353,11 @@
                             Text="{x:Bind h:Loc.T('고급 연결 옵션', 'Advanced connection options')}" />
                     </Expander.Header>
                     <StackPanel Padding="0,8,0,2" Spacing="10">
+                        <CheckBox x:Name="OneTimeBastionCheck"
+                            Checked="OneTimeBastionCheck_Changed" Unchecked="OneTimeBastionCheck_Changed">
+                            <TextBlock TextWrapping="Wrap"
+                                Text="{x:Bind h:Loc.T('이번 연결만 Bastion 사용', 'Use Bastion for this connection only')}" />
+                        </CheckBox>
                         <StackPanel>
                             <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('연결 경로', 'CONNECTION ROUTE')}" />
                             <ComboBox

@@ -9,12 +9,14 @@ Windows 앱의 기존 단일 경유 SSH Jump에 저장된 Bastion 재사용을 �
 연결 경로는 `내 Windows PC의 Sutty -> 중앙 SSH 서버 -> 목적지 SSH 서버`입니다. 중앙 서버에서 목적지의 SSH 포트에 접근할 수 있어야 하고 해당 계정의 SSH 포워딩이 허용되어야 합니다. 목적지가 자리의 Windows 데스크톱이면 그 PC에서 SSH 서버가 실행 중이어야 합니다.
 
 1. Home의 연결 폼 상단에는 **목적지** 주소, 사용자, 인증을 입력합니다.
-2. **고급 연결 옵션 -> 연결 경로 -> SSH Jump**를 선택합니다.
+2. 필요할 때만 경유하려면 **고급 연결 옵션 -> 이번 연결만 Bastion 사용**을 켭니다. 기본값은 꺼짐입니다. 매번 경유하는 프로필을 만들 때는 **연결 경로 -> SSH Jump**를 직접 선택합니다.
 3. **저장된 Bastion · Beta**에서 중앙 서버를 선택하거나 **직접 입력**합니다. 목록에는 직접 연결하는 저장 SSH Host 중 Password, 개인키, Windows SSH Agent 인증 프로필이 표시됩니다.
 4. 중앙 서버의 주소, 포트, 사용자, 인증을 확인합니다. 프로필 선택은 목적지 입력을 바꾸지 않으며 **엄격 경로**를 켭니다. 연결 전 경로 표시에서 중앙 서버와 목적지를 확인한 뒤 연결합니다.
 5. 연결된 세션의 경로 표시를 확인합니다. Terminal과 Files는 같은 중앙 서버를 거쳐 **목적지**에 연결하며 중앙 서버와 목적지의 호스트 키를 각각 검증합니다. 경유 연결 실패 시 직접 연결로 자동 전환하지 않습니다.
 
 **경유 서버를 새 프로필로 저장** 아이콘은 직접 입력한 중앙 서버를 독립된 새 Host로 저장합니다. 주소, 사용자, 인증 방식, 해당하는 로컬 키 경로를 저장하고 비밀번호, 키 암호, 자격증명 참조는 저장하지 않습니다. 기존 프로필을 덮어쓰지 않습니다.
+
+일회성 경유는 목적지 프로필과 Vault를 저장하거나 덮어쓰지 않으며 연결 후 저장 제안도 표시하지 않습니다. 연결 시도가 끝나거나 Home을 벗어나거나 체크를 해제하면 이전 연결 경로와 엄격 경로 설정을 복원합니다. 원래 Direct였다면 Direct로 돌아갑니다. 이전 경유 인증 비밀값은 복원하지 않습니다. 입력 오류를 고치는 동안에는 체크를 유지합니다. 실행 중인 세션은 선택한 Bastion을 계속 사용하며 연결 종료 시 해당 터널을 정리합니다.
 
 프로필 선택 시 해당 시점의 설정을 현재 연결에 복사합니다. 현재 연결의 수정은 원본 프로필에 반영되지 않고, 이후 원본 프로필을 수정해도 이미 복사한 경로나 저장된 목적지의 경로가 자동으로 바뀌지 않습니다. 새 설정을 쓰려면 다시 선택하고 목적지 프로필도 명시적으로 저장합니다.
 
@@ -29,12 +31,14 @@ Windows 앱의 기존 단일 경유 SSH Jump에 저장된 Bastion 재사용을 �
 The path is `Sutty on your Windows PC -> central SSH server -> destination SSH server`. The central server must reach the destination SSH port and permit SSH forwarding for the account. A Windows desktop used as the destination needs a running SSH server.
 
 1. Enter the **destination** address, username, and authentication in Home's main connection form.
-2. Select **Advanced connection options -> Connection route -> SSH Jump**.
+2. For occasional use, enable **Advanced connection options -> Use Bastion for this connection only** (off by default). To configure a recurring route, select **Connection route -> SSH Jump** directly.
 3. Choose a central server under **Saved Bastion · Beta**, or select **Enter manually**. The picker accepts saved Direct SSH hosts using Password, private-key, or Windows SSH Agent authentication.
 4. Review the bastion address, port, username, and authentication. Selection leaves the destination unchanged and enables **Strict route**. Check the displayed path before connecting.
 5. Check the connected session's path. Terminal and Files reach the **destination** through the same central server; both bastion and destination host keys are verified independently. Route failure never automatically falls back to Direct.
 
 The **Save bastion as a new profile** icon saves the entered central server as a separate new Host. It stores address, username, authentication method, and the applicable local key path, without passwords, key passphrases, or credential references. It does not overwrite an existing profile.
+
+A one-time route never saves or overwrites the destination profile or Vault and does not offer to save after connecting. Finishing a connection attempt, leaving Home, or unchecking the option restores the previous route and strict-route setting, including Direct when that was the original route. Prior gateway secrets are not restored. Input validation keeps the option selected so errors can be corrected. An active session continues using its selected Bastion and closes its tunnel on disconnect.
 
 Selecting a profile copies its current settings into the connection. Editing that connection does not update the source profile. Later source-profile edits do not propagate to an existing route snapshot or a saved destination's route. Select the profile again and explicitly save the destination to adopt changes.
 
