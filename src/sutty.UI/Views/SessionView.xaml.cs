@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -6,6 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using sutty.Core.Plugins;
 using sutty.Core.Commands;
 using sutty.Core.Models;
+using sutty.Core.Routing;
 using sutty.Core.Sessions;
 using sutty.Core.Sftp;
 using sutty.Core.Terminal;
@@ -102,10 +104,9 @@ namespace sutty.UI.Views
             ApplyTerminalSettings();
             ActualThemeChanged += SessionView_ActualThemeChanged;
 
-            TitleText.Text = $"Sutty SSH · {user}@{Session.Info.Host}:{Session.Info.Port} · {Session.Info.Title}";
-            RoutePillText.Text = Session.Info.Route?.DisplayName ??
-                Session.CorrelationContext.RouteType.ToString().ToUpperInvariant();
-            UpdateConnectionInfoToolTip();
+            TitleText.Text = $"Sutty SSH · {user}@{SshRouteDisplay.FormatEndpoint(Session.Info.Host, Session.Info.Port)} · {Session.Info.Title}";
+            ToolTipService.SetToolTip(TitleText, TitleText.Text);
+            UpdateRouteDisplay();
             UpdatePrompt();
 
             // 업타임 카운터 (연결 중일 때 1초마다 갱신)
@@ -209,6 +210,7 @@ namespace sutty.UI.Views
         {
             if (IsDetached) return;
             Bindings.Update();
+            UpdateRouteDisplay();
             UpdateSftpPill(Session.SftpState);
             UpdateTerminalStatus(Session.TerminalState);
             UpdateConnectionInfo(Session.State);
@@ -435,6 +437,7 @@ namespace sutty.UI.Views
             var foreground = ThemeResources.Brush(this, resourceKey);
 
             StatusPillText.Text = label;
+            ToolTipService.SetToolTip(StatusPill, label);
             StatusPillText.Foreground = foreground;
             StatusPill.Background = ThemeResources.Brush(this, resourceKey + "Bg");
         }
@@ -455,6 +458,7 @@ namespace sutty.UI.Views
                 _ => (Loc.T("SFTP 연결 중", "SFTP connecting"), "StatusAmber"),
             };
             SftpPillText.Text = label;
+            ToolTipService.SetToolTip(SftpPill, label);
             SftpPillText.Foreground = ThemeResources.Brush(this, resourceKey);
         }
 
@@ -462,7 +466,7 @@ namespace sutty.UI.Views
         {
             var negotiated = Session.NegotiatedInfo;
             var available = state == SessionState.Connected && negotiated is not null;
-            ConnectionInfoButton.IsEnabled = available;
+            ConnectionInfoButton.IsEnabled = available || IsBastionRoute;
             CopyConnectionInfoButton.IsEnabled = available;
             ConnectionInfoTextBox.Text = negotiated is null
                 ? Loc.T(
@@ -480,10 +484,56 @@ namespace sutty.UI.Views
                     "SSH negotiation details are available after connecting.")
                 : Loc.T("협상된 SSH 알고리즘과 호스트 키 지문을 확인합니다.",
                     "Inspect negotiated SSH algorithms and the host-key fingerprint.");
-            ToolTipService.SetToolTip(
-                ConnectionInfoButton,
-                $"{action}\nroute={Session.CorrelationContext.RouteId} · " +
-                $"correlation={Session.CorrelationContext.CorrelationId}");
+            var route = IsBastionRoute ? RouteDetailsText.Text + Environment.NewLine : "";
+            var details = $"{route}{action}\nroute={Session.CorrelationContext.RouteId} · " +
+                $"correlation={Session.CorrelationContext.CorrelationId}";
+            ToolTipService.SetToolTip(ConnectionInfoButton, details);
+            AutomationProperties.SetHelpText(ConnectionInfoButton, details);
+        }
+
+        private bool IsBastionRoute => Session.Info.Route?.Type == ConnectionRouteType.SshJump;
+
+        private void UpdateRouteDisplay()
+        {
+            RoutePillText.Text = IsBastionRoute
+                ? Loc.T("Bastion · 베타", "Bastion · Beta")
+                : Session.Info.Route?.DisplayName ??
+                    Session.CorrelationContext.RouteType.ToString().ToUpperInvariant();
+            RouteDetailsPanel.Visibility = IsBastionRoute ? Visibility.Visible : Visibility.Collapsed;
+            RouteDetailsText.Text = IsBastionRoute
+                ? SshRouteDisplay.FormatPath(Session.Info, Loc.T("내 PC", "This PC"))
+                : "";
+            AutomationProperties.SetName(ConnectionInfoButton, IsBastionRoute
+                ? Loc.T("Bastion 베타 연결 경로와 SSH 연결 정보", "Bastion Beta route and SSH connection information")
+                : Loc.T("SSH 연결 정보", "SSH connection information"));
+            UpdateConnectionInfoToolTip();
+        }
+
+        private void ConnectionInfoFlyout_Opening(object sender, object e)
+        {
+            var availableWidth = Math.Min(ActualWidth, XamlRoot?.Size.Width ?? ActualWidth);
+            ConnectionInfoPanel.Width = Math.Clamp(availableWidth - 48, 120, 420);
+        }
+
+        private void SessionLayout_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (SessionHeaderGrid is null) return;
+            var compact = e.NewSize.Width < 560;
+            SessionHeaderGrid.RowSpacing = compact ? 4 : 0;
+            SessionHeaderGrid.ColumnDefinitions[1].Width = compact
+                ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+            SessionHeaderGrid.ColumnDefinitions[2].Width = compact ? new GridLength(0) : GridLength.Auto;
+            SessionHeaderGrid.ColumnDefinitions[3].Width = compact ? new GridLength(0) : GridLength.Auto;
+            Grid.SetColumnSpan(SessionIdentity, compact ? 4 : 1);
+            Grid.SetRow(SftpPill, compact ? 1 : 0);
+            Grid.SetColumn(SftpPill, compact ? 0 : 1);
+            SftpPill.HorizontalAlignment = compact ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+            Grid.SetRow(ConnectionInfoButton, compact ? 1 : 0);
+            Grid.SetColumn(ConnectionInfoButton, compact ? 1 : 2);
+            ConnectionInfoButton.HorizontalAlignment = compact ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+            Grid.SetRow(ReconnectButton, compact ? 2 : 0);
+            Grid.SetColumn(ReconnectButton, compact ? 0 : 3);
+            Grid.SetColumnSpan(ReconnectButton, compact ? 4 : 1);
         }
 
         private static string FormatConnectionInfo(SshNegotiatedConnectionInfo info)

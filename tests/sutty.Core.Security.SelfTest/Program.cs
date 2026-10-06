@@ -38,6 +38,7 @@ AssertSshAgentAdapterLoads();
 AssertLastUsedRaceIsBestEffort();
 await AssertKeyboardInteractiveCancellationAsync();
 await AssertJumpRouteDiagnosticBoundaryAsync();
+await RouteCredentialLifetimeTests.RunAsync();
 
 ConnectionLogStore.Clear();
 var logPassword = CreateTestSecret("log-password");
@@ -101,6 +102,7 @@ using (var connectionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(
     await failedSession.ConnectAsync(connectionTimeout.Token);
 Assert(failedSession.State == SessionState.Failed,
     "refused SSH connection enters failed state");
+RouteCredentialLifetimeTests.AssertSecretsCleared(failedSession);
 Assert(failedSession.NegotiatedInfo is null,
     "failed SSH connection clears negotiated-information snapshot");
 var failedConnectionLogs = ConnectionLogStore.Snapshot()
