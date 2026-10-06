@@ -368,12 +368,11 @@ public sealed partial class HomePanel : UserControl
     {
         if (JumpKeyPanel is null || ProxyPasswordBox is null) return;
         var isJump = SelectedRouteType() == ConnectionRouteType.SshJump;
-        JumpKeyPanel.Visibility = isJump && SelectedJumpAuthMethod() == SshAuthMethod.PublicKey
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        ProxyPasswordBox.Visibility = !isJump || SelectedJumpAuthMethod() == SshAuthMethod.Password
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        var authMethod = SelectedJumpAuthMethod();
+        var showKey = isJump && authMethod == SshAuthMethod.PublicKey;
+        var showPassword = !isJump || authMethod == SshAuthMethod.Password;
+        JumpKeyPanel.Visibility = showKey ? Visibility.Visible : Visibility.Collapsed;
+        ProxyPasswordBox.Visibility = showPassword ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private SshAuthMethod SelectedJumpAuthMethod()
