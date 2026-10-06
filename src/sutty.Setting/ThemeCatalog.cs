@@ -24,6 +24,9 @@ public static class ThemeCatalog
     private const string VsLightAnsi = "000000 CD3131 008000 795E26 0451A5 BC05BC 0598BC 555555 666666 CD3131 008000 795E26 0451A5 BC05BC 0598BC A5A5A5";
     private const string SolarizedAnsi = "073642 DC322F 859900 B58900 268BD2 D33682 2AA198 EEE8D5 002B36 CB4B16 586E75 657B83 839496 6C71C4 93A1A1 FDF6E3";
     private const string TokyoAnsi = "15161E F7768E 9ECE6A E0AF68 7AA2F7 BB9AF7 7DCFFF A9B1D6 414868 F7768E 9ECE6A E0AF68 7AA2F7 BB9AF7 7DCFFF C0CAF5";
+    private const string OneDarkProAnsi = "3F4451 E05561 8CC265 D18F52 4AA5F0 C162DE 42B3C2 D7DAE0 4F5666 FF616E A5E075 F0A45D 4DC4FF DE73FF 4CD1E0 E6E6E6";
+    private const string TomorrowAnsi = "111111 FF9DA4 D1F1A9 FFEEAD BBDAFF EBBBFF 99FFFF CCCCCC 333333 FF7882 B8F171 FFE580 80BAFF D778FF 78FFFF FFFFFF";
+    private const string MaterialAnsi = "000000 F07178 C3E88D FFCB6B 82AAFF C792EA 89DDFF EEFFFF 546E7A F07178 C3E88D FFCB6B 82AAFF C792EA 89DDFF FFFFFF";
 
     public static IReadOnlyList<ThemeDefinition> Presets { get; } = Array.AsReadOnly<ThemeDefinition>(
     [
@@ -34,6 +37,11 @@ public static class ThemeCatalog
         Create("VSCodeLightPlus", "VS Code Light+", false, "FFFFFF", "000000", "0451A5", "008577", "AF00DB", VsLightAnsi),
         Create("VSCodeDarkModern", "VS Code Dark Modern", true, "1F1F1F", "CCCCCC", "4DAAFC", "4EC9B0", "C586C0", VsDarkAnsi),
         Create("VSCodeLightModern", "VS Code Light Modern", false, "FFFFFF", "3B3B3B", "005FB8", "008577", "8250DF", VsLightAnsi),
+        Create("VSCodeQuietLight", "VS Code Quiet Light", false, "F5F5F5", "333333", "705697", "448C27", "7A3E9D", VsLightAnsi),
+        Create("VSCodeAbyss", "VS Code Abyss", true, "000C18", "6688CC", "80BAFF", "99FFFF", "D778FF", TomorrowAnsi),
+        Create("VSCodeKimbieDark", "VS Code Kimbie Dark", true, "221A0F", "D3AF86", "F79A32", "8AB1B0", "98676A", VsDarkAnsi),
+        Create("VSCodeRed", "VS Code Red", true, "390000", "F8F8F8", "FF6262", "9DF39F", "FEC758", VsDarkAnsi),
+        Create("VSCodeTomorrowNightBlue", "VS Code Tomorrow Night Blue", true, "002451", "FFFFFF", "BBDAFF", "99FFFF", "EBBBFF", TomorrowAnsi),
         Create("Dracula", "Dracula", true, "282A36", "F8F8F2", "BD93F9", "8BE9FD", "FF79C6",
             "21222C FF5555 50FA7B F1FA8C BD93F9 FF79C6 8BE9FD F8F8F2 6272A4 FF6E6E 69FF94 FFFFA5 D6ACFF FF92DF A4FFFF FFFFFF"),
         Create("Monokai", "Monokai", true, "272822", "F8F8F2", "F92672", "AE81FF", "66D9EF",
@@ -44,6 +52,8 @@ public static class ThemeCatalog
             "1E2127 E06C75 98C379 E5C07B 61AFEF C678DD 56B6C2 ABB2BF 5C6370 E06C75 98C379 E5C07B 61AFEF C678DD 56B6C2 FFFFFF"),
         Create("AtomOneLight", "Atom One Light", false, "FAFAFA", "383A42", "4078F2", "0184BC", "A626A4",
             "383A42 E45649 50A14F C18401 4078F2 A626A4 0184BC A0A1A7 696C77 E45649 50A14F C18401 4078F2 A626A4 0184BC F0F0F0"),
+        Create("OneDarkPro", "One Dark Pro", true, "282C34", "ABB2BF", "61AFEF", "56B6C2", "C678DD", OneDarkProAnsi),
+        Create("OneDarkProDarker", "One Dark Pro Darker", true, "23272E", "ABB2BF", "61AFEF", "56B6C2", "C678DD", OneDarkProAnsi),
         Create("GitHubDark", "GitHub Dark", true, "0D1117", "C9D1D9", "58A6FF", "3FB950", "BC8CFF",
             "484F58 FF7B72 3FB950 D29922 58A6FF BC8CFF 39C5CF B1BAC4 6E7681 FFA198 56D364 E3B341 79C0FF D2A8FF 56D4DD F0F6FC"),
         Create("GitHubLight", "GitHub Light", false, "FFFFFF", "24292F", "0969DA", "1A7F37", "8250DF",
@@ -78,6 +88,10 @@ public static class ThemeCatalog
             "263238 F07178 C3E88D FFCB6B 82AAFF C792EA 89DDFF EEFFFF 546E7A F07178 C3E88D FFCB6B 82AAFF C792EA 89DDFF FFFFFF"),
         Create("MaterialPalenight", "Material Palenight", true, "292D3E", "A6ACCD", "C792EA", "89DDFF", "F07178",
             "292D3E F07178 C3E88D FFCB6B 82AAFF C792EA 89DDFF A6ACCD 676E95 F07178 C3E88D FFCB6B 82AAFF C792EA 89DDFF FFFFFF"),
+        Create("MaterialDarker", "Material Darker", true, "212121", "EEFFFF", "82AAFF", "80CBC4", "C792EA", MaterialAnsi),
+        Create("MaterialOcean", "Material Ocean", true, "0F111A", "BABED8", "82AAFF", "80CBC4", "C792EA", MaterialAnsi),
+        Create("MaterialLighter", "Material Lighter", false, "FAFAFA", "546E7A", "6182B8", "39ADB5", "9C3EDA",
+            "000000 E53935 91B859 E2931D 6182B8 9C3EDA 39ADB5 90A4AE 546E7A E53935 91B859 E2931D 6182B8 945EB8 39ADB5 FFFFFF"),
         Create("AyuDark", "Ayu Dark", true, "0B0E14", "BFBDB6", "E6B450", "39BAE6", "D2A6FF",
             "01060E F07178 AAD94C FFB454 59C2FF D2A6FF 95E6CB BFBDB6 565B66 F07178 AAD94C FFB454 59C2FF D2A6FF 95E6CB F3F4F5"),
         Create("AyuLight", "Ayu Light", false, "F8F9FA", "5C6166", "BF7F00", "399EE6", "A37ACC",
@@ -90,6 +104,38 @@ public static class ThemeCatalog
             "241B2F FE4450 72F1B8 F97E72 03EDF9 FF7EDB 36F9F6 F0EFF1 614D85 FE4450 72F1B8 FFEA00 03EDF9 FF7EDB 36F9F6 FFFFFF"),
         Create("Ubuntu", "Ubuntu", true, "300A24", "EEEEEC", "E95420", "AD7FA8", "729FCF",
             "2E3436 CC0000 4E9A06 C4A000 3465A4 75507B 06989A D3D7CF 555753 EF2929 8AE234 FCE94F 729FCF AD7FA8 34E2E2 EEEEEC"),
+        Create("RosePine", "Rosé Pine", true, "191724", "E0DEF4", "EBBCBA", "9CCFD8", "C4A7E7",
+            "26233A EB6F92 31748F F6C177 9CCFD8 C4A7E7 EBBCBA E0DEF4 908CAA EB6F92 31748F F6C177 9CCFD8 C4A7E7 EBBCBA E0DEF4"),
+        Create("RosePineMoon", "Rosé Pine Moon", true, "232136", "E0DEF4", "EA9A97", "9CCFD8", "C4A7E7",
+            "393552 EB6F92 3E8FB0 F6C177 9CCFD8 C4A7E7 EA9A97 E0DEF4 908CAA EB6F92 3E8FB0 F6C177 9CCFD8 C4A7E7 EA9A97 E0DEF4"),
+        Create("RosePineDawn", "Rosé Pine Dawn", false, "FAF4ED", "575279", "D7827E", "56949F", "907AA9",
+            "F2E9E1 B4637A 286983 EA9D34 56949F 907AA9 D7827E 575279 797593 B4637A 286983 EA9D34 56949F 907AA9 D7827E 575279"),
+        Create("EverforestDark", "Everforest Dark", true, "2D353B", "D3C6AA", "A7C080", "7FBBB3", "D699B6",
+            "343F44 E67E80 A7C080 DBBC7F 7FBBB3 D699B6 83C092 D3C6AA 859289 E67E80 A7C080 DBBC7F 7FBBB3 D699B6 83C092 D3C6AA"),
+        Create("EverforestLight", "Everforest Light", false, "FDF6E3", "5C6A72", "8DA101", "35A77C", "DF69BA",
+            "5C6A72 F85552 8DA101 DFA000 3A94C5 DF69BA 35A77C 939F91 5C6A72 F85552 8DA101 DFA000 3A94C5 DF69BA 35A77C F4F0D9"),
+        Create("KanagawaWave", "Kanagawa Wave", true, "1F1F28", "DCD7BA", "7E9CD8", "7AA89F", "957FB8",
+            "16161D C34043 76946A C0A36E 7E9CD8 957FB8 6A9589 C8C093 727169 E82424 98BB6C E6C384 7FB4CA 938AA9 7AA89F DCD7BA"),
+        Create("KanagawaDragon", "Kanagawa Dragon", true, "181616", "C5C9C5", "8BA4B0", "8EA4A2", "8992A7",
+            "0D0C0C C4746E 8A9A7B C4B28A 8BA4B0 A292A3 8EA4A2 C8C093 A6A69C E46876 87A987 E6C384 7FB4CA 938AA9 7AA89F C5C9C5"),
+        Create("KanagawaLotus", "Kanagawa Lotus", false, "F2ECBC", "545464", "4D699B", "597B75", "624C83",
+            "1F1F28 C84053 6F894E 77713F 4D699B B35B79 597B75 545464 8A8980 D7474B 6E915F 836F4A 6693BF 624C83 5E857A 43436C"),
+        Create("Horizon", "Horizon", true, "1C1E26", "D5D8DA", "E95678", "26BBD9", "EE64AC",
+            "000000 E95678 29D398 FAB795 26BBD9 EE64AC 59E1E3 E5E5E5 666666 EC6A88 3FDAA4 FBC3A7 3FC4DE F075B5 6BE4E6 FFFFFF"),
+        Create("HorizonBright", "Horizon Bright", false, "FDF0ED", "06060C", "E95678", "26BBD9", "EE64AC",
+            "000000 E95678 29D398 FAB795 26BBD9 EE64AC 59E1E3 555555 666666 EC6A88 3FDAA4 FBC3A7 3FC4DE F075B5 6BE4E6 A5A5A5"),
+        Create("Andromeda", "Andromeda", true, "23262E", "D5CED9", "00E8C6", "7CB7FF", "FF00AA",
+            "000000 EE5D43 96E072 FFE66D 7CB7FF FF00AA 00E8C6 E5E5E5 666666 EE5D43 96E072 FFE66D 7CB7FF FF00AA 00E8C6 FFFFFF"),
+        Create("Poimandres", "Poimandres", true, "1B1E28", "A6ACCD", "5DE4C7", "ADD7FF", "F087BD",
+            "1B1E28 D0679D 5DE4C7 FFFAC2 89DDFF F087BD 89DDFF FFFFFF A6ACCD D0679D 5DE4C7 FFFAC2 ADD7FF F087BD ADD7FF FFFFFF"),
+        Create("PoimandresStorm", "Poimandres Storm", true, "252B37", "A6ACCD", "5DE4C7", "ADD7FF", "F087BD",
+            "252B37 D0679D 5DE4C7 FFFAC2 89DDFF F087BD 89DDFF FFFFFF A6ACCD D0679D 5DE4C7 FFFAC2 ADD7FF F087BD ADD7FF FFFFFF"),
+        Create("Vesper", "Vesper", true, "101010", "FFFFFF", "FFC799", "99FFE4", "FF8080", VsDarkAnsi),
+        Create("MinDark", "Min Dark", true, "1F1F1F", "888888", "79B8FF", "FFAB70", "B392F0",
+            "000000 CD3131 0DBC79 E5E510 2472C8 BC3FBC 11A8CD E5E5E5 5C5C5C F14C4C 23D18B F5F543 3B8EEA D670D6 29B8DB FFFFFF"),
+        Create("MinLight", "Min Light", false, "FFFFFF", "212121", "6871FF", "4DBF99", "9966CC",
+            "333333 D32F2F 77CC00 F29718 E0E0E0 9966CC 4DBF99 C7C7C7 A1A1A1 D6656A A3D900 E7C547 6871FF A37ACC 57D9AD 7E7E7E"),
+        Create("Darcula", "Darcula", true, "242424", "CCCCCC", "CC8242", "7A9EC2", "9E7BB0", VsDarkAnsi),
     ]);
 
     public static ThemeDefinition FindApplication(string? name) =>
@@ -109,10 +155,14 @@ public static class ThemeCatalog
         string accent, string secondaryAccent, string violet, string ansi)
     {
         var colors = ansi.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(color => "#" + color).ToArray();
-        if (colors.Length != 16 || colors.Any(color => color.Length != 7))
+        if (colors.Length != 16 || colors.Any(color => !IsRgb(color[1..])))
             throw new ArgumentException($"Theme {name} must define 16 RGB ANSI colors.", nameof(ansi));
+        if (new[] { background, foreground, accent, secondaryAccent, violet }.Any(color => !IsRgb(color)))
+            throw new ArgumentException($"Theme {name} must define RGB UI colors.", nameof(background));
 
         return new(id, name, isDark, "#" + background, "#" + foreground,
             "#" + accent, "#" + secondaryAccent, "#" + violet, Array.AsReadOnly(colors));
     }
+
+    private static bool IsRgb(string color) => color.Length == 6 && color.All(Uri.IsHexDigit);
 }

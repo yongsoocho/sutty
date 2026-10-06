@@ -164,7 +164,14 @@
             Content="{x:Bind h:Loc.T('지원 번들 저장…', 'Save support bundle…')}"
             CornerRadius="8"
             FontWeight="SemiBold"
-            Foreground="{ThemeResource AccentForeground}" />
+            Foreground="{ThemeResource AccentForeground}">
+            <Button.Resources>
+                <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
+                <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="AccentForeground" />
+                <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="AccentForeground" />
+            </Button.Resources>
+        </Button>
 
         <TextBlock
             x:Name="StatusText"

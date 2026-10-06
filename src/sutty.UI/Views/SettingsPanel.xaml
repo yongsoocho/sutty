@@ -64,20 +64,27 @@
     </UserControl.Resources>
 
     <Border Background="{ThemeResource SidePanelBg}">
-        <!--  타이틀바 오버레이 영역(40px)을 피해서 시작  -->
         <NavigationView
             x:Name="SettingsNav"
             Margin="0"
             Background="Transparent"
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="True"
-            IsPaneOpen="True"
+            IsPaneOpen="False"
+            IsTitleBarAutoPaddingEnabled="False"
             IsSettingsVisible="False"
             OpenPaneLength="196"
             ExpandedModeThresholdWidth="1000"
             CompactModeThresholdWidth="640"
             PaneDisplayMode="Auto"
-            SelectionChanged="SettingsNav_SelectionChanged">
+            SelectionChanged="SettingsNav_SelectionChanged"
+            ItemInvoked="SettingsNav_ItemInvoked"
+            DisplayModeChanged="SettingsNav_DisplayModeChanged">
+            <NavigationView.Resources>
+                <!-- Overlay navigation must obscure, not blend with, the form beneath it. -->
+                <StaticResource x:Key="NavigationViewDefaultPaneBackground" ResourceKey="SidePanelBg" />
+                <StaticResource x:Key="NavigationViewExpandedPaneBackground" ResourceKey="SidePanelBg" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="{x:Bind h:Loc.T('모양', 'Appearance')}" FontSize="12.5" Tag="Appearance">
                     <NavigationViewItem.Icon>
@@ -116,18 +123,15 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <Grid MaxWidth="1040" Padding="20,12,20,24">
+            <ScrollViewer x:Name="SettingsScrollViewer"
+                HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
+                HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                <Grid x:Name="SettingsContentGrid" MaxWidth="1040" MinWidth="0"
+                    Padding="20,12,20,24" SizeChanged="SettingsContentGrid_SizeChanged">
 
                     <!--  ── Appearance: 언어/테마 (선택 즉시 적용/저장) ──  -->
                     <StackPanel x:Name="AppearancePane" Spacing="10">
                         <TextBlock Style="{StaticResource SettingsHeading}" Text="{x:Bind h:Loc.T('모양 / 언어', 'Appearance')}" />
-                        <TextBlock
-                            Margin="0,-4,0,0"
-                            FontSize="10.5"
-                            Foreground="{ThemeResource TextMuted}"
-                            TextWrapping="Wrap"
-                            Text="{x:Bind h:Loc.T('선택하면 즉시 적용되고 저장됩니다.', 'Choices apply and save immediately.')}" />
 
                         <!--  언어  -->
                         <Border Style="{StaticResource SettingsCard}">
@@ -165,14 +169,49 @@
                             <ComboBox
                                 x:Name="ThemeRadios"
                                 HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch"
+                                MinWidth="0"
+                                MinHeight="36"
                                 IsTextSearchEnabled="True"
                                 MaxDropDownHeight="420"
                                 FontSize="12.5"
                                 Header="{x:Bind h:Loc.T('앱 테마', 'Application theme')}"
-                                SelectionChanged="ThemeRadios_SelectionChanged" />
-                            <Border Height="6" Background="{ThemeResource AccentGradient}" CornerRadius="3" />
-                            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextMuted}"
-                                Text="{x:Bind h:Loc.T('모든 테마에서 그라데이션 강조를 유지합니다. 터미널 색상은 터미널 설정에서 별도로 선택할 수도 있습니다.', 'Every theme keeps gradient accents. You can also choose a separate terminal palette in Terminal settings.')}" />
+                                SelectionChanged="ThemeRadios_SelectionChanged">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                                <ComboBox.ItemContainerStyle>
+                                    <Style TargetType="ComboBoxItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    </Style>
+                                </ComboBox.ItemContainerStyle>
+                            </ComboBox>
+                            <TextBlock Text="Sutty" FontWeight="SemiBold" Foreground="{ThemeResource TextPrimary}" />
+                            <Grid x:Name="ThemePreviewStates" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{x:Bind h:Loc.T('준비', 'Ready')}" FontSize="11"
+                                    TextWrapping="Wrap" Foreground="{ThemeResource StatusGreen}" />
+                                <TextBlock Grid.Column="1" Text="{x:Bind h:Loc.T('재시도', 'Retry')}" FontSize="11"
+                                    TextWrapping="Wrap" Foreground="{ThemeResource StatusAmber}" />
+                                <TextBlock Grid.Column="2" Text="{x:Bind h:Loc.T('실패', 'Failed')}" FontSize="11"
+                                    TextWrapping="Wrap" Foreground="{ThemeResource StatusRed}" />
+                            </Grid>
+                            <Border Background="{ThemeResource TerminalBg}" Padding="12" CornerRadius="4">
+                                <StackPanel Spacing="7">
+                                    <TextBlock Text="dev@staging:~$ ls" FontFamily="Cascadia Mono" FontSize="12"
+                                        Foreground="{ThemeResource TerminalFg}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="ThemePreviewOutput" Text="app.log  config  README.md"
+                                        FontFamily="Cascadia Mono" FontSize="12" TextWrapping="Wrap" />
+                                    <Grid x:Name="AppAnsiPreview" Height="10" ColumnSpacing="3" />
+                                </StackPanel>
+                            </Border>
+                            <Border Height="4" Background="{ThemeResource AccentGradient}" CornerRadius="2" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -219,6 +258,8 @@
                                     <ComboBox
                                         x:Name="TerminalThemeCombo"
                                         HorizontalAlignment="Stretch"
+                                        IsTextSearchEnabled="True"
+                                        MaxDropDownHeight="420"
                                         CornerRadius="7"
                                         FontSize="12.5"
                                         MinHeight="36"
@@ -705,6 +746,8 @@
                         <Button.Resources>
                             <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="AccentGradientHover" />
                             <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="AccentGradient" />
+                            <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="AccentForeground" />
+                            <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="AccentForeground" />
                         </Button.Resources>
                     </Button>
                     <TextBlock

@@ -1,6 +1,7 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using sutty.Command;
 using sutty.Setting;
 using sutty.UI.Helpers;
@@ -98,7 +99,8 @@ namespace sutty.UI.Views
                 ? ElementTheme.Dark
                 : ElementTheme.Light;
 
-            foreach (var preset in ThemeManager.Presets)
+            foreach (var preset in ThemeManager.Presets.Take(2).Concat(
+                         ThemeManager.Presets.Skip(2).OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)))
                 ThemeRadios.Items.Add(preset.Name);
 
             LoadSettingsControls(settings);
@@ -123,6 +125,7 @@ namespace sutty.UI.Views
                     ? ElementTheme.Dark : ElementTheme.Light;
                 ThemeRadios.SelectedItem = ThemeManager.Find(settings.Theme).Name;
                 DarkModeToggle.IsOn = ThemeManager.IsDark(settings.Theme);
+                UpdateThemePreview(settings.Theme);
                 LanguageCombo.SelectedIndex = settings.Language == "en" ? 1 : 0;
 
                 FontFamilyBox.Text = settings.TerminalFontFamily;
@@ -227,6 +230,31 @@ namespace sutty.UI.Views
             ShowSection(item.Tag as string);
         }
 
+        private void SettingsNav_DisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)
+        {
+            sender.IsPaneOpen = args.DisplayMode == NavigationViewDisplayMode.Expanded;
+        }
+
+        private void SettingsNav_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
+        {
+            // Invoking the current section does not raise SelectionChanged.
+            CloseSettingsOverlay();
+        }
+
+        private void CloseSettingsOverlay()
+        {
+            if (SettingsNav.DisplayMode != NavigationViewDisplayMode.Expanded)
+                SettingsNav.IsPaneOpen = false;
+        }
+
+        private void SettingsContentGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            var inset = e.NewSize.Width < 480 ? 12 : 20;
+            var padding = new Thickness(inset, 12, inset, 24);
+            if (SettingsContentGrid.Padding != padding)
+                SettingsContentGrid.Padding = padding;
+        }
+
         public void NavigateToSection(string section, bool showAdvancedLogs = false)
         {
             var tag = string.Equals(section, "Support", StringComparison.Ordinal)
@@ -254,6 +282,7 @@ namespace sutty.UI.Views
             SupportPane.Visibility = tag == "Troubleshooting" ? Visibility.Visible : Visibility.Collapsed;
             WindowPane.Visibility = tag == "Window" ? Visibility.Visible : Visibility.Collapsed;
             AboutPane.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
+            CloseSettingsOverlay();
 
             if (tag == "Troubleshooting")
             {
@@ -303,8 +332,30 @@ namespace sutty.UI.Views
 
             SettingsService.Current.Theme = preset.Name;
             RequestedTheme = preset.IsDark ? ElementTheme.Dark : ElementTheme.Light;
+            UpdateThemePreview(preset.Name);
             CommitChangesNow(SettingChangeKind.Theme);
         }
+
+        private void UpdateThemePreview(string themeName)
+        {
+            var theme = ThemeCatalog.FindApplication(themeName);
+            AppAnsiPreview.Children.Clear();
+            AppAnsiPreview.ColumnDefinitions.Clear();
+            for (var index = 0; index < theme.AnsiColors.Count; index++)
+            {
+                AppAnsiPreview.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var swatch = new Border { Background = PreviewBrush(theme.AnsiColors[index]), CornerRadius = new CornerRadius(2) };
+                ToolTipService.SetToolTip(swatch, $"ANSI {index}: {theme.AnsiColors[index]}");
+                Grid.SetColumn(swatch, index);
+                AppAnsiPreview.Children.Add(swatch);
+            }
+            ThemePreviewOutput.Foreground = PreviewBrush(theme.AnsiColors[4]);
+        }
+
+        private static SolidColorBrush PreviewBrush(string hex) => new(Windows.UI.Color.FromArgb(255,
+            Convert.ToByte(hex.Substring(1, 2), 16),
+            Convert.ToByte(hex.Substring(3, 2), 16),
+            Convert.ToByte(hex.Substring(5, 2), 16)));
 
         private void TerminalAppearanceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -730,6 +781,7 @@ namespace sutty.UI.Views
 
         private void SettingsPanel_Loaded(object sender, RoutedEventArgs e)
         {
+            SettingsNav.IsPaneOpen = SettingsNav.DisplayMode == NavigationViewDisplayMode.Expanded;
             LoadSettingsControls(SettingsService.Current);
         }
 

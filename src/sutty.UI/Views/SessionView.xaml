@@ -371,7 +371,7 @@
                         VerticalAlignment="Center"
                         FontSize="12"
                         FontWeight="Medium"
-                        Foreground="{ThemeResource AccentGradient}"
+                        Foreground="{ThemeResource AccentBlue}"
                         Text="❯"
                         TextTrimming="CharacterEllipsis"
                         ToolTipService.ToolTip="{x:Bind h:Loc.T('현재 경로', 'Current directory')}" />
