@@ -729,9 +729,11 @@
             <NavigationView.PaneFooter>
                 <!--  자동 저장 debounce가 남아 있을 때 즉시 flush하는 보조 동작  -->
                 <StackPanel
+                    x:Name="SettingsPaneFooter"
                     Margin="12,0,12,12"
                     Orientation="Vertical"
-                    Spacing="6">
+                    Spacing="6"
+                    Visibility="{x:Bind SettingsNav.IsPaneOpen, Mode=OneWay}">
                     <Button
                         Height="36"
                         HorizontalAlignment="Stretch"

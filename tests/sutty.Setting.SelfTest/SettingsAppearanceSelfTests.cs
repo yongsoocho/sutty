@@ -19,6 +19,10 @@ internal static class SettingsAppearanceSelfTests
         Assert(Attribute(navigation, "DisplayModeChanged") == "SettingsNav_DisplayModeChanged" &&
                Attribute(navigation, "ItemInvoked") == "SettingsNav_ItemInvoked",
             "navigation wires resize and repeat-selection dismissal handlers");
+        var footer = FindNamed(document, "SettingsPaneFooter");
+        Assert(footer.Parent?.Name == Ui + "NavigationView.PaneFooter" &&
+               Attribute(footer, "Visibility") == "{x:Bind SettingsNav.IsPaneOpen, Mode=OneWay}",
+            "full-width save controls are hidden in the closed compact navigation rail");
 
         var navigationResources = navigation.Element(Ui + "NavigationView.Resources");
         Assert(navigationResources is not null, "navigation has local opaque pane resources");
