@@ -9,5 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\sutty.Command\sutty.Command.csproj" />
     <ProjectReference Include="..\..\src\sutty.Core\sutty.Core.csproj" />
+    <Compile Include="..\..\src\sutty.UI\Helpers\SshRouteDisplay.cs" Link="SshRouteDisplay.cs" />
   </ItemGroup>
 </Project>

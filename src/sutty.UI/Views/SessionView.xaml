@@ -16,7 +16,7 @@
     VerticalAlignment="Stretch"
     mc:Ignorable="d">
 
-    <Grid x:Name="SessionLayout" Background="{ThemeResource TerminalBg}">
+    <Grid x:Name="SessionLayout" Background="{ThemeResource TerminalBg}" SizeChanged="SessionLayout_SizeChanged">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -28,7 +28,12 @@
             Padding="14,7"
             BorderBrush="{ThemeResource Divider}"
             BorderThickness="0,1,0,1">
-            <Grid ColumnSpacing="10">
+            <Grid x:Name="SessionHeaderGrid" ColumnSpacing="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -36,7 +41,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <Grid HorizontalAlignment="Stretch" VerticalAlignment="Center" ColumnSpacing="10">
+                <Grid x:Name="SessionIdentity" HorizontalAlignment="Stretch" VerticalAlignment="Center" ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -52,13 +57,15 @@
                     <Border
                         x:Name="StatusPill"
                         Grid.Column="1"
+                        MaxWidth="180"
                         Padding="8,2"
                         VerticalAlignment="Center"
                         CornerRadius="10">
                         <TextBlock
                             x:Name="StatusPillText"
                             FontSize="10.5"
-                            FontWeight="SemiBold" />
+                            FontWeight="SemiBold"
+                            TextTrimming="CharacterEllipsis" />
                     </Border>
                 </Grid>
 
@@ -72,8 +79,10 @@
                     Visibility="Collapsed">
                     <TextBlock
                         x:Name="SftpPillText"
+                        MaxWidth="110"
                         FontSize="10.5"
                         Foreground="{ThemeResource AccentTeal}"
+                        TextTrimming="CharacterEllipsis"
                         Text="sftp ready" />
                 </Border>
 
@@ -81,16 +90,22 @@
                     x:Name="ConnectionInfoButton"
                     Grid.Column="2"
                     MinWidth="0"
+                    MaxWidth="132"
                     MinHeight="0"
                     Padding="8,2"
                     VerticalAlignment="Center"
+                    HorizontalContentAlignment="Stretch"
                     AutomationProperties.Name="{x:Bind h:Loc.T('SSH 연결 정보', 'SSH connection information')}"
                     Background="{ThemeResource PillBg}"
                     BorderThickness="0"
                     CornerRadius="10"
                     IsEnabled="False">
                     <Button.Content>
-                        <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Grid ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <TextBlock
                                 x:Name="RoutePillText"
                                 MaxWidth="100"
@@ -99,19 +114,39 @@
                                 TextTrimming="CharacterEllipsis"
                                 Foreground="{ThemeResource AccentViolet}" />
                             <FontIcon
+                                Grid.Column="1"
                                 VerticalAlignment="Center"
                                 FontSize="10"
                                 Foreground="{ThemeResource AccentViolet}"
                                 Glyph="&#xE946;" />
-                        </StackPanel>
+                        </Grid>
                     </Button.Content>
                     <Button.Flyout>
-                        <Flyout Placement="Bottom">
-                            <StackPanel Width="420" Spacing="8">
+                        <Flyout Placement="Bottom" Opening="ConnectionInfoFlyout_Opening">
+                            <Flyout.FlyoutPresenterStyle>
+                                <Style TargetType="FlyoutPresenter">
+                                    <Setter Property="MinWidth" Value="0" />
+                                    <Setter Property="Padding" Value="12" />
+                                </Style>
+                            </Flyout.FlyoutPresenterStyle>
+                            <StackPanel x:Name="ConnectionInfoPanel" Width="420" Spacing="8">
                                 <TextBlock
                                     FontSize="15"
                                     FontWeight="SemiBold"
+                                    TextWrapping="Wrap"
                                     Text="{x:Bind h:Loc.T('SSH 연결 정보', 'SSH connection information')}" />
+                                <StackPanel x:Name="RouteDetailsPanel" Spacing="4" Visibility="Collapsed">
+                                    <TextBlock
+                                        FontWeight="SemiBold"
+                                        TextWrapping="Wrap"
+                                        Text="{x:Bind h:Loc.T('연결 경로 · 베타', 'Connection route · Beta')}" />
+                                    <TextBlock
+                                        x:Name="RouteDetailsText"
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="11"
+                                        IsTextSelectionEnabled="True"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
                                 <TextBlock
                                     FontSize="11"
                                     Foreground="{ThemeResource TextMuted}"
@@ -127,19 +162,25 @@
                                     IsReadOnly="True"
                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
                                     TextWrapping="Wrap" />
-                                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock
                                         x:Name="CopyConnectionInfoStatus"
                                         VerticalAlignment="Center"
                                         AutomationProperties.LiveSetting="Polite"
                                         FontSize="10.5"
+                                        TextWrapping="Wrap"
                                         Visibility="Collapsed" />
                                     <Button
                                         x:Name="CopyConnectionInfoButton"
+                                        Grid.Column="1"
                                         AutomationProperties.Name="{x:Bind h:Loc.T('SSH 연결 정보 복사', 'Copy SSH connection information')}"
                                         Click="CopyConnectionInfo_Click"
                                         Content="{x:Bind h:Loc.T('복사', 'Copy')}" />
-                                </StackPanel>
+                                </Grid>
                             </StackPanel>
                         </Flyout>
                     </Button.Flyout>
