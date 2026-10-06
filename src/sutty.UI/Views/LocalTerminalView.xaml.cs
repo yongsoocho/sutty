@@ -14,7 +14,6 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Windows.UI;
 
 namespace sutty.UI.Views;
 
@@ -666,13 +665,10 @@ public sealed partial class LocalTerminalView : UserControl
         };
 
         var foreground = ThemeResources.Brush(this, resourceKey);
-        var color = foreground is SolidColorBrush solid
-            ? solid.Color
-            : Color.FromArgb(255, 0x6E, 0x7C, 0x8B);
 
         StatusPillText.Text = pillLabel;
         StatusPillText.Foreground = foreground;
-        StatusPill.Background = new SolidColorBrush(Color.FromArgb(36, color.R, color.G, color.B));
+        StatusPill.Background = ThemeResources.Brush(this, resourceKey + "Bg");
         TerminalStatusText.Text = statusLabel;
         TerminalStatusText.Foreground = foreground;
         ToolTipService.SetToolTip(

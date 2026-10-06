@@ -16,7 +16,8 @@
   }
 
   const terminal = new window.Terminal({
-    allowProposedApi: false,
+    // The pinned SearchAddon uses xterm's decoration API for matching results.
+    allowProposedApi: true,
     allowTransparency: false,
     convertEol: false,
     cursorBlink: true,
@@ -47,6 +48,14 @@
   let lastRows = 0;
   let lastPixelWidth = 0;
   let lastPixelHeight = 0;
+  let searchPalette = {
+    matchBackground: '#192127',
+    matchBorder: '#2bc7b5',
+    matchOverviewRuler: '#2bc7b5',
+    activeMatchBackground: '#102f2e',
+    activeMatchBorder: '#9fb0c0',
+    activeMatchColorOverviewRuler: '#9fb0c0'
+  };
 
   function post(message) {
     bridge.postMessage(Object.assign({ version: protocolVersion }, message));
@@ -118,15 +127,97 @@
     return {
       caseSensitive: false,
       incremental: true,
-      decorations: {
-        matchBackground: '#4a5568',
-        matchBorder: '#6ee7d8',
-        matchOverviewRuler: '#6ee7d8',
-        activeMatchBackground: '#256f78',
-        activeMatchBorder: '#ffffff',
-        activeMatchColorOverviewRuler: '#ffffff'
-      }
+      decorations: searchPalette
     };
+  }
+
+  function validColor(value, fallback) {
+    return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+  }
+
+  function mixColor(first, second, amount) {
+    let result = '#';
+    for (let offset = 1; offset < 7; offset += 2) {
+      const a = parseInt(first.slice(offset, offset + 2), 16);
+      const b = parseInt(second.slice(offset, offset + 2), 16);
+      result += Math.round(a + (b - a) * amount).toString(16).padStart(2, '0');
+    }
+    return result;
+  }
+
+  function luminance(color) {
+    const channels = [1, 3, 5].map(offset => {
+      const channel = parseInt(color.slice(offset, offset + 2), 16) / 255;
+      return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    });
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  }
+
+  function contrast(first, second) {
+    const a = luminance(first);
+    const b = luminance(second);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  }
+
+  function readableColor(color, backgrounds, minimum) {
+    const minimumContrast = candidate => Math.min(...backgrounds.map(background => contrast(candidate, background)));
+    if (minimumContrast(color) >= minimum) {
+      return color;
+    }
+    const target = minimumContrast('#ffffff') >= minimumContrast('#000000') ? '#ffffff' : '#000000';
+    for (let step = 1; step <= 100; step += 1) {
+      const candidate = mixColor(color, target, step / 100);
+      if (minimumContrast(candidate) >= minimum) {
+        return candidate;
+      }
+    }
+    return target;
+  }
+
+  function applyTheme(theme) {
+    const background = validColor(theme.background, '#0a0d10');
+    const terminalForeground = validColor(theme.foreground, '#9fb0c0');
+    const surface = mixColor(background, terminalForeground, 0.055);
+    const surfaces = [background, surface];
+    const foreground = readableColor(terminalForeground, surfaces, 4.5);
+    const cursor = validColor(theme.cursor, terminalForeground);
+    const selection = validColor(theme.selectionBackground, mixColor(background, cursor, 0.30));
+    const backgroundLuminance = luminance(background);
+    const accent = readableColor(cursor, surfaces, 3);
+    const rootStyle = document.documentElement.style;
+    rootStyle.colorScheme = backgroundLuminance > 0.5 ? 'light' : 'dark';
+    rootStyle.setProperty('--terminal-background', background);
+    rootStyle.setProperty('--foreground', foreground);
+    rootStyle.setProperty('--selection', selection);
+    rootStyle.setProperty('--surface', surface);
+    rootStyle.setProperty('--border', mixColor(background, terminalForeground, 0.24));
+    rootStyle.setProperty('--muted', readableColor(mixColor(background, terminalForeground, 0.80), surfaces, 4.5));
+    rootStyle.setProperty('--accent', accent);
+    searchPalette = {
+      matchBackground: mixColor(background, terminalForeground, 0.10),
+      matchBorder: accent,
+      matchOverviewRuler: accent,
+      activeMatchBackground: mixColor(background, accent, 0.18),
+      activeMatchBorder: foreground,
+      activeMatchColorOverviewRuler: foreground
+    };
+
+    if (!searchElement.hidden && searchInput.value) {
+      // Rebuild decoration colors without advancing the selected result or scrolling.
+      const selected = terminal.getSelectionPosition();
+      const viewport = terminal.buffer.active.viewportY;
+      const restoreSelection = () => {
+        if (selected) {
+          terminal.select(selected.start.x, selected.start.y,
+            (selected.end.y - selected.start.y) * terminal.cols + selected.end.x - selected.start.x);
+        }
+      };
+      searchAddon.clearDecorations();
+      restoreSelection();
+      searchAddon.findNext(searchInput.value, searchOptions());
+      restoreSelection();
+      terminal.scrollToLine(viewport);
+    }
   }
 
   function findNext() {
@@ -255,7 +346,7 @@
 
   function applyOptions(message) {
     outputCapture.shell = message.outputShell;
-    const theme = message.theme || {};
+    const theme = message.theme || terminal.options.theme || {};
     terminal.options.fontFamily = typeof message.fontFamily === 'string'
       ? message.fontFamily.slice(0, 256)
       : terminal.options.fontFamily;
@@ -272,12 +363,7 @@
     terminal.options.screenReaderMode = message.screenReaderMode === true;
     terminal.options.theme = theme;
 
-    const background = typeof theme.background === 'string' ? theme.background : '#08111f';
-    const foreground = typeof theme.foreground === 'string' ? theme.foreground : '#d7e2f0';
-    const selection = typeof theme.selectionBackground === 'string' ? theme.selectionBackground : '#315878';
-    document.documentElement.style.setProperty('--terminal-background', background);
-    document.documentElement.style.setProperty('--foreground', foreground);
-    document.documentElement.style.setProperty('--selection', selection);
+    applyTheme(theme);
 
     const korean = message.language === 'ko';
     searchInput.placeholder = korean ? '터미널 출력 검색' : 'Search terminal output';

@@ -21,7 +21,6 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Windows.UI;
 
 namespace sutty.UI.Views
 {
@@ -432,14 +431,12 @@ namespace sutty.UI.Views
                 SessionState.Failed => "FAILED",
                 _ => "READY",
             };
-            var foreground = ThemeResources.Brush(this, StatusResourceKey(state));
-            var color = foreground is SolidColorBrush solid
-                ? solid.Color
-                : Color.FromArgb(255, 0x6E, 0x7C, 0x8B);
+            var resourceKey = StatusResourceKey(state);
+            var foreground = ThemeResources.Brush(this, resourceKey);
 
             StatusPillText.Text = label;
             StatusPillText.Foreground = foreground;
-            StatusPill.Background = new SolidColorBrush(Color.FromArgb(36, color.R, color.G, color.B));
+            StatusPill.Background = ThemeResources.Brush(this, resourceKey + "Bg");
         }
 
         private void UpdateSftpPill(SftpConnectionState state)

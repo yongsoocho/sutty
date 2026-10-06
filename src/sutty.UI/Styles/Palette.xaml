@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!--
-    sutty 공용 팔레트 & 스타일 — "Sutty 리디자인 / Deep Field" 디자인 원본(dc.html) 값 그대로.
-    다크(1a Deep Field)와 라이트(1c Deep Field Light) 두 벌.
-    시그니처 그라디언트: 파랑 #2E7CD6 → 틸 #14A79C (라이트: #2570C8 → #0FA396).
+    Sutty Deep Field fallback resources. ApplicationPalette supplies contrast-tested
+    roles at startup and on every named-theme switch. Signature gradients are reserved
+    for primary actions and navigation indicators; selection fills stay restrained.
     팔레트 키는 반드시 {ThemeResource ...} 로 참조 (토글 시 자동 갱신).
 -->
 <ResourceDictionary
@@ -25,6 +25,8 @@
             <SolidColorBrush x:Key="InputBg" Color="#0C1015" />
             <SolidColorBrush x:Key="InputBorder" Color="#232C36" />
             <SolidColorBrush x:Key="PillBg" Color="#12171D" />
+            <SolidColorBrush x:Key="SelectionBg" Color="#122334" />
+            <SolidColorBrush x:Key="SelectionBgHover" Color="#13273B" />
             <SolidColorBrush x:Key="Divider" Color="#171D23" />
             <SolidColorBrush x:Key="OutputGuide" Color="#1E2830" />
             <SolidColorBrush x:Key="TextPrimary" Color="#E8EDF2" />
@@ -55,10 +57,82 @@
                 <GradientStop Offset="0" Color="#2E7CD6" />
                 <GradientStop Offset="1" Color="#14A79C" />
             </LinearGradientBrush>
-            <LinearGradientBrush x:Key="AccentTint" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#382E7CD6" />
-                <GradientStop Offset="1" Color="#3814A79C" />
-            </LinearGradientBrush>
+            <SolidColorBrush x:Key="AccentTint" Color="#122334" />
+            <SolidColorBrush x:Key="StatusGreenBg" Color="#111D1C" />
+            <SolidColorBrush x:Key="StatusAmberBg" Color="#1D1C17" />
+            <SolidColorBrush x:Key="StatusRedBg" Color="#1E1619" />
+            <SolidColorBrush x:Key="StatusIdleBg" Color="#12171D" />
+            <SolidColorBrush x:Key="ControlAccentFill" Color="#2E7CD6" />
+            <SolidColorBrush x:Key="ControlAccentFillHover" Color="#4E9AF0" />
+
+            <!-- Native control states share the same mutable, contrast-tested roles. -->
+            <StaticResource x:Key="TextFillColorPrimaryBrush" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="TextFillColorSecondaryBrush" ResourceKey="TextMuted" />
+            <StaticResource x:Key="TextFillColorTertiaryBrush" ResourceKey="TextFaint" />
+            <StaticResource x:Key="AccentFillColorDefaultBrush" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="AccentFillColorSecondaryBrush" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="AccentFillColorTertiaryBrush" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="TextOnAccentFillColorPrimaryBrush" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="TextOnAccentFillColorSecondaryBrush" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="AccentTextFillColorPrimaryBrush" ResourceKey="AccentBlue" />
+            <StaticResource x:Key="ButtonBackground" ResourceKey="CardBg" />
+            <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CardBgHover" />
+            <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="PillBg" />
+            <StaticResource x:Key="ButtonForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ToggleSwitchContentForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ToggleSwitchHeaderForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxBorderBrushPointerOver" ResourceKey="InputBorder" />
+            <StaticResource x:Key="ComboBoxBorderBrushPressed" ResourceKey="InputBorder" />
+            <StaticResource x:Key="ComboBoxItemForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundPointerOver" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundPressed" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundSelected" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundSelectedPointerOver" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundSelectedPressed" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemBackgroundPointerOver" ResourceKey="CardBgHover" />
+            <StaticResource x:Key="ComboBoxItemBackgroundPressed" ResourceKey="PillBg" />
+            <StaticResource x:Key="ComboBoxItemBackgroundSelected" ResourceKey="SelectionBg" />
+            <StaticResource x:Key="ComboBoxItemBackgroundSelectedPointerOver" ResourceKey="SelectionBgHover" />
+            <StaticResource x:Key="ComboBoxItemBackgroundSelectedPressed" ResourceKey="SelectionBg" />
+            <StaticResource x:Key="ContentDialogBackground" ResourceKey="PanelBg" />
+            <StaticResource x:Key="ContentDialogForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ContentDialogBorderBrush" ResourceKey="CardBorder" />
+            <StaticResource x:Key="MenuFlyoutPresenterBackground" ResourceKey="CardBg" />
+            <StaticResource x:Key="MenuFlyoutPresenterBorderBrush" ResourceKey="CardBorder" />
+            <StaticResource x:Key="MenuFlyoutItemForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="MenuFlyoutItemForegroundPointerOver" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="MenuFlyoutItemForegroundPressed" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ProgressBarForeground" ResourceKey="AccentBlue" />
+            <StaticResource x:Key="ProgressRingForegroundThemeBrush" ResourceKey="AccentBlue" />
+            <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="ToggleSwitchStrokeOn" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="ToggleSwitchKnobFillOn" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillChecked" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeChecked" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundChecked" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillIndeterminate" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeIndeterminate" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundIndeterminate" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="ToggleSwitchStrokeOnPointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="ToggleSwitchKnobFillOnPointerOver" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillIndeterminatePointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeIndeterminatePointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundIndeterminatePointerOver" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="ToggleSwitchStrokeOnPressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="ToggleSwitchKnobFillOnPressed" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillIndeterminatePressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeIndeterminatePressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundIndeterminatePressed" ResourceKey="AccentForeground" />
 
             <!--  TextBox / PasswordBox  -->
             <SolidColorBrush x:Key="TextControlBackground" Color="#0C1015" />
@@ -119,18 +193,9 @@
             <SolidColorBrush x:Key="NavigationViewItemBackground" Color="Transparent" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#161C22" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#12171D" />
-            <LinearGradientBrush x:Key="NavigationViewItemBackgroundSelected" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#382E7CD6" />
-                <GradientStop Offset="1" Color="#3814A79C" />
-            </LinearGradientBrush>
-            <LinearGradientBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#382E7CD6" />
-                <GradientStop Offset="1" Color="#3814A79C" />
-            </LinearGradientBrush>
-            <LinearGradientBrush x:Key="NavigationViewItemBackgroundSelectedPressed" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#382E7CD6" />
-                <GradientStop Offset="1" Color="#3814A79C" />
-            </LinearGradientBrush>
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#122334" />
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#13273B" />
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#122334" />
         </ResourceDictionary>
 
         <!--  ═══════════ LIGHT (1c Deep Field Light) ═══════════  -->
@@ -147,6 +212,8 @@
             <SolidColorBrush x:Key="InputBg" Color="#FFFFFF" />
             <SolidColorBrush x:Key="InputBorder" Color="#D2D9E0" />
             <SolidColorBrush x:Key="PillBg" Color="#EDF0F3" />
+            <SolidColorBrush x:Key="SelectionBg" Color="#D5DFEB" />
+            <SolidColorBrush x:Key="SelectionBgHover" Color="#CDDAE9" />
             <SolidColorBrush x:Key="Divider" Color="#E6EAEF" />
             <SolidColorBrush x:Key="OutputGuide" Color="#E1E6EB" />
             <SolidColorBrush x:Key="TextPrimary" Color="#1C2530" />
@@ -177,10 +244,82 @@
                 <GradientStop Offset="0" Color="#2570C8" />
                 <GradientStop Offset="1" Color="#0FA396" />
             </LinearGradientBrush>
-            <LinearGradientBrush x:Key="AccentTint" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#242570C8" />
-                <GradientStop Offset="1" Color="#240FA396" />
-            </LinearGradientBrush>
+            <SolidColorBrush x:Key="AccentTint" Color="#D5DFEB" />
+            <SolidColorBrush x:Key="StatusGreenBg" Color="#EDF4F1" />
+            <SolidColorBrush x:Key="StatusAmberBg" Color="#F7F3EB" />
+            <SolidColorBrush x:Key="StatusRedBg" Color="#FBEDF0" />
+            <SolidColorBrush x:Key="StatusIdleBg" Color="#EDF0F3" />
+            <SolidColorBrush x:Key="ControlAccentFill" Color="#2570C8" />
+            <SolidColorBrush x:Key="ControlAccentFillHover" Color="#2E7CD6" />
+
+            <!-- Native control states share the same mutable, contrast-tested roles. -->
+            <StaticResource x:Key="TextFillColorPrimaryBrush" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="TextFillColorSecondaryBrush" ResourceKey="TextMuted" />
+            <StaticResource x:Key="TextFillColorTertiaryBrush" ResourceKey="TextFaint" />
+            <StaticResource x:Key="AccentFillColorDefaultBrush" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="AccentFillColorSecondaryBrush" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="AccentFillColorTertiaryBrush" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="TextOnAccentFillColorPrimaryBrush" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="TextOnAccentFillColorSecondaryBrush" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="AccentTextFillColorPrimaryBrush" ResourceKey="AccentBlue" />
+            <StaticResource x:Key="ButtonBackground" ResourceKey="CardBg" />
+            <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CardBgHover" />
+            <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="PillBg" />
+            <StaticResource x:Key="ButtonForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ButtonForegroundPointerOver" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ButtonForegroundPressed" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ToggleSwitchContentForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ToggleSwitchHeaderForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxBorderBrushPointerOver" ResourceKey="InputBorder" />
+            <StaticResource x:Key="ComboBoxBorderBrushPressed" ResourceKey="InputBorder" />
+            <StaticResource x:Key="ComboBoxItemForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundPointerOver" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundPressed" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundSelected" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundSelectedPointerOver" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemForegroundSelectedPressed" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ComboBoxItemBackgroundPointerOver" ResourceKey="CardBgHover" />
+            <StaticResource x:Key="ComboBoxItemBackgroundPressed" ResourceKey="PillBg" />
+            <StaticResource x:Key="ComboBoxItemBackgroundSelected" ResourceKey="SelectionBg" />
+            <StaticResource x:Key="ComboBoxItemBackgroundSelectedPointerOver" ResourceKey="SelectionBgHover" />
+            <StaticResource x:Key="ComboBoxItemBackgroundSelectedPressed" ResourceKey="SelectionBg" />
+            <StaticResource x:Key="ContentDialogBackground" ResourceKey="PanelBg" />
+            <StaticResource x:Key="ContentDialogForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ContentDialogBorderBrush" ResourceKey="CardBorder" />
+            <StaticResource x:Key="MenuFlyoutPresenterBackground" ResourceKey="CardBg" />
+            <StaticResource x:Key="MenuFlyoutPresenterBorderBrush" ResourceKey="CardBorder" />
+            <StaticResource x:Key="MenuFlyoutItemForeground" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="MenuFlyoutItemForegroundPointerOver" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="MenuFlyoutItemForegroundPressed" ResourceKey="TextPrimary" />
+            <StaticResource x:Key="ProgressBarForeground" ResourceKey="AccentBlue" />
+            <StaticResource x:Key="ProgressRingForegroundThemeBrush" ResourceKey="AccentBlue" />
+            <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="ToggleSwitchStrokeOn" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="ToggleSwitchKnobFillOn" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillChecked" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeChecked" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundChecked" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillIndeterminate" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeIndeterminate" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundIndeterminate" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="ToggleSwitchStrokeOnPointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="ToggleSwitchKnobFillOnPointerOver" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillIndeterminatePointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeIndeterminatePointerOver" ResourceKey="ControlAccentFillHover" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundIndeterminatePointerOver" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="ToggleSwitchStrokeOnPressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="ToggleSwitchKnobFillOnPressed" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillCheckedPressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" ResourceKey="AccentForeground" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundFillIndeterminatePressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckBackgroundStrokeIndeterminatePressed" ResourceKey="ControlAccentFill" />
+            <StaticResource x:Key="CheckBoxCheckGlyphForegroundIndeterminatePressed" ResourceKey="AccentForeground" />
 
             <!--  TextBox / PasswordBox  -->
             <SolidColorBrush x:Key="TextControlBackground" Color="#FFFFFF" />
@@ -240,18 +379,9 @@
             <SolidColorBrush x:Key="NavigationViewItemBackground" Color="Transparent" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOver" Color="#D9E0E7" />
             <SolidColorBrush x:Key="NavigationViewItemBackgroundPressed" Color="#EDF0F3" />
-            <LinearGradientBrush x:Key="NavigationViewItemBackgroundSelected" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#242570C8" />
-                <GradientStop Offset="1" Color="#240FA396" />
-            </LinearGradientBrush>
-            <LinearGradientBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#242570C8" />
-                <GradientStop Offset="1" Color="#240FA396" />
-            </LinearGradientBrush>
-            <LinearGradientBrush x:Key="NavigationViewItemBackgroundSelectedPressed" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Offset="0" Color="#242570C8" />
-                <GradientStop Offset="1" Color="#240FA396" />
-            </LinearGradientBrush>
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelected" Color="#D5DFEB" />
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPointerOver" Color="#CDDAE9" />
+            <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedPressed" Color="#D5DFEB" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 

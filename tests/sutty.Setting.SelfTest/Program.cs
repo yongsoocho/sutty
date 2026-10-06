@@ -1,5 +1,30 @@
 using sutty.Setting;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+
+if (args.Length > 0 && args[0] == "--export-theme-palettes")
+{
+    if (args.Length != 2 || string.IsNullOrWhiteSpace(args[1]))
+        throw new ArgumentException("Expected --export-theme-palettes <output-path>.");
+    var outputPath = Path.GetFullPath(args[1]);
+    Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+    var palettes = ThemeCatalog.Presets.Select(theme =>
+    {
+        var palette = ApplicationPalette.Create(theme);
+        return new
+        {
+            theme.Id, theme.Name, theme.IsDark, theme.Background, theme.Foreground, theme.AnsiColors,
+            palette.RailTop, palette.RailBottom, palette.Colors,
+        };
+    });
+    File.WriteAllText(outputPath, JsonSerializer.Serialize(palettes, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    }));
+    Console.WriteLine($"Exported {ThemeCatalog.Presets.Count} theme palettes to {outputPath}.");
+    return;
+}
 
 var scratch = Path.Combine(Path.GetTempPath(), $"sutty-setting-self-test-{Guid.NewGuid():N}");
 Directory.CreateDirectory(scratch);
@@ -200,6 +225,7 @@ try
         "workspace clear");
 
     ThemeCatalogSelfTests.Run();
+    SettingsAppearanceSelfTests.Run();
     SettingsResetSelfTests.Run(scratch);
     ShellStateSelfTests.Run();
     MultiSessionSelectionSelfTests.Run();

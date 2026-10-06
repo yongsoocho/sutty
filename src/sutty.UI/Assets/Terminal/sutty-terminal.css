@@ -1,12 +1,12 @@
 :root {
   color-scheme: dark;
-  --terminal-background: #08111f;
-  --surface: #101b2d;
-  --border: #2b3a50;
-  --foreground: #d7e2f0;
-  --muted: #8594a8;
-  --accent: #6ee7d8;
-  --selection: #315878;
+  --terminal-background: #0a0d10;
+  --surface: #12171d;
+  --border: #2e343a;
+  --foreground: #9fb0c0;
+  --muted: #81909d;
+  --accent: #2bc7b5;
+  --selection: #143c42;
 }
 
 * {
@@ -77,6 +77,11 @@ body {
   min-width: 0;
   padding: 0 9px;
   user-select: text;
+}
+
+.search input::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
 .search input:focus {
