@@ -41,9 +41,13 @@ internal static class SettingsAppearanceSelfTests
                Attribute(scrollViewer, "HorizontalContentAlignment") == "Stretch",
             "settings content is measured at viewport width rather than horizontally scrolling");
         var content = FindNamed(document, "SettingsContentGrid");
-        Assert(content.Name == Ui + "Grid" && content.Parent == scrollViewer &&
+        var viewport = FindNamed(document, "SettingsViewportGrid");
+        Assert(viewport.Parent == scrollViewer && content.Parent == viewport &&
+               Attribute(viewport, "HorizontalAlignment") == "Stretch" &&
+               viewport.Attribute("MaxWidth") is null &&
+               content.Name == Ui + "Grid" &&
                Attribute(content, "MaxWidth") == "1040",
-            "settings content remains bounded inside its constrained scroll viewport");
+            "full-width scroll content centers the bounded settings form without a second alignment offset");
 
         var selector = FindNamed(document, "ThemeRadios");
         Assert(selector.Name == Ui + "ComboBox" && Attribute(selector, "MinWidth") == "0" &&

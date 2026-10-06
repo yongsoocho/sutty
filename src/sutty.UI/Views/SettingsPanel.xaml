@@ -126,7 +126,10 @@
             <ScrollViewer x:Name="SettingsScrollViewer"
                 HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
                 HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                <!-- Keep the scroll extent full-width; center the bounded form only once. -->
+                <Grid x:Name="SettingsViewportGrid" HorizontalAlignment="Stretch">
                 <Grid x:Name="SettingsContentGrid" MaxWidth="1040" MinWidth="0"
+                    HorizontalAlignment="Stretch"
                     Padding="20,12,20,24" SizeChanged="SettingsContentGrid_SizeChanged">
 
                     <!--  ── Appearance: 언어/테마 (선택 즉시 적용/저장) ──  -->
@@ -723,6 +726,7 @@
                         </Border>
                     </StackPanel>
 
+                </Grid>
                 </Grid>
             </ScrollViewer>
 
