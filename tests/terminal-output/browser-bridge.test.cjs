@@ -188,10 +188,17 @@ test('Vim pages and tmux splits, detaches and reattaches through the packaged re
     });
     await f.page.locator('.xterm-helper-textarea').focus();
     await f.page.keyboard.press('Control+f');
-    await f.page.keyboard.type(":call writefile([string(line('.'))], 'cursor.txt')");
-    await f.page.keyboard.press('Enter');
-    await until(() => fs.existsSync(path.join(dir, 'cursor.txt')));
-    assert.ok(Number(fs.readFileSync(path.join(dir, 'cursor.txt'), 'utf8').trim()) > 1, 'Vim moved down a page');
+    // Compare the displayed page while Vim is still in Normal mode.
+    try {
+      await f.page.waitForFunction(() => {
+        const first = window.__suttyTest.terminal.buffer.active.getLine(0)?.translateToString(true);
+        return Number(/^line-(\d+)/.exec(first || '')?.[1]) > 1;
+      }, null, { timeout: 10000 });
+    } catch (error) {
+      const keys = await f.page.evaluate(() => window.__suttyTest.messages.filter(m => m.type === 'input').map(m => m.data));
+      const screen = tmux(['capture-pane', '-p', '-t', 'sutty']).stdout;
+      throw new Error('Vim page did not advance. Keys ' + JSON.stringify(keys) + '\n' + screen, { cause: error });
+    }
     await f.page.keyboard.press('Control+b');
     await f.page.keyboard.press('%');
     const panes = () => tmux(['list-panes', '-t', 'sutty', '-F', '#{pane_id}']).stdout.trim().split('\n').length;
