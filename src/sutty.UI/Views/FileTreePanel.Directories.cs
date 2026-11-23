@@ -29,6 +29,7 @@ public sealed partial class FileTreePanel
     private readonly HashSet<TreeViewNode> _loadingDirectories = [];
     private readonly LocalFileBrowserService _localDirectories = new();
     private BrowserLocation _location = new();
+    private bool _clearingDirectoryRoot;
 
     private TreeViewNode DirectoryNode(string name, string path)
     {
@@ -37,15 +38,29 @@ public sealed partial class FileTreePanel
         return node;
     }
 
+    private void ClearDirectoryRoot(TreeView tree)
+    {
+        _clearingDirectoryRoot = true;
+        try { tree.RootNodes.Clear(); }
+        finally { _clearingDirectoryRoot = false; }
+    }
+
+    private void RefreshDirectoryRoot(TreeView tree)
+    {
+        if (tree.RootNodes.Count == 0 || !_directoryBranches.TryGetValue(tree.RootNodes[0], out var branch)) return;
+        ClearDirectoryRoot(tree);
+        SetDirectoryRoot(tree, branch.Path);
+    }
+
     private void SetDirectoryRoot(TreeView tree, string? path)
     {
-        if (string.IsNullOrEmpty(path)) { tree.RootNodes.Clear(); return; }
+        if (string.IsNullOrEmpty(path)) { ClearDirectoryRoot(tree); return; }
         var local = tree == LocalDirectoryTree;
         var expanded = local ? _location.LocalExpanded : _location.RemoteExpanded;
         if (tree.RootNodes.Count == 1 && _directoryBranches.TryGetValue(tree.RootNodes[0], out var current) &&
             string.Equals(path, current.Path, local ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             return;
-        tree.RootNodes.Clear();
+        ClearDirectoryRoot(tree);
         var root = DirectoryNode(path, path);
         tree.RootNodes.Add(root);
         if (expanded.Contains(path)) root.IsExpanded = true;
@@ -104,7 +119,7 @@ public sealed partial class FileTreePanel
 
     private void DirectoryTree_Collapsed(TreeView sender, TreeViewCollapsedEventArgs args)
     {
-        if (args.Node is { } node && _directoryBranches.TryGetValue(node, out var branch))
+        if (!_clearingDirectoryRoot && args.Node is { } node && _directoryBranches.TryGetValue(node, out var branch))
             (sender == LocalDirectoryTree ? _location.LocalExpanded : _location.RemoteExpanded).Remove(branch.Path);
     }
 

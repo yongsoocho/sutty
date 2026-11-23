@@ -487,7 +487,11 @@
         <Border x:Name="TransfersPanel" Grid.Row="3" MaxHeight="150" Padding="8"
                 Background="{ThemeResource CardBg}" BorderBrush="{ThemeResource CardBorder}"
                 BorderThickness="1" CornerRadius="7" Visibility="Collapsed">
-            <StackPanel Spacing="5">
+            <Grid RowSpacing="5">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
                 <Grid ColumnSpacing="6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -501,9 +505,15 @@
                             Content="{x:Bind h:Loc.T('복원 작업 재개', 'Resume restored')}"
                             FontSize="10" Visibility="Collapsed" />
                 </Grid>
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{x:Bind Transfers}">
-                        <ItemsControl.ItemTemplate>
+                <ListView Grid.Row="1" MaxHeight="100" ItemsSource="{x:Bind Transfers}"
+                          SelectionMode="None" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="0" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
                             <DataTemplate x:DataType="vm:SftpTransferItemVm">
                                 <Grid Margin="0,3" ColumnSpacing="7" RowSpacing="2">
                                     <Grid.ColumnDefinitions>
@@ -562,10 +572,9 @@
                                     </Grid>
                                 </Grid>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-            </StackPanel>
+                        </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
         </Border>
 
         <TextBlock x:Name="StatusText" Grid.Row="4" Margin="4,0" FontSize="10.5"

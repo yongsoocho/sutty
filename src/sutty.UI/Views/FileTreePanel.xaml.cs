@@ -174,8 +174,7 @@ public sealed partial class FileTreePanel : UserControl
         if (sessionChanged)
         {
             InvalidateSessionOperations(clearTransfers: true);
-            LocalDirectoryTree.RootNodes.Clear();
-            RemoteDirectoryTree.RootNodes.Clear();
+            ClearDirectoryRoot(LocalDirectoryTree);
             _location = session is null ? new BrowserLocation() : _locations.GetValue(session, _ => new BrowserLocation());
             if (!string.IsNullOrEmpty(_location.LocalPath)) _ = NavigateLocalAsync(_location.LocalPath);
             else if (_localInitialized) ApplyLocalBrowserState();
@@ -390,7 +389,7 @@ public sealed partial class FileTreePanel : UserControl
 
     private void InvalidateSessionOperations(bool clearTransfers)
     {
-        RemoteDirectoryTree.RootNodes.Clear();
+        ClearDirectoryRoot(RemoteDirectoryTree);
         _sessionVersion++;
         _sessionCts.Cancel();
         _sessionCts.Dispose();
@@ -484,7 +483,10 @@ public sealed partial class FileTreePanel : UserControl
         => await NavigateToPathAsync(PathBox.Text);
 
     private async void Refresh_Click(object sender, RoutedEventArgs e)
-        => await NavigateToPathAsync(_currentPath);
+    {
+        RefreshDirectoryRoot(RemoteDirectoryTree);
+        await NavigateToPathAsync(_currentPath);
+    }
 
     private async void Search_Click(object sender, RoutedEventArgs e)
     {
@@ -706,8 +708,11 @@ public sealed partial class FileTreePanel : UserControl
     private async void LocalGoPath_Click(object sender, RoutedEventArgs e) =>
         await NavigateLocalAsync(LocalPathBox.Text);
 
-    private async void LocalRefresh_Click(object sender, RoutedEventArgs e) =>
+    private async void LocalRefresh_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshDirectoryRoot(LocalDirectoryTree);
         await RefreshLocalBrowserAsync();
+    }
 
     private async void LocalPathBox_KeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -1135,11 +1140,13 @@ public sealed partial class FileTreePanel : UserControl
         // The commit belongs to the original target even if the user navigated away while writing.
         if (!ReferenceEquals(sftp, _sftp) || version != _sessionVersion) return;
         var workers = new List<Task>(jobs.Count);
+        var existingRows = Transfers.Where(item => item.QueueJobId is not null)
+            .ToDictionary(item => item.QueueJobId!, StringComparer.Ordinal);
         foreach (var job in jobs)
         {
             var direction = job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
                 ? UiSftpTransferDirection.Upload : UiSftpTransferDirection.Download;
-            var row = Transfers.FirstOrDefault(item => item.QueueJobId == job.Id) ??
+            var row = existingRows.GetValueOrDefault(job.Id) ??
                 TryAddTransfer(ResolveQueuedTransferName(job), job.SourcePath, job.DestinationPath,
                     job.Targets[0].TotalBytes, direction, job.Id);
             if (row is not null && !_liveWorkerJobIds.Contains(job.Id))
@@ -1507,9 +1514,10 @@ public sealed partial class FileTreePanel : UserControl
             return;
         }
 
+        var existingIds = Transfers.Select(item => item.QueueJobId).ToHashSet(StringComparer.Ordinal);
         foreach (var job in jobs)
         {
-            if (Transfers.Any(transfer => transfer.QueueJobId == job.Id))
+            if (existingIds.Contains(job.Id))
                 continue;
             var target = job.Targets.Single(item => IsMatchingTarget(item, identity));
             var direction = job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload
@@ -1563,7 +1571,7 @@ public sealed partial class FileTreePanel : UserControl
         var alreadyResuming = false;
         foreach (var job in jobs)
         {
-            if (job.RequiresEditReview) continue;
+            if (job.RequiresEditReview || _liveWorkerJobIds.Contains(job.Id)) continue;
             var transfer = Transfers.FirstOrDefault(item => item.QueueJobId == job.Id);
             if (transfer?.State is SftpTransferState.Running or SftpTransferState.Cancelling)
                 continue;
@@ -1695,6 +1703,8 @@ public sealed partial class FileTreePanel : UserControl
         catch (OperationCanceledException)
         {
             // A queued row may have been cancelled or claimed by another window before its turn.
+            if (targetLease is null && !transfer.UserCancellationRequested && !transfer.PauseRequested)
+                return;
             if (targetLease is null && !_transferQueue.TryAcquireRetryTargetLease(
                     job.Id, job.Targets[0].Id, _targetLeaseOwnerToken, out targetLease, pendingOnly: true))
                 return;
@@ -1716,7 +1726,8 @@ public sealed partial class FileTreePanel : UserControl
         catch (Exception error)
         {
             transfer.Fail(error.Message);
-            UpdateQueuedTransfer(job, SftpQueueTargetState.Failed, error.Message);
+            if (targetLease is not null)
+                UpdateQueuedTransfer(job, SftpQueueTargetState.Failed, error.Message);
             if (ReferenceEquals(_sftp, sftp) && sessionVersion == _sessionVersion)
                 ShowOperationError(Loc.T("전송 실패", "Transfer failed"), error);
         }

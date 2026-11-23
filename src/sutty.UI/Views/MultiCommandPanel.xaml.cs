@@ -130,10 +130,12 @@ namespace sutty.UI.Views
         public void CompleteSftpBatch(MultiSftpBatchResult result)
         {
             var succeeded = result.Targets.Count(item => item.State == MultiSftpTargetState.Succeeded);
+            var skipped = result.Targets.Count(item => item.State == MultiSftpTargetState.Succeeded &&
+                item.Result is { FilesTransferred: 0, FilesSkipped: > 0 });
             var failed = result.Failed.Count;
             SftpStatusText.Text = Helpers.Loc.T(
-                $"서버별 전송 완료 · 성공 {succeeded} · 실패 {failed}",
-                $"Per-server transfer complete · {succeeded} succeeded · {failed} failed");
+                $"서버별 전송 완료 · 성공 {succeeded - skipped} · 건너뜀 {skipped} · 실패 {failed}",
+                $"Per-server transfer complete · {succeeded - skipped} succeeded · {skipped} skipped · {failed} failed");
             RetryFailedButton.Visibility = failed > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 

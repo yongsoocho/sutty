@@ -193,6 +193,18 @@ jobs:
         if: matrix.configuration == 'Debug'
         run: dotnet run --project .\tests\sutty.Sftp.SelfTest\sutty.Sftp.SelfTest.csproj --configuration Debug --no-restore
 
+      - name: Verify interrupted transfers across Direct and Bastion
+        if: matrix.configuration == 'Debug'
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          python -m venv "$env:RUNNER_TEMP/sutty-loopback"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $python = "$env:RUNNER_TEMP/sutty-loopback/Scripts/python.exe"
+          & $python -m pip install --disable-pip-version-check asyncssh==2.24.1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $python tests/live-server/loopback_transfers.py
+
       - name: Run live SSH/SFTP acceptance
         if: matrix.configuration == 'Debug' && github.event_name == 'workflow_dispatch' && inputs.run_live_integration
         shell: pwsh
