@@ -100,6 +100,119 @@ async function fixture() {
   return { page, send, write, input, copy, close };
 }
 
+test('full-screen programs receive control and meta keys and search remains available', { skip: !chromium }, async () => {
+  const f = await fixture();
+  try {
+    const events = type => f.page.evaluate(type => window.__suttyTest.messages.filter(
+      message => message.type === type), type);
+    await f.write('\x1b[?1049h');
+    await f.page.locator('.xterm-helper-textarea').focus();
+    for (const key of ['Control+f', 'Control+b', '%', 'Control+t', 'Alt+1']) {
+      await f.page.keyboard.press(key);
+    }
+    assert.equal((await events('input')).map(message => message.data).join(''), '\x06\x02%\x14\x1b1');
+    assert.equal((await events('appShortcut')).length, 0);
+    assert.equal(await f.page.locator('#search').isVisible(), false);
+    await f.page.keyboard.press('Control+Shift+f');
+    assert.equal(await f.page.locator('#search-input').evaluate(el => el === document.activeElement), true);
+    await f.page.keyboard.press('Escape');
+    await f.write('\x1b[?1049l');
+    await f.page.keyboard.press('Control+t');
+    assert.equal((await events('appShortcut')).at(-1).action, 'newTab');
+    await f.page.keyboard.press('Control+f');
+    assert.equal(await f.page.locator('#search').isVisible(), true);
+  } finally { await f.close(); }
+});
+
+test('a keydown from an active IME composition does not trigger an app shortcut', { skip: !chromium }, async () => {
+  const f = await fixture();
+  try {
+    const textarea = f.page.locator('.xterm-helper-textarea');
+    await textarea.focus();
+    for (const code of ['KeyT', 'KeyF']) {
+      await textarea.dispatchEvent('keydown', { code, key: code[3].toLowerCase(), ctrlKey: true, isComposing: true });
+    }
+    assert.equal(await f.page.locator('#search').isVisible(), false);
+    assert.equal(await f.page.evaluate(() => window.__suttyTest.messages.some(m => m.type === 'appShortcut')), false);
+  } finally { await f.close(); }
+});
+
+test('Vim pages and tmux splits, detaches and reattaches through the packaged renderer', {
+  skip: process.env.SUTTY_TEST_TUI_PTY !== '1', timeout: 60_000
+}, async () => {
+  const { spawn, spawnSync } = require('node:child_process');
+  const { once } = require('node:events');
+  const { tmpdir } = require('node:os');
+  const { setTimeout: delay } = require('node:timers/promises');
+  const f = await fixture();
+  const dir = fs.mkdtempSync(path.join(tmpdir(), 'sutty-tui-'));
+  const socket = path.join(dir, 'tmux.sock');
+  const env = { ...process.env, TERM: 'xterm-256color', SUTTY_TEST_SOCKET: socket };
+  delete env.TMUX;
+  const tmux = args => spawnSync('tmux', ['-S', socket, ...args], { cwd: dir, env, encoding: 'utf8' });
+  async function until(predicate) {
+    const end = Date.now() + 10000;
+    while (!predicate()) {
+      if (Date.now() > end) throw new Error('Timed out waiting for the TUI to update');
+      await delay(40);
+    }
+  }
+  let client, closed;
+  let rendered = Promise.resolve();
+  function attach() {
+    client = spawn('script', ['-qefc',
+      'stty rows 24 cols 80; exec tmux -S "$SUTTY_TEST_SOCKET" attach-session -t sutty', '/dev/null'
+    ], { cwd: dir, env, stdio: ['pipe', 'pipe', 'inherit'] });
+    closed = once(client, 'close');
+    client.stdout.on('data', chunk => {
+      rendered = rendered.then(() => f.write(chunk));
+      rendered.catch(() => {}); // The awaited queue reports bridge failures during teardown.
+    });
+  }
+  try {
+    fs.writeFileSync(path.join(dir, 'rows.txt'), Array.from({ length: 200 }, (_, i) => 'line-' + (i + 1)).join('\n'));
+    const started = tmux(['-f', '/dev/null', 'new-session', '-d', '-s', 'sutty', 'vim -Nu NONE -i NONE -n rows.txt']);
+    assert.equal(started.status, 0, started.stderr);
+    await f.page.exposeFunction('suttyPtyInput', data => { if (client?.stdin.writable) client.stdin.write(data); });
+    await f.page.evaluate(() => {
+      const post = window.chrome.webview.postMessage;
+      window.chrome.webview.postMessage = message => {
+        post(message);
+        if (message.type === 'input') window.suttyPtyInput(message.data);
+      };
+    });
+    attach();
+    await f.page.waitForFunction(() => {
+      const buffer = window.__suttyTest.terminal.buffer.active;
+      return buffer.type === 'alternate' && buffer.getLine(0)?.translateToString(true).includes('line-1');
+    });
+    await f.page.locator('.xterm-helper-textarea').focus();
+    await f.page.keyboard.press('Control+f');
+    await f.page.keyboard.type(":call writefile([string(line('.'))], 'cursor.txt')");
+    await f.page.keyboard.press('Enter');
+    await until(() => fs.existsSync(path.join(dir, 'cursor.txt')));
+    assert.ok(Number(fs.readFileSync(path.join(dir, 'cursor.txt'), 'utf8').trim()) > 1, 'Vim moved down a page');
+    await f.page.keyboard.press('Control+b');
+    await f.page.keyboard.press('%');
+    const panes = () => tmux(['list-panes', '-t', 'sutty', '-F', '#{pane_id}']).stdout.trim().split('\n').length;
+    await until(() => panes() === 2);
+    await f.page.keyboard.press('Control+b');
+    await f.page.keyboard.press('d');
+    assert.equal((await closed)[0], 0);
+    await rendered;
+    attach();
+    await until(() => tmux(['display-message', '-p', '-t', 'sutty', '#{session_attached}']).stdout.trim() === '1');
+    assert.equal(panes(), 2);
+  } finally {
+    tmux(['kill-server']);
+    if (closed) await closed;
+    try { await rendered; } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+      await f.close();
+    }
+  }
+});
+
 test('production browser bridge copies current command stdout and stderr', { skip: !chromium }, async () => {
   const f = await fixture();
   try {

@@ -13,6 +13,8 @@
 | `Alt+7` | 선택한 셸 옆이나 아래에 Files 열기 | Open Files beside or below the selected shell |
 | `Alt+8` | 독립 Multi Command 탭 열기 | Open the separate Multi Command tab |
 | `Ctrl+,` | 전체 페이지 Settings 열기 | Open full-page Settings |
+| `Ctrl+Shift+F` | 터미널 출력 검색 | Search terminal output, including in full-screen mode |
+| `Ctrl+F` | 일반 셸에서는 검색, 전체 화면에서는 프로그램에 전달 | Search in the normal shell buffer, or send Ctrl+F to an alternate-screen program |
 | `Ctrl+Insert` | 선택한 입력/터미널 텍스트 복사 | Copy selected input or terminal text |
 | `Shift+Insert` | Commands 입력 또는 현재 터미널에 붙여넣기 | Paste into Commands input or the active terminal |
 | `Shift+Enter` | Commands 입력에서 줄바꿈 | Insert a new line in Commands input |
@@ -20,6 +22,10 @@
 | `Enter` (Commands) | 명령 실행 | Run the command |
 | `Right Arrow` | 입력 끝에서 보이는 제안 적용 | Accept a visible suggestion at the input end |
 | `Tab` | 설정된 경우 보이는 제안 적용 | Accept a visible suggestion when enabled |
+
+Vim, less, tmux가 대체 화면을 쓰는 동안 터미널에 포커스가 있으면 앱의 탭·이동 단축키도 해당 프로그램에 전달됩니다. 터미널 밖의 컨트롤로 포커스를 옮기면 앱 단축키를 쓸 수 있습니다.
+
+While a focused terminal uses the alternate screen, Vim, less and tmux receive the tab and navigation keystrokes. Move focus to an app control to use the app shortcuts.
 
 상단 `+` 버튼과 `Ctrl+T`는 동일한 메뉴를 엽니다. 기본 강조 항목은 **New SSH
 connection**이며, **Open saved host**, **Local PowerShell**, **Local CMD**, **Import hosts**를 함께

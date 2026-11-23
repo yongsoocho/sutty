@@ -31,6 +31,25 @@ env:
   ContinuousIntegrationBuild: true
 
 jobs:
+  terminal-tui:
+    name: Vim and tmux keyboard integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install terminal test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y vim tmux
+          npm install --prefix "$RUNNER_TEMP/sutty-browser" --no-save --ignore-scripts --no-audit --no-fund playwright@1.65.1
+          "$RUNNER_TEMP/sutty-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Exercise the packaged renderer through a Linux PTY
+        env:
+          SUTTY_TEST_TUI_PTY: '1'
+        run: |
+          export NODE_PATH="$RUNNER_TEMP/sutty-browser/node_modules"
+          node --test --test-name-pattern='full-screen programs|active IME|Vim pages' tests/terminal-output/browser-bridge.test.cjs
+
   governance:
     name: Governance guards
     runs-on: windows-latest
@@ -184,6 +203,17 @@ jobs:
       - name: Run packaged terminal output capture regressions
         if: matrix.configuration == 'Debug'
         run: node --test tests/terminal-output/terminal-output.test.cjs
+
+      - name: Verify terminal key routing in Microsoft Edge
+        if: matrix.configuration == 'Debug'
+        shell: pwsh
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/sutty-browser" --no-save --ignore-scripts --no-audit --no-fund playwright@1.65.1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:NODE_PATH = "$env:RUNNER_TEMP/sutty-browser/node_modules"
+          node -e "require('playwright')"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node --test --test-name-pattern='full-screen programs|active IME' tests/terminal-output/browser-bridge.test.cjs
 
       - name: Run settings self-tests
         if: matrix.configuration == 'Debug'
