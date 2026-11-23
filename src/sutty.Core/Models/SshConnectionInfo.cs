@@ -65,6 +65,10 @@ public sealed class SshConnectionInfo
     /// <summary>When true, the UI persists or updates a non-secret saved-host profile.</summary>
     public bool SaveProfile { get; set; }
 
+    /// <summary>Transient Bastion override that must not be offered or persisted as a saved profile.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsOneTimeBastion { get; set; }
+
     /// <summary>
     /// Opt-in request to place the password or private-key passphrase in the local encrypted vault.
     /// Authentication values are never written to the profile or connection-history database.

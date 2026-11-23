@@ -44,6 +44,7 @@ try
     CommandStore.Changed -= commandChanged;
 
     LauncherStoreSelfTests.Run(Assert, scratch);
+    BastionConnectionTests.Run(Assert, scratch);
 
     HostHistoryStore.SetPinned(
         "legacy.example",

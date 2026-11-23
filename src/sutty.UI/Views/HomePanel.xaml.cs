@@ -86,11 +86,14 @@ public sealed partial class HomePanel : UserControl
         Bindings.Update();
         RefreshRouteLabels();
         RefreshProxyCommandPreview();
+        RefreshSavedBastions();
+        RefreshBastionPath();
     }
 
     /// <summary>Loads a saved-host or history draft. Secrets are supplied only from the encrypted vault.</summary>
     public void ApplyConnectionDraft(SshConnectionInfo draft)
     {
+        EndOneTimeBastion();
         HostBox.Text = draft.Host?.Trim() ?? "";
         PortBox.Text = (draft.Port is >= 1 and <= 65535 ? draft.Port : 22).ToString();
         DisplayNameBox.Text = draft.DisplayName?.Trim() ?? "";
@@ -105,24 +108,32 @@ public sealed partial class HomePanel : UserControl
             ? draft.PrivateKeyPath?.Trim() ?? ""
             : "";
 
-        SelectRoute(draft.Route?.Type ?? ConnectionRouteType.Direct);
-        ProxyHostBox.Text = draft.Route?.Host ?? "";
-        ProxyPortBox.Text = draft.Route is { Port: > 0 } ? draft.Route.Port.ToString() : "";
-        ProxyUsernameBox.Text = draft.Route?.Username ?? "";
-        ProxyPasswordBox.Password = draft.Route?.Password ?? "";
-        if (draft.Route is not null)
+        _updatingBastion = true;
+        try
         {
-            JumpAuthCombo.SelectedItem = JumpAuthCombo.Items
-                .OfType<ComboBoxItem>()
-                .FirstOrDefault(item => string.Equals(
-                    item.Tag as string,
-                    draft.Route.AuthMethod.ToString(),
-                    StringComparison.Ordinal))
-                ?? JumpAuthCombo.Items[0];
-            JumpKeyPathBox.Text = draft.Route.PrivateKeyPath ?? "";
-            JumpPassphraseBox.Password = draft.Route.Passphrase ?? "";
-            ProxyCommandBox.Text = draft.Route.Command ?? "";
+            SelectRoute(draft.Route?.Type ?? ConnectionRouteType.Direct);
+            ProxyHostBox.Text = draft.Route?.Host ?? "";
+            ProxyPortBox.Text = draft.Route is { Port: > 0 } ? draft.Route.Port.ToString() : "";
+            ProxyUsernameBox.Text = draft.Route?.Username ?? "";
+            ProxyPasswordBox.Password = draft.Route?.Password ?? "";
+            if (draft.Route is not null)
+            {
+                JumpAuthCombo.SelectedItem = JumpAuthCombo.Items
+                    .OfType<ComboBoxItem>()
+                    .FirstOrDefault(item => string.Equals(
+                        item.Tag as string,
+                        draft.Route.AuthMethod.ToString(),
+                        StringComparison.Ordinal))
+                    ?? JumpAuthCombo.Items[0];
+                JumpKeyPathBox.Text = draft.Route.PrivateKeyPath ?? "";
+                JumpPassphraseBox.Password = draft.Route.Passphrase ?? "";
+                ProxyCommandBox.Text = draft.Route.Command ?? "";
+            }
+            SavedBastionCombo.SelectedIndex = SavedBastionCombo.Items.Count > 0 ? 0 : -1;
+            BastionStatusText.Visibility = Visibility.Collapsed;
         }
+        finally { _updatingBastion = false; }
+        RefreshBastionPath();
         RefreshProxyCommandPreview();
         StrictRouteCheck.IsChecked = draft.RoutePolicy?.DisableDirect == true;
 
@@ -225,8 +236,10 @@ public sealed partial class HomePanel : UserControl
         JumpOptionsPanel.Visibility = type == ConnectionRouteType.SshJump
             ? Visibility.Visible
             : Visibility.Collapsed;
-        if (type != ConnectionRouteType.SshJump)
-            ProxyPasswordBox.Visibility = Visibility.Visible;
+        if (BastionProfilePanel is not null)
+            BastionProfilePanel.Visibility = JumpOptionsPanel.Visibility;
+        ResetBastionSelection(clearSecrets: !_updatingBastion);
+        RefreshJumpAuthenticationUi();
         RefreshRouteLabels();
 
         if (usesHost && string.IsNullOrWhiteSpace(ProxyPortBox.Text))
@@ -238,6 +251,7 @@ public sealed partial class HomePanel : UserControl
             };
 
         RefreshProxyCommandPreview();
+        RefreshBastionPath();
     }
 
     private void RefreshRouteLabels()
@@ -267,12 +281,15 @@ public sealed partial class HomePanel : UserControl
         PassphraseBox.Password = "";
         ProxyPasswordBox.Password = "";
         JumpPassphraseBox.Password = "";
+        ResetBastionSelection(clearSecrets: false);
+        EndOneTimeBastion();
     }
 
     private void ProxyCommandInput_TextChanged(object sender, TextChangedEventArgs e)
     {
         ClearFormStatus();
         RefreshProxyCommandPreview();
+        RefreshBastionPath();
     }
 
     private void RefreshProxyCommandPreview()
@@ -345,12 +362,19 @@ public sealed partial class HomePanel : UserControl
     {
         if (JumpKeyPanel is null)
             return;
-        JumpKeyPanel.Visibility = SelectedJumpAuthMethod() == SshAuthMethod.PublicKey
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        ProxyPasswordBox.Visibility = SelectedJumpAuthMethod() == SshAuthMethod.Password
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        ResetBastionSelection(clearSecrets: !_updatingBastion);
+        RefreshJumpAuthenticationUi();
+    }
+
+    private void RefreshJumpAuthenticationUi()
+    {
+        if (JumpKeyPanel is null || ProxyPasswordBox is null) return;
+        var isJump = SelectedRouteType() == ConnectionRouteType.SshJump;
+        var authMethod = SelectedJumpAuthMethod();
+        var showKey = isJump && authMethod == SshAuthMethod.PublicKey;
+        var showPassword = !isJump || authMethod == SshAuthMethod.Password;
+        JumpKeyPanel.Visibility = showKey ? Visibility.Visible : Visibility.Collapsed;
+        ProxyPasswordBox.Visibility = showPassword ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private SshAuthMethod SelectedJumpAuthMethod()
@@ -419,7 +443,7 @@ public sealed partial class HomePanel : UserControl
 
     private void UpdateProfileOptions()
     {
-        var saveProfile = SaveProfileCheck.IsChecked == true;
+        var saveProfile = SaveProfileCheck.IsChecked == true && _oneTimeBastionBaseline is null;
         ProfileOptionsPanel.Visibility = saveProfile ? Visibility.Visible : Visibility.Collapsed;
         RememberCredentialCheck.IsEnabled = saveProfile && _authMethod != SshAuthMethod.Agent;
         if (!RememberCredentialCheck.IsEnabled)
@@ -643,7 +667,7 @@ public sealed partial class HomePanel : UserControl
         if (Tags.Count > 0)
             RememberTags();
 
-        var saveProfile = SaveProfileCheck.IsChecked == true;
+        var saveProfile = SaveProfileCheck.IsChecked == true && _oneTimeBastionBaseline is null;
         var rememberCredential = saveProfile && RememberCredentialCheck.IsChecked == true;
         var selectedEnvironment = (EnvironmentCombo.SelectedItem as ComboBoxItem)?.Tag as string
             ?? "Unclassified";
@@ -791,9 +815,9 @@ public sealed partial class HomePanel : UserControl
             SaveProfile = saveProfile,
             RememberCredential = rememberCredential,
             CredentialId = _credentialId,
-            GroupName = saveProfile ? GroupBox.Text.Trim() : "",
-            Environment = saveProfile ? selectedEnvironment : "Unclassified",
-            IsFavorite = saveProfile && FavoriteCheck.IsChecked == true,
+            GroupName = saveProfile || _oneTimeBastionBaseline is not null ? GroupBox.Text.Trim() : "",
+            Environment = saveProfile || _oneTimeBastionBaseline is not null ? selectedEnvironment : "Unclassified",
+            IsFavorite = (saveProfile || _oneTimeBastionBaseline is not null) && FavoriteCheck.IsChecked == true,
             Route = new ConnectionRoute
             {
                 Id = routeType == ConnectionRouteType.Direct
@@ -826,13 +850,18 @@ public sealed partial class HomePanel : UserControl
             },
         };
 
+        if (_oneTimeBastionBaseline is not null)
+            sutty.Command.BastionConnectionService.PrepareOneTimeConnection(info);
         await InvokeConnectRequestedAsync(info);
     }
 
     private async Task InvokeConnectRequestedAsync(SshConnectionInfo info)
     {
         _connectInFlight = true;
+        UpdateOneTimeBastionControls();
         ConnectButton.IsEnabled = false;
+        SavedBastionCombo.IsEnabled = false;
+        SaveBastionButton.IsEnabled = false;
         var idleContent = ConnectButton.Content;
         ConnectButton.Content = Loc.T("연결 중…", "Connecting…");
         Exception? callbackError = null;
@@ -861,7 +890,10 @@ public sealed partial class HomePanel : UserControl
 
             ConnectButton.Content = idleContent;
             ConnectButton.IsEnabled = true;
+            SavedBastionCombo.IsEnabled = true;
+            SaveBastionButton.IsEnabled = !_savingBastion;
             _connectInFlight = false;
+            UpdateOneTimeBastionControls();
         }
 
         // PasswordChanged clears stale validation text. Publish the callback error only

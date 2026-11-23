@@ -5,7 +5,8 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:h="using:sutty.UI.Helpers"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    Loaded="BastionPanel_Loaded">
 
     <UserControl.Resources>
         <Style x:Key="FormLabel" TargetType="TextBlock">
@@ -352,6 +353,11 @@
                             Text="{x:Bind h:Loc.T('고급 연결 옵션', 'Advanced connection options')}" />
                     </Expander.Header>
                     <StackPanel Padding="0,8,0,2" Spacing="10">
+                        <CheckBox x:Name="OneTimeBastionCheck"
+                            Checked="OneTimeBastionCheck_Changed" Unchecked="OneTimeBastionCheck_Changed">
+                            <TextBlock TextWrapping="Wrap"
+                                Text="{x:Bind h:Loc.T('이번 연결만 Bastion 사용', 'Use Bastion for this connection only')}" />
+                        </CheckBox>
                         <StackPanel>
                             <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('연결 경로', 'CONNECTION ROUTE')}" />
                             <ComboBox
@@ -363,9 +369,42 @@
                                 <ComboBoxItem Content="HTTP CONNECT" Tag="HttpConnect" />
                                 <ComboBoxItem Content="SOCKS4" Tag="Socks4" />
                                 <ComboBoxItem Content="SOCKS5" Tag="Socks5" />
-                                <ComboBoxItem Content="SSH Jump" Tag="SshJump" />
+                                <ComboBoxItem Content="SSH Jump · Beta" Tag="SshJump" />
                                 <ComboBoxItem Content="ProxyCommand" Tag="ExternalProxyCommand" />
                             </ComboBox>
+                        </StackPanel>
+                        <StackPanel x:Name="BastionProfilePanel" Spacing="8" Visibility="Collapsed">
+                            <TextBlock Style="{StaticResource FormLabel}"
+                                Text="{x:Bind h:Loc.T('저장된 Bastion · Beta', 'SAVED BASTION · BETA')}" />
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="36" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="SavedBastionCombo" MinWidth="0" MinHeight="36"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    MaxDropDownHeight="320" IsTextSearchEnabled="True"
+                                    AutomationProperties.Name="{x:Bind h:Loc.T('저장된 경유 서버', 'Saved bastion server')}"
+                                    DropDownOpened="SavedBastionCombo_DropDownOpened"
+                                    SelectionChanged="SavedBastionCombo_SelectionChanged">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <Button x:Name="SaveBastionButton" Grid.Column="1" Width="36" Height="36"
+                                    Padding="0" Click="SaveBastion_Click"
+                                    AutomationProperties.Name="{x:Bind h:Loc.T('경유 서버를 새 프로필로 저장', 'Save bastion as a new profile')}"
+                                    ToolTipService.ToolTip="{x:Bind h:Loc.T('경유 서버를 새 프로필로 저장', 'Save bastion as a new profile')}">
+                                    <FontIcon Glyph="&#xE74E;" FontSize="16" />
+                                </Button>
+                            </Grid>
+                            <TextBlock x:Name="BastionPathText" FontSize="11" TextWrapping="Wrap"
+                                Foreground="{ThemeResource TextPrimary}" />
+                            <TextBlock x:Name="BastionStatusText" FontSize="11" TextWrapping="Wrap"
+                                Foreground="{ThemeResource StatusAmber}" Visibility="Collapsed"
+                                AutomationProperties.LiveSetting="Polite" />
                         </StackPanel>
                         <StackPanel x:Name="ProxyPanel" Spacing="8" Visibility="Collapsed">
                             <Grid ColumnSpacing="8">
@@ -375,12 +414,14 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <TextBlock x:Name="RouteHostLabel" Style="{StaticResource FormLabel}" />
-                                    <TextBox x:Name="ProxyHostBox" Style="{StaticResource FormInput}" />
+                                    <TextBox x:Name="ProxyHostBox" TextChanged="BastionIdentity_TextChanged"
+                                        Style="{StaticResource FormInput}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Style="{StaticResource FormLabel}" Text="{x:Bind h:Loc.T('포트', 'PORT')}" />
                                     <TextBox
                                         x:Name="ProxyPortBox"
+                                        TextChanged="BastionIdentity_TextChanged"
                                         BeforeTextChanging="PortBox_BeforeTextChanging"
                                         InputScope="Number"
                                         MaxLength="5"
@@ -389,6 +430,7 @@
                             </Grid>
                             <TextBox
                                 x:Name="ProxyUsernameBox"
+                                TextChanged="BastionIdentity_TextChanged"
                                 Style="{StaticResource FormInput}" />
                             <PasswordBox
                                 x:Name="ProxyPasswordBox"
@@ -411,6 +453,7 @@
                                 <StackPanel x:Name="JumpKeyPanel" Spacing="8" Visibility="Collapsed">
                                     <TextBox
                                         x:Name="JumpKeyPathBox"
+                                        TextChanged="BastionIdentity_TextChanged"
                                         Header="{x:Bind h:Loc.T('점프 호스트 개인 키 경로', 'Jump-host private-key path')}"
                                         PlaceholderText="C:\Users\name\.ssh\id_ed25519"
                                         Style="{StaticResource FormInput}" />

@@ -80,7 +80,13 @@ public sealed partial class SshNetSession : ISshSession, IPortForwardingSession
             checkpointScope: $"{info.Username}@{info.Host}:{info.Port}",
             reconnectAsync: ReconnectSftpForTransferAsync);
         _hostEndpoint = HostEndpointIdentity.Create(info.Host, info.Port);
-        _route = RouteResolver.Resolve(info.Route, info.RoutePolicy);
+        // Keep credentials only in the clearable session fields; resolved route metadata
+        // lives for the whole session and its record representation must remain secret-free.
+        _route = RouteResolver.Resolve(info.Route, info.RoutePolicy) with
+        {
+            Password = "",
+            Passphrase = "",
+        };
         CorrelationContext = ConnectionCorrelationContext.Create(info, _route);
         _diagnosticLoggerFactory = new SshNetDiagnosticLoggerFactory(
             Id,
@@ -1223,7 +1229,7 @@ public sealed partial class SshNetSession : ISshSession, IPortForwardingSession
                     _route.Host,
                     _route.Port,
                     _route.Username,
-                    _route.Password,
+                    _routePassword,
                     methods.ToArray()),
             ConnectionRouteType.SshJump or ConnectionRouteType.ExternalProxyCommand =>
                 new Renci.SshNet.ConnectionInfo(
