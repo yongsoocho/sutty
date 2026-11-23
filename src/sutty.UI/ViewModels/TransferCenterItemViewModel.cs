@@ -59,6 +59,7 @@ public sealed class TransferCenterItemViewModel : ObservableObject
     {
         get
         {
+            if (_job.WasSkipped) return "—";
             var total = _job.Targets.Sum(target => Math.Max(0, target.TotalBytes));
             return total > 0 || _job.State == SftpQueueJobState.Completed
                 ? _job.State == SftpQueueJobState.Completed
@@ -84,7 +85,9 @@ public sealed class TransferCenterItemViewModel : ObservableObject
         SftpQueueJobState.Paused => Loc.T("일시 정지됨", "Paused"),
         SftpQueueJobState.Interrupted => Loc.T("복구 필요", "Interrupted"),
         SftpQueueJobState.Failed => Loc.T("실패", "Failed"),
-        SftpQueueJobState.Completed => TransferPhaseLabels.Complete,
+        SftpQueueJobState.Completed => TransferPhaseLabels.Result(
+            _job.Targets.Sum(t => t.FilesTransferred), _job.Targets.Sum(t => t.FilesSkipped),
+            _job.Targets.Sum(t => t.ResumedBytes)),
         SftpQueueJobState.Cancelled => Loc.T("취소됨", "Cancelled"),
         _ => "",
     };

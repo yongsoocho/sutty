@@ -121,6 +121,16 @@ public static partial class HostProfileStore
                     CREATE INDEX IF NOT EXISTS idx_host_profiles_order
                         ON host_profiles(is_favorite DESC, last_connected_at_utc DESC, display_name COLLATE NOCASE);
 
+                    CREATE TABLE IF NOT EXISTS personal_host_routes (
+                        host_id TEXT PRIMARY KEY,
+                        mode TEXT NOT NULL CHECK(mode IN ('Direct','Bastion')),
+                        gateway_id TEXT,
+                        CHECK ((mode = 'Direct' AND gateway_id IS NULL) OR
+                               (mode = 'Bastion' AND gateway_id IS NOT NULL))
+                    );
+                    CREATE TRIGGER IF NOT EXISTS remove_personal_route AFTER DELETE ON host_profiles
+                    BEGIN DELETE FROM personal_host_routes WHERE host_id = OLD.id; END;
+
                     CREATE TABLE IF NOT EXISTS storage_migrations (
                         id             TEXT PRIMARY KEY,
                         applied_at_utc TEXT NOT NULL

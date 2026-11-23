@@ -142,7 +142,17 @@
                                   Content="{x:Bind h:Loc.T('숨김', 'Hidden')}" AutomationProperties.Name="{x:Bind h:Loc.T('로컬 숨김 파일 표시', 'Show local hidden files')}" />
                     </controls:WrapPanel>
 
-                    <TextBlock Grid.Row="3" Margin="4,0" FontSize="9.5" TextWrapping="Wrap" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('이름 · 크기 · 수정됨', 'Name · Size · Modified')}" />
+                    <StackPanel Grid.Row="3" Spacing="3">
+                        <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                  Header="{x:Bind h:Loc.T('로컬 폴더 트리', 'Local folder tree')}">
+                            <TreeView x:Name="LocalDirectoryTree" MaxHeight="145"
+                                      AutomationProperties.Name="{x:Bind h:Loc.T('로컬 폴더 트리', 'Local folder tree')}"
+                                      CanDragItems="False" CanReorderItems="False" AllowDrop="False"
+                                      Expanding="DirectoryTree_Expanding" Collapsed="DirectoryTree_Collapsed"
+                                      ItemInvoked="DirectoryTree_ItemInvoked" />
+                        </Expander>
+                        <TextBlock Margin="4,0" FontSize="9.5" TextWrapping="Wrap" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('이름 · 크기 · 수정됨', 'Name · Size · Modified')}" />
+                    </StackPanel>
 
                     <Grid Grid.Row="4">
                         <ListView x:Name="LocalList" AllowDrop="True" CanDragItems="True" CanReorderItems="False"
@@ -345,7 +355,17 @@
                                 ToolTipService.ToolTip="{x:Bind h:Loc.T('즐겨찾는 폴더', 'Favorite folders')}"><FontIcon FontSize="12" Glyph="&#xE734;" /></Button>
                     </controls:WrapPanel>
 
-                    <TextBlock Grid.Row="3" Margin="4,0" FontSize="9.5" TextWrapping="Wrap" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('이름 · 크기 · 수정됨', 'Name · Size · Modified')}" />
+                    <StackPanel Grid.Row="3" Spacing="3">
+                        <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                  Header="{x:Bind h:Loc.T('원격 폴더 트리', 'Remote folder tree')}">
+                            <TreeView x:Name="RemoteDirectoryTree" MaxHeight="145"
+                                      AutomationProperties.Name="{x:Bind h:Loc.T('원격 폴더 트리', 'Remote folder tree')}"
+                                      CanDragItems="False" CanReorderItems="False" AllowDrop="False"
+                                      Expanding="DirectoryTree_Expanding" Collapsed="DirectoryTree_Collapsed"
+                                      ItemInvoked="DirectoryTree_ItemInvoked" />
+                        </Expander>
+                        <TextBlock Margin="4,0" FontSize="9.5" TextWrapping="Wrap" Foreground="{ThemeResource TextFaint}" Text="{x:Bind h:Loc.T('이름 · 크기 · 수정됨', 'Name · Size · Modified')}" />
+                    </StackPanel>
 
                     <Grid Grid.Row="4">
                         <ListView x:Name="FileTree" AllowDrop="True"

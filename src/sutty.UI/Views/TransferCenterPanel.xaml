@@ -65,6 +65,7 @@
                 <ComboBoxItem Content="{x:Bind h:Loc.T('실패', 'Failed')}" />
                 <ComboBoxItem Content="{x:Bind h:Loc.T('완료', 'Completed')}" />
                 <ComboBoxItem Content="{x:Bind h:Loc.T('취소됨', 'Cancelled')}" />
+                <ComboBoxItem Content="{x:Bind h:Loc.T('건너뜀', 'Skipped')}" />
             </ComboBox>
             <ComboBox
                 x:Name="DirectionFilter"

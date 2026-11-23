@@ -451,7 +451,8 @@ public sealed partial class SshNetSftpService
             if (destinationAttributes.IsDirectory)
                 throw new IOException($"A remote directory already exists: {remotePath}");
 
-            if (options.VerifyChecksum && destinationAttributes.Size == source.Length)
+            if (options.VerifyChecksum && options.EffectiveConflictPolicy is not (SftpConflictPolicy.Skip or SftpConflictPolicy.NewerOnly or SftpConflictPolicy.Rename) &&
+                destinationAttributes.Size == source.Length)
             {
                 var localHash = ComputeLocalSha256(source.FullName, ct);
                 var remoteHash = ComputeRemoteSha256(client, remotePath, ct);
@@ -522,28 +523,34 @@ public sealed partial class SshNetSftpService
             partialPath, source.Length, offset, sourceTicks);
         try
         {
-            using var local = source.OpenRead();
-            local.Position = offset;
-            using var remote = client.Open(
-                partialPath,
-                offset > 0 ? FileMode.Open : FileMode.CreateNew,
-                FileAccess.Write);
-            if (offset > 0)
-                remote.Seek(offset, SeekOrigin.Begin);
+            {
+                using var local = source.OpenRead();
+                local.Position = offset;
+                using var remote = client.Open(
+                    partialPath,
+                    offset > 0 ? FileMode.Open : FileMode.CreateNew,
+                    FileAccess.Write);
+                if (offset > 0)
+                    remote.Seek(offset, SeekOrigin.Begin);
 
-            CopyWithCheckpoint(
-                local,
-                remote,
-                offset,
-                source.Length,
-                transferred =>
-                {
-                    reportBytes(transferred);
-                    SaveCheckpoint(id, SftpTransferDirection.Upload, source.FullName, remotePath,
-                        partialPath, source.Length, transferred, sourceTicks);
-                },
-                ct);
-            remote.Flush();
+                CopyWithCheckpoint(
+                    local,
+                    remote,
+                    offset,
+                    source.Length,
+                    transferred =>
+                    {
+                        reportBytes(transferred);
+                        SaveCheckpoint(id, SftpTransferDirection.Upload, source.FullName, remotePath,
+                            partialPath, source.Length, transferred, sourceTicks);
+                    },
+                    ct);
+                remote.Flush();
+            }
+
+            ct.ThrowIfCancellationRequested();
+            if (client.GetAttributes(partialPath).Size != source.Length)
+                throw new IOException("Staged file size does not match the source.");
 
             string? checksum = null;
             if (options.VerifyChecksum)
@@ -600,7 +607,8 @@ public sealed partial class SshNetSftpService
         var destination = Path.GetFullPath(localPath);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         var replaceExistingDestination = false;
-        if (File.Exists(destination) && options.VerifyChecksum)
+        if (File.Exists(destination) && options.VerifyChecksum &&
+            options.EffectiveConflictPolicy is not (SftpConflictPolicy.Skip or SftpConflictPolicy.NewerOnly or SftpConflictPolicy.Rename))
         {
             var existing = new FileInfo(destination);
             if (existing.Length == attributes.Size)
@@ -674,30 +682,36 @@ public sealed partial class SshNetSftpService
             partialPath, attributes.Size, offset, sourceTicks);
         try
         {
-            using var remote = client.OpenRead(remotePath);
-            remote.Seek(offset, SeekOrigin.Begin);
-            using var local = new FileStream(
-                partialPath,
-                offset > 0 ? FileMode.Open : FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                TransferBufferSize,
-                FileOptions.SequentialScan);
-            local.SetLength(offset);
-            local.Position = offset;
-            CopyWithCheckpoint(
-                remote,
-                local,
-                offset,
-                attributes.Size,
-                transferred =>
-                {
-                    reportBytes(transferred);
-                    SaveCheckpoint(id, SftpTransferDirection.Download, remotePath, destination,
-                        partialPath, attributes.Size, transferred, sourceTicks);
-                },
-                ct);
-            local.Flush(flushToDisk: true);
+            {
+                using var remote = client.OpenRead(remotePath);
+                remote.Seek(offset, SeekOrigin.Begin);
+                using var local = new FileStream(
+                    partialPath,
+                    offset > 0 ? FileMode.Open : FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    TransferBufferSize,
+                    FileOptions.SequentialScan);
+                local.SetLength(offset);
+                local.Position = offset;
+                CopyWithCheckpoint(
+                    remote,
+                    local,
+                    offset,
+                    attributes.Size,
+                    transferred =>
+                    {
+                        reportBytes(transferred);
+                        SaveCheckpoint(id, SftpTransferDirection.Download, remotePath, destination,
+                            partialPath, attributes.Size, transferred, sourceTicks);
+                    },
+                    ct);
+                local.Flush(flushToDisk: true);
+            }
+
+            ct.ThrowIfCancellationRequested();
+            if (new FileInfo(partialPath).Length != attributes.Size)
+                throw new IOException("Staged file size does not match the source.");
 
             string? checksum = null;
             if (options.VerifyChecksum)

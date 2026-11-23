@@ -28,6 +28,7 @@ public sealed partial class HostCard : UserControl
         ActualThemeChanged += (_, _) => UpdateVisuals();
     }
 
+    public event EventHandler<HostInfoModel>? RouteRequested;
     public event EventHandler<HostInfoModel>? Clicked;
     public event EventHandler<HostInfoModel>? PrimaryActionRequested;
     public event EventHandler<HostInfoModel>? DeleteRequested;
@@ -64,6 +65,11 @@ public sealed partial class HostCard : UserControl
     {
         if (Host is not null)
             DeleteRequested?.Invoke(this, Host);
+    }
+
+    private void RouteMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (Host is { IsSavedProfile: true, IsExternalCommand: false }) RouteRequested?.Invoke(this, Host);
     }
 
     private void DuplicateMenuItem_Click(object sender, RoutedEventArgs e)
@@ -105,6 +111,8 @@ public sealed partial class HostCard : UserControl
         ToolTipService.SetToolTip(DeleteButton, deleteTargetLabel);
         AutomationProperties.SetName(DeleteButton, deleteTargetLabel);
         DuplicateMenuItem.Visibility = Host.IsSavedProfile && !Host.IsExternalCommand ? Visibility.Visible : Visibility.Collapsed;
+        RouteMenuItem.Visibility = DuplicateMenuItem.Visibility;
+        RouteMenuItem.Text = Helpers.Loc.T("내 접속 경로…", "My connection route…");
         DuplicateMenuItem.Text = Helpers.Loc.T("저장 호스트 복제", "Duplicate saved host");
         AuthenticationAliasMenuItem.Visibility = Host.IsSavedProfile && !Host.IsExternalCommand ? Visibility.Visible : Visibility.Collapsed;
         AuthenticationAliasMenuItem.Text = Helpers.Loc.T("인증 별칭 설정", "Set authentication alias");

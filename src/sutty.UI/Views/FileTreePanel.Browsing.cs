@@ -90,7 +90,7 @@ public sealed partial class FileTreePanel
         if (_session is null || _sftp is null) return;
         try
         {
-            var identity = CurrentSftpPersistenceId();
+            var identity = LegacySftpPersistenceId();
             var path = _currentPath;
             var paths = _pathFavorites.GetPaths(identity);
             var favorite = paths.Contains(path, StringComparer.Ordinal);
@@ -113,7 +113,7 @@ public sealed partial class FileTreePanel
                 var item = new MenuFlyoutItem { Text = favoritePath };
                 item.Click += async (_, _) =>
                 {
-                    if (_session is not null && identity == CurrentSftpPersistenceId())
+                    if (_session is not null && identity == LegacySftpPersistenceId())
                         await NavigateToPathAsync(favoritePath);
                 };
                 flyout.Items.Add(item);
