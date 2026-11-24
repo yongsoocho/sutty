@@ -55,7 +55,6 @@ public sealed class SharedHost
     public string GroupName { get; set; } = "";
     public List<string> Tags { get; set; } = [];
     public string Environment { get; set; } = HostEnvironments.Unclassified;
-    public bool IsFavorite { get; set; }
     public SharedRoute Route { get; set; } = new();
     public List<HostTunnelProfile> Tunnels { get; set; } = [];
 }
@@ -205,7 +204,7 @@ public static class DefinitionSharingService
                 DisplayName = host.DisplayName, Host = host.Host, Port = host.Port, Username = host.Username,
                 AuthMethod = host.AuthMethod, AuthenticationAlias = host.AuthenticationAlias,
                 GroupName = host.GroupName, Tags = host.Tags, Environment = host.Environment,
-                IsFavorite = host.IsFavorite, Route = route, Tunnels = host.Tunnels,
+                Route = route, Tunnels = host.Tunnels,
             }, host.Id));
         }
         var commands = new List<SharedCommand>();
@@ -292,6 +291,7 @@ public static class DefinitionSharingService
                     if (current is null || current.UpdatedAtUtc != previous.UpdatedAtUtc)
                         throw new InvalidOperationException("The host changed after preview. Preview again.");
                     saveId = current.Id;
+                    if (row.Shared) draft.IsFavorite = current.IsFavorite;
                     if (Compatible(current, draft))
                     {
                         draft.CredentialId = current.CredentialId;
@@ -357,7 +357,7 @@ public static class DefinitionSharingService
     {
         Id = profile.Id, DisplayName = profile.DisplayName, Host = profile.Host, Port = profile.Port,
         Username = profile.Username, AuthMethod = profile.AuthMethod, AuthenticationAlias = profile.AuthenticationAlias,
-        GroupName = profile.GroupName, Tags = [.. profile.Tags], Environment = profile.Environment, IsFavorite = profile.IsFavorite,
+        GroupName = profile.GroupName, Tags = [.. profile.Tags], Environment = profile.Environment,
         Route = new SharedRoute
         {
             Type = profile.Route.CanConnect ? profile.Route.Type : "Unsupported",

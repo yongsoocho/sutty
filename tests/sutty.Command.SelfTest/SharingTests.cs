@@ -52,7 +52,7 @@ internal static class SharingTests
         {
             DisplayName = "Share source", Host = "share.example", Username = "Operator", AuthMethod = "PublicKey",
             PrivateKeyPath = localKey, CredentialId = secret, AuthenticationAlias = "team-dev",
-            Tags = ["dev"], GroupName = "Team", Environment = HostEnvironments.Development,
+            Tags = ["dev"], GroupName = "Team", Environment = HostEnvironments.Development, IsFavorite = true,
             Route = new HostRouteProfile { Type = "SshJump", Host = "jump-share.example", Port = 22,
                 AuthMethod = "PublicKey", PrivateKeyPath = localKey, Username = "jump", DisableDirect = true },
             Tunnels = [new HostTunnelProfile { BindPort = 18080, DestinationHost = "internal.example", DestinationPort = 80 }],
@@ -80,7 +80,7 @@ internal static class SharingTests
         var json = DefinitionSharingService.Export([host], [command]);
         assert(!json.Contains(secret) && !json.Contains("local-only") && !json.Contains("credentialId") &&
                !json.Contains("privateKeyPath") && !json.Contains("usageCount") && !json.Contains("lastConnected") &&
-               !json.Contains("fingerprint") && json.Contains("schemaVersion") && json.Contains("team-dev"),
+               !json.Contains("fingerprint") && !json.Contains("isFavorite") && json.Contains("schemaVersion") && json.Contains("team-dev"),
             "allowlisted export strips all local credential refs, key paths, history and trust");
         var empty = DefinitionSharingService.Export([], []);
         assert(DefinitionSharingService.PreviewJson(empty).Hosts.Count == 0, "empty selection exports no hosts");
@@ -135,7 +135,7 @@ internal static class SharingTests
         preview.Hosts[0].Choice = ImportChoice.Update;
         var applied = DefinitionSharingService.Apply(preview);
         host = HostProfileStore.GetById(host.Id)!;
-        assert(applied.Updated == 1 && host.DisplayName == "Changed share" && host.CredentialId == secret &&
+        assert(applied.Updated == 1 && host.DisplayName == "Changed share" && host.IsFavorite && host.CredentialId == secret &&
                host.PrivateKeyPath == localKey && host.Route.PrivateKeyPath == localKey,
             "explicit compatible update preserves this PC's credential and jump key bindings");
 
@@ -164,6 +164,7 @@ internal static class SharingTests
 
         node["hosts"]![0]!["id"] = Guid.NewGuid().ToString("N");
         node["hosts"]![0]!["host"] = "new-share.example";
+        node["hosts"]![0]!["isFavorite"] = true; // Older v1 exporters included the sender's local preference.
         preview = DefinitionSharingService.PreviewJson(node.ToJsonString());
         preview.Hosts[0].Choice = ImportChoice.Add;
         var targetId = node["hosts"]![0]!["id"]!.GetValue<string>();
@@ -174,7 +175,7 @@ internal static class SharingTests
         }
         assert(HostProfileStore.GetById(targetId) is null, "cancel before import leaves storage unchanged");
         applied = DefinitionSharingService.Apply(preview);
-        assert(applied.Added == 1 && HostProfileStore.GetById(targetId)!.CredentialId is null,
+        assert(applied.Added == 1 && HostProfileStore.GetById(targetId) is { CredentialId: null, IsFavorite: false },
             "selected shared add retains portable profile id with no foreign credential reference");
 
         preview = DefinitionSharingService.PreviewJson(node.ToJsonString());
