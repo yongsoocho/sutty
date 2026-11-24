@@ -71,6 +71,9 @@ public sealed record SftpQueuedTarget
     public long TotalBytes { get; init; }
     /// <summary>Byte completion is distinct from verification and final destination promotion.</summary>
     public SftpTransferPhase? Phase { get; init; }
+    public int FilesTransferred { get; init; }
+    public int FilesSkipped { get; init; }
+    public long ResumedBytes { get; init; }
     public string? Error { get; init; }
     public DateTimeOffset UpdatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
 }
@@ -85,6 +88,10 @@ public sealed record SftpQueuedJob
     public string RuntimeOwnerId { get; init; } = "";
     /// <summary>Editor uploads must recheck the remote file through the edit workflow, including after restart.</summary>
     public bool RequiresEditReview { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool WasSkipped => State == SftpQueueJobState.Completed && Targets.Count > 0 &&
+        Targets.All(target => target.FilesTransferred == 0 && target.FilesSkipped > 0);
     public SftpQueueMode Mode { get; init; }
     public SftpTransferDirection Direction { get; init; }
     public string SourcePath { get; init; } = "";
@@ -103,7 +110,7 @@ public sealed record SftpQueuedJob
 /// </summary>
 public sealed class SftpTransferQueueStore
 {
-    private const int MaximumJobs = 256;
+    public const int MaximumJobs = 10_000;
     private const int MaximumTargets = 16;
     private static readonly string ProcessRuntimeOwnerId = Guid.NewGuid().ToString("N");
     private static readonly object TargetLeaseGate = new();
@@ -205,6 +212,29 @@ public sealed class SftpTransferQueueStore
         return recovered;
     }
 
+    /// <summary>Admit the whole selection in one durable write before any worker starts.</summary>
+    public void EnqueueBatch(IReadOnlyList<SftpQueuedJob> jobs)
+    {
+        ArgumentNullException.ThrowIfNull(jobs);
+        if (jobs.Count == 0) return;
+        var pending = jobs.Select(job => Normalize(job) with { RuntimeOwnerId = _runtimeOwnerId }).ToList();
+        lock (_gate)
+        {
+            using var documentLock = AcquireDocumentMutationLock();
+            var document = ReadDocument(tolerateInvalid: false);
+            document.Jobs.RemoveAll(job => (job.State is SftpQueueJobState.Completed or SftpQueueJobState.Cancelled) &&
+                job.UpdatedAtUtc < DateTimeOffset.UtcNow.AddDays(-7));
+            if (pending.Count > MaximumJobs - document.Jobs.Count)
+                throw new InvalidOperationException($"The selection needs {pending.Count} queue slots; {MaximumJobs - document.Jobs.Count} are available.");
+            var ids = document.Jobs.Select(job => job.Id).ToHashSet(StringComparer.Ordinal);
+            if (pending.Any(job => !ids.Add(job.Id)))
+                throw new ArgumentException("Duplicate transfer job id.", nameof(jobs));
+            document.Jobs.AddRange(pending);
+            WriteDocument(document);
+        }
+        PublishChange(SftpTransferQueueChangeKind.Upserted);
+    }
+
     public void Upsert(SftpQueuedJob job)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -272,7 +302,8 @@ public sealed class SftpTransferQueueStore
         string jobId,
         string targetId,
         string ownerToken,
-        out IDisposable? lease)
+        out IDisposable? lease,
+        bool pendingOnly = false)
     {
         jobId = NormalizeId(jobId);
         targetId = NormalizeTargetId(targetId);
@@ -301,6 +332,7 @@ public sealed class SftpTransferQueueStore
                 var target = job?.Targets.FirstOrDefault(item => item.Id == targetId);
                 if (job is null || target is null || job.RequiresEditReview ||
                     job.State == SftpQueueJobState.Completed ||
+                    (pendingOnly && target.State != SftpQueueTargetState.Pending) ||
                     target.State is not (SftpQueueTargetState.Pending or
                         SftpQueueTargetState.Running or
                         SftpQueueTargetState.Paused or
@@ -354,7 +386,8 @@ public sealed class SftpTransferQueueStore
         long totalBytes = 0,
         string? error = null,
         SftpTransferPhase? phase = null,
-        bool isProgressReport = false)
+        bool isProgressReport = false,
+        SftpTransferResult? result = null)
     {
         jobId = NormalizeId(jobId);
         targetId = NormalizeTargetId(targetId);
@@ -385,6 +418,9 @@ public sealed class SftpTransferQueueStore
             targets[targetIndex] = previous with
             {
                 State = state,
+                FilesTransferred = result?.FilesTransferred ?? previous.FilesTransferred,
+                FilesSkipped = result?.FilesSkipped ?? previous.FilesSkipped,
+                ResumedBytes = result?.ResumedBytes ?? previous.ResumedBytes,
                 BytesTransferred = Math.Max(previous.BytesTransferred, bytesTransferred),
                 TotalBytes = Math.Max(previous.TotalBytes, totalBytes),
                 Phase = state == SftpQueueTargetState.Succeeded

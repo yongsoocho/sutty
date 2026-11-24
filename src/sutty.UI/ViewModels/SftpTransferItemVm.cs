@@ -98,7 +98,8 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
     public bool CanResume => State == SftpTransferState.Paused;
     public bool IsActive => State is SftpTransferState.Queued or SftpTransferState.Running or
         SftpTransferState.Pausing or SftpTransferState.Cancelling;
-    public string ProgressText => State == SftpTransferState.Completed
+    public string ProgressText => State == SftpTransferState.Completed && _filesSkipped > 0 && _filesTransferred == 0
+        ? "—" : State == SftpTransferState.Completed
         ? "100%"
         : TransferPhaseLabels.Bytes(Progress * 100);
 
@@ -109,7 +110,7 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
         SftpTransferState.Pausing => Loc.T("일시 정지 중", "Pausing"),
         SftpTransferState.Paused => Loc.T("일시 정지됨", "Paused"),
         SftpTransferState.Cancelling => Loc.T("취소 중", "Cancelling"),
-        SftpTransferState.Completed => TransferPhaseLabels.Complete,
+        SftpTransferState.Completed => TransferPhaseLabels.Result(_filesTransferred, _filesSkipped, _resumedBytes),
         SftpTransferState.Cancelled => Loc.T("취소됨", "Cancelled"),
         SftpTransferState.Failed => Loc.T("실패", "Failed"),
         _ => "",
@@ -154,8 +155,15 @@ public sealed class SftpTransferItemVm : ObservableObject, IDisposable
             Progress = progress;
     }
 
-    public void Complete()
+    private int _filesSkipped;
+    private int _filesTransferred;
+    private long _resumedBytes;
+
+    public void Complete(sutty.Core.Sftp.SftpTransferResult? result = null)
     {
+        _filesSkipped = result?.FilesSkipped ?? 0;
+        _filesTransferred = result?.FilesTransferred ?? 0;
+        _resumedBytes = result?.ResumedBytes ?? 0;
         PauseRequested = false;
         Progress = 1;
         _watch.Stop();

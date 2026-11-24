@@ -147,8 +147,9 @@ public sealed partial class TransferCenterPanel : UserControl
                 1 => job.State is SftpQueueJobState.Pending or SftpQueueJobState.Running,
                 2 => job.State is SftpQueueJobState.Paused or SftpQueueJobState.Interrupted,
                 3 => job.State == SftpQueueJobState.Failed,
-                4 => job.State == SftpQueueJobState.Completed,
+                4 => job.State == SftpQueueJobState.Completed && !job.WasSkipped,
                 5 => job.State == SftpQueueJobState.Cancelled,
+                6 => job.WasSkipped,
                 _ => true,
             })
             .Where(job => directionFilter switch

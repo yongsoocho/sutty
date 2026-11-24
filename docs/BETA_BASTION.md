@@ -58,3 +58,9 @@ Live Password/key/Agent compatibility, forwarding refusal, bastion interruption,
 These links describe source behavior and focused checks, not live-server acceptance evidence. The existing disposable Direct SSH lab disables TCP forwarding and cannot serve as a bastion without a dedicated test configuration.
 
 위 링크는 소스 동작과 집중 검사를 설명하며 실서버 인수 증거를 뜻하지 않습니다. 기존 임시 Direct SSH 테스트 환경은 TCP 포워딩을 차단하므로 Bastion 검증에는 별도 테스트 구성이 필요합니다.
+
+## 사용자별 접속 경로 / Per-user routing
+
+저장 SSH 호스트를 우클릭해 **내 접속 경로**를 엽니다. 공유 경로, 허용된 직접 연결 또는 저장된 bastion을 고른 뒤 **이번만 연결**하거나 **내 기본값으로 저장**합니다. 기본값은 현재 Windows 사용자에게만 적용되며, 팀 정의를 갱신해도 유지됩니다. 직접 접속 금지 정책이나 삭제된 bastion은 연결을 중단합니다.
+
+Right-click a saved SSH host and select **My connection route**. Use the shared route, Direct when allowed, or an eligible saved bastion. **Connect once** applies only to the new session. **Save my default** stores the choice in the current Windows user's database, outside the shared host definition. SSH and SFTP use the selected route to the destination. Older transfer intents remain visible for the matching endpoint; partial bytes created before verified endpoint identities were introduced require a fresh transfer.

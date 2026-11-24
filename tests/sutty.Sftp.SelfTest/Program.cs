@@ -31,6 +31,7 @@ var scratch = Path.Combine(Path.GetTempPath(), $"sutty-sftp-self-test-{Guid.NewG
 Directory.CreateDirectory(scratch);
 try
 {
+    TransferSelectionTests.Run(scratch, Assert);
     var source = Path.Combine(scratch, "source.txt");
     var remote = Path.Combine(scratch, "remote");
     var downloads = Path.Combine(scratch, "downloads");

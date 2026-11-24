@@ -12,7 +12,8 @@ public sealed partial class SshNetSftpService : ISftpService
     private readonly Func<SftpClient?> _clientProvider;
     private readonly Func<CancellationToken, Task<SftpClient?>>? _reconnectAsync;
     private readonly SftpTransferCheckpointStore _checkpointStore;
-    private readonly string _checkpointScope;
+    private string _checkpointScope;
+    internal void BindVerifiedEndpoint(string identity) => _checkpointScope = identity;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
 
     public SshNetSftpService(

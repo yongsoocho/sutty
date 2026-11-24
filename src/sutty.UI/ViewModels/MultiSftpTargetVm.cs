@@ -12,6 +12,7 @@ public sealed class MultiSftpTargetVm : ObservableObject
     private double _progress;
     private string _relativePath = "";
     private string _error = "";
+    private SftpTransferResult? _result;
     private SftpTransferPhase? _phase;
 
     public MultiSftpTargetVm(string id, string displayName)
@@ -45,7 +46,7 @@ public sealed class MultiSftpTargetVm : ObservableObject
         }
     }
 
-    public string ProgressText => State == MultiSftpTargetState.Succeeded
+    public string ProgressText => _result is { FilesSkipped: > 0, FilesTransferred: 0 } ? "—" : State == MultiSftpTargetState.Succeeded
         ? "100%"
         : TransferPhaseLabels.Bytes(Progress * 100);
 
@@ -53,7 +54,7 @@ public sealed class MultiSftpTargetVm : ObservableObject
     {
         MultiSftpTargetState.Pending => Loc.T("대기", "Pending"),
         MultiSftpTargetState.Transferring => TransferPhaseLabels.Active(_phase, Progress),
-        MultiSftpTargetState.Succeeded => TransferPhaseLabels.Complete,
+        MultiSftpTargetState.Succeeded => TransferPhaseLabels.Result(_result?.FilesTransferred ?? 0, _result?.FilesSkipped ?? 0, _result?.ResumedBytes ?? 0),
         MultiSftpTargetState.Failed => Loc.T("실패", "Failed"),
         MultiSftpTargetState.Cancelled => Loc.T("취소됨", "Cancelled"),
         _ => "",
@@ -75,6 +76,7 @@ public sealed class MultiSftpTargetVm : ObservableObject
 
     public void Update(MultiSftpTargetStatus status)
     {
+        _result = status.Result;
         _phase = status.TransferProgress?.Phase;
         State = status.State;
         Progress = status.Fraction;

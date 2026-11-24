@@ -5,6 +5,17 @@ namespace sutty.UI.Helpers;
 /// <summary>Phase labels never turn byte completion into a completed transfer.</summary>
 internal static class TransferPhaseLabels
 {
+    public static string Result(int transferred, int skipped, long resumedBytes)
+    {
+        if (skipped > 0 && transferred == 0) return Loc.T("건너뜀", "Skipped");
+        var status = skipped > 0
+            ? Loc.T($"완료 {transferred} · 건너뜀 {skipped}", $"Completed {transferred} · skipped {skipped}")
+            : Complete;
+        return resumedBytes > 0
+            ? Loc.T($"{status} · 재개 {resumedBytes:N0} B", $"{status} · resumed {resumedBytes:N0} B")
+            : status;
+    }
+
     public static string Active(SftpTransferPhase? phase, double fraction) => phase switch
     {
         SftpTransferPhase.Enumerating => Loc.T("파일 확인 중", "Listing files"),

@@ -51,7 +51,11 @@ public sealed partial class FileTreePanel
         RemoteFavoritesButton.IsEnabled = ready;
     }
 
-    private void LocalViewOptions_Changed(object sender, RoutedEventArgs e) => ApplyLocalViewOptions();
+    private void LocalViewOptions_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender == LocalHiddenToggle) RefreshDirectoryRoot(LocalDirectoryTree);
+        ApplyLocalViewOptions();
+    }
     private void LocalSort_Changed(object sender, SelectionChangedEventArgs e) => ApplyLocalViewOptions();
     private void ApplyLocalViewOptions()
     {
@@ -62,7 +66,11 @@ public sealed partial class FileTreePanel
         ApplyLocalBrowserState();
     }
 
-    private void RemoteViewOptions_Changed(object sender, RoutedEventArgs e) => ApplyRemoteBrowserView();
+    private void RemoteViewOptions_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender == RemoteHiddenToggle) RefreshDirectoryRoot(RemoteDirectoryTree);
+        ApplyRemoteBrowserView();
+    }
     private void RemoteSort_Changed(object sender, SelectionChangedEventArgs e) => ApplyRemoteBrowserView();
 
     private async void LocalBack_Click(object sender, RoutedEventArgs e)
@@ -90,7 +98,7 @@ public sealed partial class FileTreePanel
         if (_session is null || _sftp is null) return;
         try
         {
-            var identity = CurrentSftpPersistenceId();
+            var identity = LegacySftpPersistenceId();
             var path = _currentPath;
             var paths = _pathFavorites.GetPaths(identity);
             var favorite = paths.Contains(path, StringComparer.Ordinal);
@@ -113,7 +121,7 @@ public sealed partial class FileTreePanel
                 var item = new MenuFlyoutItem { Text = favoritePath };
                 item.Click += async (_, _) =>
                 {
-                    if (_session is not null && identity == CurrentSftpPersistenceId())
+                    if (_session is not null && identity == LegacySftpPersistenceId())
                         await NavigateToPathAsync(favoritePath);
                 };
                 flyout.Items.Add(item);
