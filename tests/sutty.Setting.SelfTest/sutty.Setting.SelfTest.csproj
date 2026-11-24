@@ -37,10 +37,13 @@
              Link="ShellState\ConnectionPersistencePolicy.cs" />
     <Compile Include="..\..\src\sutty.UI\Services\DetailsPaneWidthState.cs"
              Link="ShellState\DetailsPaneWidthState.cs" />
+    <Compile Include="..\..\src\sutty.Core\Sftp\DirectoryListingLimit.cs"
+             Link="Files\DirectoryListingLimit.cs" />
     <Compile Include="..\..\src\sutty.UI\Services\LocalFileBrowserService.cs"
              Link="Files\LocalFileBrowserService.cs" />
     <Compile Include="..\..\src\sutty.UI\Services\FileBrowserNavigationHistory.cs"
              Link="Files\FileBrowserNavigationHistory.cs" />
+    <Compile Include="..\..\src\sutty.UI\ViewModels\BrowserItemCollection.cs" Link="Files\BrowserItemCollection.cs" />
     <Compile Include="..\..\src\sutty.UI\ViewModels\LocalFileBrowserViewModel.cs"
              Link="Files\LocalFileBrowserViewModel.cs" />
   </ItemGroup>

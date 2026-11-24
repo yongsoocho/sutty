@@ -78,7 +78,8 @@ public sealed partial class SshNetSession : ISshSession, IPortForwardingSession
         _sftpService = new SshNetSftpService(
             () => _sftpClient,
             checkpointScope: $"{info.Username}@{info.Host}:{info.Port}",
-            reconnectAsync: ReconnectSftpForTransferAsync);
+            reconnectAsync: ReconnectSftpForTransferAsync,
+            openBrowseClient: OpenBrowseClientAsync);
         _hostEndpoint = HostEndpointIdentity.Create(info.Host, info.Port);
         // Keep credentials only in the clearable session fields; resolved route metadata
         // lives for the whole session and its record representation must remain secret-free.
@@ -1024,6 +1025,21 @@ public sealed partial class SshNetSession : ISshSession, IPortForwardingSession
             negotiated.CurrentServerHmacAlgorithm,
             negotiated.CurrentClientCompressionAlgorithm,
             negotiated.CurrentServerCompressionAlgorithm);
+    }
+
+    private async Task<SftpClient> OpenBrowseClientAsync(CancellationToken ct)
+    {
+        var trust = _activeTrustContext;
+        if (trust is null || State != SessionState.Connected || SftpState != SftpConnectionState.Ready)
+            throw new InvalidOperationException("The SSH session is not ready for browsing.");
+        // Reuse the established route. The regular SFTP handshake pins the same
+        // destination key. A failed listing must never rebuild or replace the transfer.
+        var client = await ConnectSftpClientAsync(trust, ct).ConfigureAwait(false);
+        if (ReferenceEquals(trust, _activeTrustContext) && State == SessionState.Connected &&
+            SftpState == SftpConnectionState.Ready && !ct.IsCancellationRequested)
+            return client;
+        client.Dispose();
+        throw new OperationCanceledException("The session changed while opening the file browser.", ct);
     }
 
     private async Task<SftpClient> ConnectSftpClientAsync(

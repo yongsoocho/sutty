@@ -35,8 +35,7 @@ public sealed partial class FileTreePanel
             2 => descending ? foldersFirst.ThenByDescending(node => node.Entry.Modified) : foldersFirst.ThenBy(node => node.Entry.Modified),
             _ => descending ? foldersFirst.ThenByDescending(node => node.Name, StringComparer.OrdinalIgnoreCase) : foldersFirst.ThenBy(node => node.Name, StringComparer.OrdinalIgnoreCase),
         };
-        RemoteItems.Clear();
-        foreach (var node in ordered.ThenBy(node => node.Name, StringComparer.Ordinal)) RemoteItems.Add(node);
+        RemoteItems.ReplaceWith(ordered.ThenBy(node => node.Name, StringComparer.Ordinal));
         UpdateTransferButtons();
     }
 
@@ -91,6 +90,42 @@ public sealed partial class FileTreePanel
     private async void RemoteForward_Click(object sender, RoutedEventArgs e)
     {
         if (_remoteHistory.ForwardPath is { } path) await NavigateRemoteCoreAsync(path, 1);
+    }
+
+    private void LocalFolders_Click(object sender, RoutedEventArgs e)
+    {
+        var path = LocalBrowser.CurrentPath;
+        if (LocalBrowser.IsLoading || string.IsNullOrEmpty(path)) return;
+        try
+        {
+            var paths = _pathFavorites.GetLocalPaths();
+            var favorite = paths.Contains(path, StringComparer.OrdinalIgnoreCase);
+            var menu = new MenuFlyout();
+            var open = new MenuFlyoutItem { Text = Loc.T("탐색기에서 열기", "Open in Explorer") };
+            open.Click += async (_, _) =>
+            {
+                try { await LocalFolderLauncher.OpenAsync(path); }
+                catch (Exception error) { ShowOperationError(Loc.T("폴더를 열 수 없습니다", "Could not open folder"), error); }
+            };
+            menu.Items.Add(open);
+            var toggle = new MenuFlyoutItem { Text = favorite ? Loc.T("현재 폴더 즐겨찾기 해제", "Remove current favorite") :
+                Loc.T("현재 폴더 즐겨찾기 추가", "Bookmark current folder") };
+            toggle.Click += (_, _) =>
+            {
+                try { _pathFavorites.SetLocalFavorite(path, !favorite); }
+                catch (Exception error) { ShowFavoritesError(error); }
+            };
+            menu.Items.Add(toggle);
+            if (paths.Count > 0) menu.Items.Add(new MenuFlyoutSeparator());
+            foreach (var folder in paths)
+            {
+                var item = new MenuFlyoutItem { Text = folder };
+                item.Click += async (_, _) => await NavigateLocalAsync(folder);
+                menu.Items.Add(item);
+            }
+            menu.ShowAt(LocalFoldersButton);
+        }
+        catch (Exception error) { ShowFavoritesError(error); }
     }
 
     private void RemoteFavorites_Click(object sender, RoutedEventArgs e)

@@ -2,7 +2,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using sutty.UI.Services;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -32,7 +31,7 @@ public sealed class LocalFileBrowserViewModel : ObservableObject, IDisposable
     public LocalFileBrowserViewModel(ILocalFileBrowserService service) =>
         _service = service ?? throw new ArgumentNullException(nameof(service));
 
-    public ObservableCollection<LocalFileItemViewModel> Items { get; } = [];
+    public BrowserItemCollection<LocalFileItemViewModel> Items { get; } = [];
     public bool CanGoBack => _history.CanGoBack;
     public bool CanGoForward => _history.CanGoForward;
 
@@ -54,9 +53,8 @@ public sealed class LocalFileBrowserViewModel : ObservableObject, IDisposable
             FileBrowserSort.Modified => _descending ? foldersFirst.ThenByDescending(entry => entry.Modified) : foldersFirst.ThenBy(entry => entry.Modified),
             _ => _descending ? foldersFirst.ThenByDescending(entry => entry.Name, StringComparer.OrdinalIgnoreCase) : foldersFirst.ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase),
         };
-        Items.Clear();
-        foreach (var entry in ordered.ThenBy(entry => entry.Name, StringComparer.Ordinal))
-            Items.Add(new LocalFileItemViewModel(entry));
+        Items.ReplaceWith(ordered.ThenBy(entry => entry.Name, StringComparer.Ordinal)
+            .Select(entry => new LocalFileItemViewModel(entry)));
     }
 
     public Task<bool> GoBackAsync(CancellationToken cancellationToken = default) =>
