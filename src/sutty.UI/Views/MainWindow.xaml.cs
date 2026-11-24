@@ -812,6 +812,7 @@ namespace sutty.UI.Views
         private HostListPanel CreateHostListPanel()
         {
             var panel = new HostListPanel { OwnerWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this) };
+            panel.RouteRequested += async (_, host) => await ChoosePersonalRouteAsync(host);
             panel.ConnectRequested += async (_, host) => await OpenHistoryDraftAsync(host);
             _hostPanels.Add(panel);
             return panel;
@@ -819,7 +820,8 @@ namespace sutty.UI.Views
 
         private async Task OpenHistoryDraftAsync(
             ViewModels.HostInfoModel host,
-            bool reviewMissingReconnectSecrets = false)
+            bool reviewMissingReconnectSecrets = false,
+            sutty.Command.PersonalRouteChoice? once = null)
         {
             // Only an explicit host click / --host request reaches this launch route.
             // Workspace restore excludes external profiles before calling this method.
@@ -869,6 +871,11 @@ namespace sutty.UI.Views
                 }
                 return;
             }
+            if (!string.IsNullOrWhiteSpace(host.ProfileId) && saved is null)
+            {
+                await ShowPersonalRouteErrorAsync(new InvalidOperationException(Helpers.Loc.T("저장된 호스트가 삭제되었습니다.", "The saved host was deleted.")));
+                return;
+            }
             var loaded = _connectionWorkflow.LoadSavedHostDraft(host);
             var draft = loaded.Draft;
 
@@ -876,6 +883,34 @@ namespace sutty.UI.Views
             {
                 await ShowSavedRouteIssueAsync(loaded.RouteProfile, draft);
                 return;
+            }
+
+            if (saved is not null)
+            {
+                try
+                {
+                    // Resolve the route at launch, also for CLI, workspace restore and reconnect.
+                    var choice = once ?? sutty.Command.PersonalHostRouteStore.Read(saved.Id);
+                    if (choice.Mode != sutty.Command.PersonalRouteMode.Profile)
+                    {
+                        var current = sutty.Command.HostProfileStore.GetById(saved.Id);
+                        if (current is null || current.UpdatedAtUtc != saved.UpdatedAtUtc)
+                            throw new InvalidOperationException(Helpers.Loc.T("호스트가 변경되었습니다. 다시 여세요.", "The host changed. Open it again."));
+                        sutty.Command.PersonalHostRouteStore.Apply(current, choice, draft, _personalGateways);
+                        if (await ConfirmRouteCredentialsAsync(draft)) await OpenSessionTabAsync(draft);
+                        return;
+                    }
+                }
+                catch (Exception error) when (IsRouteError(error))
+                {
+                    draft.ClearTransientSecrets();
+                    await ShowPersonalRouteErrorAsync(error);
+                    return;
+                }
+                finally
+                {
+                    if (draft.SaveProfile == false) draft.ClearTransientSecrets();
+                }
             }
 
             if (loaded.SavedDataReadFailed ||
@@ -1540,7 +1575,7 @@ namespace sutty.UI.Views
                         status.TransferProgress?.TotalBytes ?? 0,
                         status.Error,
                         phase: phase,
-                        isProgressReport: true);
+                        isProgressReport: true, result: status.Result);
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException or
                                               ArgumentException or InvalidOperationException)
@@ -1573,7 +1608,7 @@ namespace sutty.UI.Views
                         status.Result?.BytesTransferred ?? status.TransferProgress?.BytesTransferred ?? 0,
                         status.TransferProgress?.TotalBytes ?? 0,
                         status.Error,
-                        phase: status.TransferProgress?.Phase);
+                        phase: status.TransferProgress?.Phase, result: status.Result);
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException or
                                               ArgumentException or InvalidOperationException)

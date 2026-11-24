@@ -114,7 +114,7 @@ public sealed class BastionConnectionService(
         };
     }
 
-    private static bool IsEligible(HostProfile? profile)
+    public static bool IsEligible(HostProfile? profile)
     {
         if (profile is null || profile.IsExternalCommand || !string.IsNullOrWhiteSpace(profile.LaunchCommand) ||
             !IsValidId(profile.Id) || !IsValidText(profile.Host, 255) || profile.Host.Any(char.IsWhiteSpace) ||

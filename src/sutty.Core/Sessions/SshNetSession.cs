@@ -148,6 +148,8 @@ public sealed partial class SshNetSession : ISshSession, IPortForwardingSession
                     ct,
                     stage => currentStage = stage);
                 PublishPrimaryTransport(connected.Client, connected.NegotiatedInfo);
+                _sftpService.BindVerifiedEndpoint(SftpEndpointIdentity.Create(Info.Host, Info.Port,
+                    Info.Username, connected.NegotiatedInfo.HostKeySha256Fingerprint));
                 RecordDiagnostic(ConnectionDiagnosticResult.Succeeded(
                     ConnectionDiagnosticStage.DnsAndTcp));
                 if (_route.Type != ConnectionRouteType.Direct)
@@ -1040,6 +1042,9 @@ public sealed partial class SshNetSession : ISshSession, IPortForwardingSession
             {
                 using var diagnosticCapture = _diagnosticLoggerFactory.BeginCapture();
                 await Task.Run(() => client.ConnectAsync(ct), ct).ConfigureAwait(false);
+                if (verifier.LastVerification is not { State: HostKeyTrustState.Trusted } verified ||
+                    !string.Equals(verified.PresentedKey.Sha256Fingerprint, NegotiatedInfo?.HostKeySha256Fingerprint, StringComparison.Ordinal))
+                    throw new System.Security.SecurityException("The SFTP host key differs from the active SSH session.");
                 TryMarkHostKeyUsed(verifier, _hostEndpoint);
                 return client;
             }

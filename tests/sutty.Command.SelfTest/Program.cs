@@ -45,6 +45,7 @@ try
 
     LauncherStoreSelfTests.Run(Assert, scratch);
     BastionConnectionTests.Run(Assert, scratch);
+    PersonalHostRouteTests.Run(Assert, scratch);
 
     HostHistoryStore.SetPinned(
         "legacy.example",

@@ -31,6 +31,7 @@ public sealed partial class HostListPanel : UserControl
     public ObservableCollection<HostInfoModel> TopHosts { get; } = [];
     public ObservableCollection<HostInfoModel> FilteredHosts { get; } = [];
 
+    public event EventHandler<HostInfoModel>? RouteRequested;
     public event EventHandler<HostInfoModel>? ConnectRequested;
 
     public HostListPanel()
@@ -52,6 +53,8 @@ public sealed partial class HostListPanel : UserControl
     {
         if (args.Element is not Controls.HostCard card) return;
 
+        card.RouteRequested -= OnRouteRequested;
+        card.RouteRequested += OnRouteRequested;
         card.Clicked -= OnCardClicked;
         card.Clicked += OnCardClicked;
         card.PrimaryActionRequested -= OnPrimaryActionRequested;
@@ -63,6 +66,8 @@ public sealed partial class HostListPanel : UserControl
         card.AuthenticationAliasRequested -= OnAuthenticationAliasRequested;
         card.AuthenticationAliasRequested += OnAuthenticationAliasRequested;
     }
+
+    private void OnRouteRequested(object? sender, HostInfoModel host) => RouteRequested?.Invoke(this, host);
 
     private void OnCardClicked(object? sender, HostInfoModel host)
         => ConnectRequested?.Invoke(this, host);
