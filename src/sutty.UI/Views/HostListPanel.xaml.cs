@@ -53,6 +53,8 @@ public sealed partial class HostListPanel : UserControl
     {
         if (args.Element is not Controls.HostCard card) return;
 
+        card.OrganizeRequested -= OnOrganizeRequested;
+        card.OrganizeRequested += OnOrganizeRequested;
         card.RouteRequested -= OnRouteRequested;
         card.RouteRequested += OnRouteRequested;
         card.Clicked -= OnCardClicked;
@@ -182,6 +184,44 @@ public sealed partial class HostListPanel : UserControl
             System.Diagnostics.Debug.WriteLine($"Host removal dialog unavailable: {error.GetType().Name}");
         }
         finally { _deleteActionInProgress = false; }
+    }
+
+    private async void OnOrganizeRequested(object? sender, HostInfoModel host)
+    {
+        if (host.ProfileId is null) return;
+        try
+        {
+            var original = HostProfileStore.GetById(host.ProfileId);
+            if (original is null || original.IsExternalCommand) return;
+            var name = new TextBox { Header = Helpers.Loc.T("이름", "Name"), Text = original.DisplayName, MaxLength = 128 };
+            var group = new TextBox { Header = Helpers.Loc.T("그룹", "Group"), Text = original.GroupName, MaxLength = 64 };
+            var tags = new TextBox { Header = Helpers.Loc.T("태그 (줄마다 하나, 최대 16개)", "Tags (one per line, up to 16)"),
+                Text = string.Join(Environment.NewLine, original.Tags), AcceptsReturn = true, MaxHeight = 120 };
+            var environments = new[] { HostEnvironments.Unclassified, HostEnvironments.Development,
+                HostEnvironments.Staging, HostEnvironments.Production };
+            var environment = new ComboBox { Header = Helpers.Loc.T("환경", "Environment"),
+                ItemsSource = new[] { Helpers.Loc.T("미분류", "Unclassified"), Helpers.Loc.T("개발", "Development"),
+                    Helpers.Loc.T("스테이징", "Staging"), Helpers.Loc.T("운영", "Production") },
+                SelectedIndex = Array.IndexOf(environments, HostEnvironments.Normalize(original.Environment)) };
+            var fields = new StackPanel { Spacing = 8 };
+            fields.Children.Add(name);
+            fields.Children.Add(group);
+            fields.Children.Add(tags);
+            fields.Children.Add(environment);
+            var dialog = new ContentDialog { XamlRoot = XamlRoot, Title = original.DisplayName,
+                Content = new ScrollViewer { Content = fields, MaxHeight = 440 },
+                PrimaryButtonText = Helpers.Loc.T("저장", "Save"), CloseButtonText = Helpers.Loc.T("취소", "Cancel"),
+                DefaultButton = ContentDialogButton.Close };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            if (!HostProfileStore.UpdateOrganization(original, name.Text, group.Text,
+                    tags.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries), environments[environment.SelectedIndex]))
+                await ShowStorageActionErrorAsync();
+        }
+        catch (Exception error) when (error is Microsoft.Data.Sqlite.SqliteException or IOException or
+            ArgumentException or UnauthorizedAccessException)
+        {
+            await ShowStorageActionErrorAsync();
+        }
     }
 
     private async void OnDuplicateRequested(object? sender, HostInfoModel host)

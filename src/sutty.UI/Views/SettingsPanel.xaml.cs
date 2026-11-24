@@ -459,6 +459,9 @@ namespace sutty.UI.Views
             CommitChangesNow(SettingChangeKind.Sftp);
         }
 
+        private async void ShareHostDefinitions_Click(object sender, RoutedEventArgs e) =>
+            await SharedDefinitionsDialog.ShowAsync(XamlRoot, OwnerWindowHandle);
+
         private async void ImportOpenSsh_Click(object sender, RoutedEventArgs e)
         {
             if (OwnerWindowHandle == IntPtr.Zero)

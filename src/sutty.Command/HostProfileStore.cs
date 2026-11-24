@@ -249,6 +249,37 @@ public static partial class HostProfileStore
         Tunnels = profile.Tunnels.Select(tunnel => tunnel with { }).ToList(),
     };
 
+    public static bool UpdateOrganization(HostProfile original, string name, string group,
+        IEnumerable<string> tags, string environment)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        var display = LimitClean(name, 128, "display name");
+        if (display.Length == 0) throw new ArgumentException("A display name is required.");
+        var folder = LimitClean(group, 64, "group name");
+        var labels = tags.Select(tag => LimitClean(tag, 32, "tag")).Where(tag => tag.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (labels.Length > 16) throw new ArgumentException("Choose at most 16 tags.");
+
+        EnsureInitialized();
+        using var db = Db.Open();
+        using var command = db.CreateCommand();
+        command.CommandText = """
+            UPDATE host_profiles SET display_name = $name, group_name = $group, tags_json = $tags,
+                environment = $environment, updated_at_utc = $now
+            WHERE id = $id AND launch_kind = 'SuttySsh' AND updated_at_utc = $expected
+            """;
+        command.Parameters.AddWithValue("$name", display);
+        command.Parameters.AddWithValue("$group", folder);
+        command.Parameters.AddWithValue("$tags", SerializeTags(labels));
+        command.Parameters.AddWithValue("$environment", HostEnvironments.Normalize(environment));
+        command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$id", original.Id);
+        command.Parameters.AddWithValue("$expected", original.UpdatedAtUtc.ToString("O"));
+        if (command.ExecuteNonQuery() != 1) return false;
+        NotifyChanged();
+        return true;
+    }
+
     public static void SetAuthenticationAlias(string id, string alias)
     {
         var profile = GetById(id) ?? throw new ArgumentException("The saved host no longer exists.", nameof(id));

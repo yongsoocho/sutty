@@ -43,9 +43,7 @@ for structured, non-interactive command cells; the internal persisted value `Rep
 compatibility and does not replace the central terminal. The new-tab menu offers both local
 PowerShell and CMD.
 
-The source includes credential-free JSON sharing for selected host, group, tag, route, tunnel, and command definitions; its Hosts/History entry is currently removed. Export shows the exact content; import previews additions, changes, duplicates, and unsupported items before applying each choice. Each PC binds its own keys/accounts through an authentication alias. No accounts, shared credentials, RBAC, central administration, or live collaboration are added. See [Daily workflow](docs/DAILY_WORKFLOW.md).
-
-> The Hosts/History sharing/import shortcut has been removed. Sharing serialization and preview code remain in the source; legacy host imports remain in Settings. Saved host and recent-history cards now expose an X for individual removal.
+In **Settings → Connection → Share or import team definitions (JSON)**, select hosts and commands and review the exact file before saving. Recipients preview changes and choose Add, Skip, Copy or Update per row. Unknown fields reject the whole file. Each user keeps their own keys and connection route. In **Hosts**, use the saved host menu to edit its name, group, tags or environment.
 
 ### Implemented Alpha baseline
 
@@ -208,9 +206,7 @@ Multi Command는 중앙에 3×3 세션 그리드를 표시하고 오른쪽에 �
 호환성을 위해 내부 저장값 `Repl`을 유지하지만 중앙 터미널을 대체하지 않습니다.
 새 탭 메뉴에서 로컬 PowerShell과 CMD를 선택할 수 있습니다.
 
-선택 Host·그룹·태그·route·tunnel·명령 정의의 비밀정보 없는 JSON 공유 코드는 유지하지만 Hosts/History의 진입 버튼은 현재 제거했습니다. 내보낼 원문과 가져올 추가·변경·중복·미지원 항목을 먼저 확인하고 항목별로 적용하며, 각 PC에서 인증 별칭에 맞는 자신의 키·계정을 연결합니다. 계정, 공유 자격증명, RBAC, 중앙 관리, 실시간 협업은 추가하지 않습니다. [일상 작업 안내](docs/DAILY_WORKFLOW.md)를 참고하세요.
-
-> Hosts/History의 공유·가져오기 버튼은 제거했습니다. 공유 저장·미리보기 코드는 남겨두며 기존 형식 호스트 가져오기는 설정에서 제공합니다. 저장 호스트와 최근 접속 카드의 X로 항목을 개별 삭제할 수 있습니다.
+**설정 → 연결 → 팀 설정 공유·가져오기 (JSON)** 에서 호스트와 명령을 선택하고 파일 내용을 확인한 뒤 저장합니다. 받는 사람은 변경을 미리 보고 항목별로 추가·건너뛰기·복제·갱신을 선택합니다. 알 수 없는 필드가 있으면 파일 전체를 거부합니다. 팀원은 자신의 키와 접속 경로를 사용합니다. **Hosts**의 저장 호스트 메뉴에서 이름·그룹·태그·환경을 편집할 수 있습니다.
 
 ### 구현된 Alpha 기준선
 

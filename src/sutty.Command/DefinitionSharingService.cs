@@ -103,8 +103,10 @@ public static class DefinitionSharingService
             throw new ArgumentException("Choose at most 1,000 definitions per file.");
         var pack = new SharedDefinitions
         {
-            Hosts = hosts.Select(ToShared).ToList(),
-            Commands = commands.Select(command => new SharedCommand { Name = command.Name, CommandText = command.CommandText }).ToList(),
+            Hosts = hosts.OrderBy(host => host.Id, StringComparer.Ordinal).Select(ToShared).ToList(),
+            Commands = commands.OrderBy(command => command.Name, StringComparer.Ordinal)
+                .ThenBy(command => command.CommandText, StringComparer.Ordinal)
+                .Select(command => new SharedCommand { Name = command.Name, CommandText = command.CommandText }).ToList(),
         };
         if (pack.Commands.Any(command => !ValidCommand(command.Name, command.CommandText)))
             throw new ArgumentException("A command template is too long or invalid.");
@@ -174,23 +176,22 @@ public static class DefinitionSharingService
             !root.TryGetProperty("commands", out var commandElements) || commandElements.ValueKind != JsonValueKind.Array ||
             hostElements.GetArrayLength() + commandElements.GetArrayLength() > MaxItems)
             throw new InvalidDataException("The file must contain hosts and commands arrays with at most 1,000 definitions.");
-        var warnings = new List<string>();
-        FindUnsupportedFields(root, ["schemaVersion", "hosts", "commands"], warnings);
+        RequireKnownFields(root, ["schemaVersion", "hosts", "commands"]);
         var drafts = new List<(HostProfileDraft Draft, string? Id)>();
         foreach (var element in hostElements.EnumerateArray())
         {
-            FindUnsupportedFields(element, ["id", "displayName", "host", "port", "username", "authMethod", "authenticationAlias", "groupName", "tags", "environment", "isFavorite", "route", "tunnels"], warnings);
+            RequireKnownFields(element, ["id", "displayName", "host", "port", "username", "authMethod", "authenticationAlias", "groupName", "tags", "environment", "isFavorite", "route", "tunnels"]);
             var host = element.Deserialize(SharedDefinitionsJsonContext.Default.SharedHost)
                 ?? throw new InvalidDataException("A shared host is invalid.");
             // A missing/null/malformed route is never interpreted as a direct connection.
             var hasRoute = element.TryGetProperty("route", out var routeElement) &&
                 routeElement.ValueKind == JsonValueKind.Object && routeElement.TryGetProperty("type", out var routeType) &&
                 routeType.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(routeType.GetString());
-            if (hasRoute)
-                FindUnsupportedFields(routeElement, ["type", "host", "port", "username", "authMethod", "proxyDns", "disableDirect"], warnings);
+            if (element.TryGetProperty("route", out var routeFields) && routeFields.ValueKind == JsonValueKind.Object)
+                RequireKnownFields(routeFields, ["type", "host", "port", "username", "authMethod", "proxyDns", "disableDirect"]);
             if (element.TryGetProperty("tunnels", out var tunnelElements) && tunnelElements.ValueKind == JsonValueKind.Array)
                 foreach (var tunnelElement in tunnelElements.EnumerateArray())
-                    FindUnsupportedFields(tunnelElement, ["type", "bindHost", "bindPort", "destinationHost", "destinationPort"], warnings);
+                    RequireKnownFields(tunnelElement, ["type", "bindHost", "bindPort", "destinationHost", "destinationPort"]);
             var route = hasRoute && host.Route is not null
                 ? new HostRouteProfile
                 {
@@ -210,14 +211,14 @@ public static class DefinitionSharingService
         var commands = new List<SharedCommand>();
         foreach (var element in commandElements.EnumerateArray())
         {
-            FindUnsupportedFields(element, ["name", "commandText"], warnings);
+            RequireKnownFields(element, ["name", "commandText"]);
             if (element.ValueKind != JsonValueKind.Object ||
                 !element.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String ||
                 !element.TryGetProperty("commandText", out var body) || body.ValueKind != JsonValueKind.String)
                 throw new InvalidDataException("A command definition is invalid.");
             commands.Add(new SharedCommand { Name = name.GetString()!, CommandText = body.GetString()! });
         }
-        return BuildPreview(drafts, commands, warnings, true);
+        return BuildPreview(drafts, commands, [], true);
     }
 
     private static DefinitionImportPreview BuildPreview(
@@ -421,12 +422,12 @@ public static class DefinitionSharingService
     private static bool ValidCommand(string? name, string? text) => !string.IsNullOrWhiteSpace(name) && name.Length <= 128 &&
         !name.Any(char.IsControl) && !string.IsNullOrWhiteSpace(text) && text.Length <= 65_536 && !text.Contains('\0');
 
-    private static void FindUnsupportedFields(JsonElement element, string[] allowed, ICollection<string> warnings)
+    private static void RequireKnownFields(JsonElement element, string[] allowed)
     {
         if (element.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Invalid definition object.");
         foreach (var property in element.EnumerateObject())
             if (!allowed.Contains(property.Name, StringComparer.Ordinal))
-                warnings.Add("미지원 필드를 제외했습니다. 자격증명·실행 설정은 활성화되지 않습니다. / Unsupported fields were omitted; credentials and execution settings are not activated.");
+                throw new InvalidDataException("공유 파일에 허용되지 않은 필드가 있습니다. / The shared file contains an unsupported field.");
     }
 
     private static void RejectDuplicateProperties(JsonElement element)
