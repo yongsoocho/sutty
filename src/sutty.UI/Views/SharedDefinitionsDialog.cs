@@ -128,6 +128,12 @@ public static class SharedDefinitionsDialog
             await DefinitionSharingService.SaveFileAsync(selected.Path, json);
             await MessageAsync(xamlRoot, Loc.T("공유 파일 저장됨", "Sharing file saved"), selected.Path);
         }
+        catch (InvalidDataException)
+        {
+            await MessageAsync(xamlRoot, Loc.T("공유 파일을 열 수 없습니다", "Cannot import this file"),
+                Loc.T("형식 버전, 파일 크기 및 필드를 확인하세요. 자격증명·개인 키 경로·알 수 없는 필드가 있으면 파일 전체를 거부합니다.",
+                    "Check the file version, size and fields. Credential fields, local key paths and unknown fields reject the entire file."));
+        }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or
             InvalidOperationException or JsonException or Microsoft.Data.Sqlite.SqliteException or System.Runtime.InteropServices.COMException)
         {

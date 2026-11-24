@@ -28,6 +28,7 @@ public sealed partial class HostCard : UserControl
         ActualThemeChanged += (_, _) => UpdateVisuals();
     }
 
+    public event EventHandler<HostInfoModel>? OrganizeRequested;
     public event EventHandler<HostInfoModel>? RouteRequested;
     public event EventHandler<HostInfoModel>? Clicked;
     public event EventHandler<HostInfoModel>? PrimaryActionRequested;
@@ -72,6 +73,11 @@ public sealed partial class HostCard : UserControl
         if (Host is { IsSavedProfile: true, IsExternalCommand: false }) RouteRequested?.Invoke(this, Host);
     }
 
+    private void OrganizeMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (Host is { IsSavedProfile: true, IsExternalCommand: false }) OrganizeRequested?.Invoke(this, Host);
+    }
+
     private void DuplicateMenuItem_Click(object sender, RoutedEventArgs e)
     {
         if (Host is not null) DuplicateRequested?.Invoke(this, Host);
@@ -111,7 +117,8 @@ public sealed partial class HostCard : UserControl
         ToolTipService.SetToolTip(DeleteButton, deleteTargetLabel);
         AutomationProperties.SetName(DeleteButton, deleteTargetLabel);
         DuplicateMenuItem.Visibility = Host.IsSavedProfile && !Host.IsExternalCommand ? Visibility.Visible : Visibility.Collapsed;
-        RouteMenuItem.Visibility = DuplicateMenuItem.Visibility;
+        OrganizeMenuItem.Visibility = RouteMenuItem.Visibility = DuplicateMenuItem.Visibility;
+        OrganizeMenuItem.Text = Helpers.Loc.T("이름·그룹·태그 편집…", "Edit name, group and tags…");
         RouteMenuItem.Text = Helpers.Loc.T("내 접속 경로…", "My connection route…");
         DuplicateMenuItem.Text = Helpers.Loc.T("저장 호스트 복제", "Duplicate saved host");
         AuthenticationAliasMenuItem.Visibility = Host.IsSavedProfile && !Host.IsExternalCommand ? Visibility.Visible : Visibility.Collapsed;

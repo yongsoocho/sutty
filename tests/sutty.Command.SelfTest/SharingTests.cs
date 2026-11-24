@@ -52,7 +52,7 @@ internal static class SharingTests
         {
             DisplayName = "Share source", Host = "share.example", Username = "Operator", AuthMethod = "PublicKey",
             PrivateKeyPath = localKey, CredentialId = secret, AuthenticationAlias = "team-dev",
-            Tags = ["dev"], GroupName = "Team", Environment = HostEnvironments.Development,
+            Tags = ["dev"], GroupName = "Team", Environment = HostEnvironments.Development, IsFavorite = true,
             Route = new HostRouteProfile { Type = "SshJump", Host = "jump-share.example", Port = 22,
                 AuthMethod = "PublicKey", PrivateKeyPath = localKey, Username = "jump", DisableDirect = true },
             Tunnels = [new HostTunnelProfile { BindPort = 18080, DestinationHost = "internal.example", DestinationPort = 80 }],
@@ -66,13 +66,21 @@ internal static class SharingTests
         assert(copied.Id != host.Id && copied.CredentialId is null && copied.PrivateKeyPath == localKey &&
                copied.Route.PrivateKeyPath == localKey && copied.Tunnels.Count == 1, "duplicate copies local definitions without vault reference ownership collision");
         assert(HostProfileStore.GetById(host.Id)!.CredentialId == secret, "duplication never changes source credential binding");
+        assert(HostProfileStore.UpdateOrganization(copied, "Renamed", "Ops", ["api", "prod"], "Production"),
+            "organization can be changed without opening a connection");
+        var organized = HostProfileStore.GetById(copied.Id)!;
+        assert(organized.GroupName == "Ops" && organized.Environment == HostEnvironments.Production &&
+               organized.Tags.SequenceEqual(["api", "prod"]) && organized.PrivateKeyPath == copied.PrivateKeyPath &&
+               organized.Route.PrivateKeyPath == copied.Route.PrivateKeyPath &&
+               !HostProfileStore.UpdateOrganization(copied, "Stale", "", [], "Development"),
+            "organization keeps local key bindings and rejects stale edits");
         HostProfileStore.Delete(copied.Id);
 
         var command = CommandStore.Add("Shared health", "uptime\nprintf '%s' \"$1\"");
         var json = DefinitionSharingService.Export([host], [command]);
         assert(!json.Contains(secret) && !json.Contains("local-only") && !json.Contains("credentialId") &&
                !json.Contains("privateKeyPath") && !json.Contains("usageCount") && !json.Contains("lastConnected") &&
-               !json.Contains("fingerprint") && json.Contains("schemaVersion") && json.Contains("team-dev"),
+               !json.Contains("fingerprint") && !json.Contains("isFavorite") && json.Contains("schemaVersion") && json.Contains("team-dev"),
             "allowlisted export strips all local credential refs, key paths, history and trust");
         var empty = DefinitionSharingService.Export([], []);
         assert(DefinitionSharingService.PreviewJson(empty).Hosts.Count == 0, "empty selection exports no hosts");
@@ -103,20 +111,31 @@ internal static class SharingTests
 
         var node = JsonNode.Parse(json)!;
         node["hosts"]![0]!["displayName"] = "Changed share";
-        node["hosts"]![0]!["credentialId"] = secret;
-        node["hosts"]![0]!["privateKeyPath"] = localKey;
-        node["hosts"]![0]!["password"] = secret;
-        node["hosts"]![0]!["route"]!["privateKeyPath"] = localKey;
-        node["hosts"]![0]!["route"]!["command"] = secret;
+        foreach (var point in new[] { "root", "host", "route", "tunnel", "command" })
+        {
+            var modified = node.DeepClone();
+            var target = point switch
+            {
+                "root" => modified,
+                "host" => modified["hosts"]![0]!,
+                "route" => modified["hosts"]![0]!["route"]!,
+                "tunnel" => modified["hosts"]![0]!["tunnels"]![0]!,
+                _ => modified["commands"]![0]!,
+            };
+            target["unexpectedField"] = "fixture";
+            Throws<InvalidDataException>(() => DefinitionSharingService.PreviewJson(modified.ToJsonString()),
+                assert, $"reject the entire shared file for an unknown {point} field");
+        }
+        var forbidden = node.DeepClone();
+        forbidden["hosts"]![0]!["privateKeyPath"] = localKey;
+        Throws<InvalidDataException>(() => DefinitionSharingService.PreviewJson(forbidden.ToJsonString()),
+            assert, "a machine-local key path rejects the entire import");
         preview = DefinitionSharingService.PreviewJson(node.ToJsonString());
-        assert(preview.Hosts[0].Kind == ImportChangeKind.Change && preview.Warnings.Count > 0 &&
-               preview.Hosts[0].Draft.CredentialId is null && preview.Hosts[0].Draft.PrivateKeyPath == "" &&
-               preview.Hosts[0].Draft.Route.PrivateKeyPath == "" && preview.Hosts[0].Draft.Route.Command == "",
-            "incoming forbidden fields are ignored with a warning and cannot cross credential boundaries");
+        assert(preview.Hosts[0].Kind == ImportChangeKind.Change, "valid metadata change is previewed");
         preview.Hosts[0].Choice = ImportChoice.Update;
         var applied = DefinitionSharingService.Apply(preview);
         host = HostProfileStore.GetById(host.Id)!;
-        assert(applied.Updated == 1 && host.DisplayName == "Changed share" && host.CredentialId == secret &&
+        assert(applied.Updated == 1 && host.DisplayName == "Changed share" && host.IsFavorite && host.CredentialId == secret &&
                host.PrivateKeyPath == localKey && host.Route.PrivateKeyPath == localKey,
             "explicit compatible update preserves this PC's credential and jump key bindings");
 
@@ -145,6 +164,7 @@ internal static class SharingTests
 
         node["hosts"]![0]!["id"] = Guid.NewGuid().ToString("N");
         node["hosts"]![0]!["host"] = "new-share.example";
+        node["hosts"]![0]!["isFavorite"] = true; // Older v1 exporters included the sender's local preference.
         preview = DefinitionSharingService.PreviewJson(node.ToJsonString());
         preview.Hosts[0].Choice = ImportChoice.Add;
         var targetId = node["hosts"]![0]!["id"]!.GetValue<string>();
@@ -155,7 +175,7 @@ internal static class SharingTests
         }
         assert(HostProfileStore.GetById(targetId) is null, "cancel before import leaves storage unchanged");
         applied = DefinitionSharingService.Apply(preview);
-        assert(applied.Added == 1 && HostProfileStore.GetById(targetId)!.CredentialId is null,
+        assert(applied.Added == 1 && HostProfileStore.GetById(targetId) is { CredentialId: null, IsFavorite: false },
             "selected shared add retains portable profile id with no foreign credential reference");
 
         preview = DefinitionSharingService.PreviewJson(node.ToJsonString());
@@ -173,6 +193,9 @@ internal static class SharingTests
         assert(DefinitionSharingService.PreviewJson(node.ToJsonString()).Hosts[0].Kind == ImportChangeKind.Invalid,
             "omitted route is not implicitly direct");
         node["hosts"]![0]!["route"] = new JsonObject { ["type"] = "ExternalProxyCommand", ["command"] = secret };
+        Throws<InvalidDataException>(() => DefinitionSharingService.PreviewJson(node.ToJsonString()), assert,
+            "executable fields reject the whole shared file");
+        node["hosts"]![0]!["route"]!.AsObject().Remove("command");
         preview = DefinitionSharingService.PreviewJson(node.ToJsonString());
         assert(preview.Hosts[0].Kind == ImportChangeKind.Invalid && preview.Hosts[0].Draft.Route.Command.Length == 0,
             "external executable commands never import as active routes");
@@ -193,6 +216,8 @@ internal static class SharingTests
             DisplayName = "Local proxy", Host = "proxy-export.example",
             Route = new HostRouteProfile { Type = "ExternalProxyCommand", Command = secret },
         });
+        assert(DefinitionSharingService.Export([host, proxyHost], []) == DefinitionSharingService.Export([proxyHost, host], []),
+            "selection order does not change the shared JSON");
         var proxyJson = DefinitionSharingService.Export([proxyHost], []);
         assert(!proxyJson.Contains(secret) && DefinitionSharingService.PreviewJson(proxyJson).Hosts[0].Kind == ImportChangeKind.Invalid,
             "proxy export omits local command while retaining a blocked indirect route definition");
