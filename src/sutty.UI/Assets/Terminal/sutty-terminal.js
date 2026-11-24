@@ -264,7 +264,15 @@
   searchNext.addEventListener('click', findNext);
   searchClose.addEventListener('click', hideSearch);
 
+  function composing(event) {
+    return event.isComposing || event.keyCode === 229 || event.getModifierState?.('AltGraph');
+  }
+
   function handleAppShortcut(event) {
+    if (composing(event) ||
+        (terminal.buffer.active.type === 'alternate' && terminalElement.contains(event.target))) {
+      return false;
+    }
     if (event.altKey && !event.ctrlKey && !event.shiftKey) {
       const navigationMatch = /^Digit([1-8])$/.exec(event.code);
       if (navigationMatch) {
@@ -304,12 +312,13 @@
   document.addEventListener('keydown', handleAppShortcut, true);
 
   terminal.attachCustomKeyEventHandler(function (event) {
-    if (event.type !== 'keydown') {
+    if (event.type !== 'keydown' || composing(event)) {
       return true;
     }
 
     const key = event.key.toLowerCase();
-    if (event.ctrlKey && !event.altKey && key === 'f') {
+    if (event.ctrlKey && !event.altKey && key === 'f' &&
+        (event.shiftKey || terminal.buffer.active.type !== 'alternate')) {
       event.preventDefault();
       showSearch();
       return false;

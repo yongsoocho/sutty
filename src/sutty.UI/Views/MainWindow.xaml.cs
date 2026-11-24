@@ -2086,13 +2086,27 @@ namespace sutty.UI.Views
 
         private ISshSession? ActiveSession => ActiveSessionView?.Session;
 
+        // The terminal WebView routes shortcuts from its own focused element. It also
+        // knows whether the PTY is currently running an alternate-screen application.
+        private bool TerminalRendererHasFocus()
+        {
+            for (var element = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
+                 element is not null;
+                 element = VisualTreeHelper.GetParent(element))
+            {
+                if (element is TerminalRendererControl) return true;
+            }
+            return false;
+        }
+
         private void Root_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
             var controlDown = IsKeyDown(Windows.System.VirtualKey.Control);
             var altDown = IsKeyDown(Windows.System.VirtualKey.Menu);
             var shortcutNumber = ShortcutNumber(e.Key);
 
-            if (controlDown && !altDown)
+            if (controlDown && !altDown && !IsKeyDown(Windows.System.VirtualKey.Shift) &&
+                !TerminalRendererHasFocus())
             {
                 if (shortcutNumber is int tabNumber)
                 {
@@ -2124,6 +2138,7 @@ namespace sutty.UI.Views
             KeyboardAccelerator sender,
             KeyboardAcceleratorInvokedEventArgs args)
         {
+            if (TerminalRendererHasFocus()) return;
             args.Handled = true;
             if (ShortcutNumber(sender.Key) is not int navigationNumber)
                 return;
