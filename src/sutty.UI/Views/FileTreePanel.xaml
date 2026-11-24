@@ -22,6 +22,8 @@
         </Grid.RowDefinitions>
 
         <controls:WrapPanel Spacing="8">
+            <Button x:Name="CompareFoldersButton" Click="CompareFolders_Click" IsEnabled="False"
+                    Content="{x:Bind h:Loc.T('폴더 비교', 'Compare folders')}" />
             <TextBlock VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold"
                        Foreground="{ThemeResource TextPrimary}" Text="Files" />
             <Border Padding="8,2" VerticalAlignment="Center"
@@ -129,6 +131,9 @@
                         <Button x:Name="LocalForwardButton" Width="28" Padding="0" IsEnabled="False" Click="LocalForward_Click"
                                 AutomationProperties.Name="{x:Bind h:Loc.T('로컬 앞으로', 'Local forward')}"
                                 ToolTipService.ToolTip="{x:Bind h:Loc.T('앞으로', 'Forward')}"><FontIcon FontSize="11" Glyph="&#xE72A;" /></Button>
+                        <Button x:Name="LocalFoldersButton" Width="28" Padding="0" Click="LocalFolders_Click"
+                                AutomationProperties.Name="{x:Bind h:Loc.T('로컬 즐겨찾기 및 탐색기', 'Local favorites and Explorer')}"
+                                ToolTipService.ToolTip="{x:Bind h:Loc.T('로컬 즐겨찾기 및 탐색기', 'Local favorites and Explorer')}"><FontIcon FontSize="12" Glyph="&#xE734;" /></Button>
                         <ComboBox x:Name="LocalSortBox" Width="96" MinHeight="28" Padding="7,3" FontSize="10" SelectedIndex="0"
                                   SelectionChanged="LocalSort_Changed" AutomationProperties.Name="{x:Bind h:Loc.T('로컬 정렬 기준', 'Local sort by')}">
                             <ComboBoxItem Content="{x:Bind h:Loc.T('이름', 'Name')}" />

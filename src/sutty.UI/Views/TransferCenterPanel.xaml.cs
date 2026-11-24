@@ -168,6 +168,11 @@ public sealed partial class TransferCenterPanel : UserControl
         CountText.Text = filtered.Length == _snapshot.Count
             ? filtered.Length.ToString("N0")
             : $"{filtered.Length:N0} / {_snapshot.Count:N0}";
+        var completed = filtered.Count(item => item.Job.State == SftpQueueJobState.Completed && !item.Job.WasSkipped);
+        var skipped = filtered.Count(item => item.Job.WasSkipped);
+        var failed = filtered.Count(item => item.Job.State == SftpQueueJobState.Failed);
+        OutcomeText.Text = Loc.T($"표시된 작업 중 완료 {completed:N0} · 전부 건너뜀 {skipped:N0} · 실패 {failed:N0}",
+            $"Visible jobs: completed {completed:N0} · entirely skipped {skipped:N0} · failed {failed:N0}");
         EmptyStateText.Text = _snapshot.Count == 0
             ? Loc.T("저장된 전송 작업이 없습니다.", "There are no saved transfer jobs.")
             : Loc.T(
@@ -195,6 +200,24 @@ public sealed partial class TransferCenterPanel : UserControl
 
         while (Items.Count > desired.Count)
             Items.RemoveAt(Items.Count - 1);
+    }
+
+    private async void OpenLocalFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (GetItem(sender) is not { } item) return;
+        var job = item.Job;
+        var local = job.Direction == sutty.Core.Sftp.SftpTransferDirection.Upload ? job.SourcePath : job.DestinationPath;
+        try
+        {
+            if (!Path.IsPathFullyQualified(local)) throw new IOException("No local folder was recorded.");
+            var folder = Directory.Exists(local) ? local : Path.GetDirectoryName(local);
+            if (folder is null) throw new IOException("No containing folder.");
+            await LocalFolderLauncher.OpenAsync(folder);
+        }
+        catch (Exception)
+        {
+            ShowStatus(Loc.T("로컬 폴더를 열 수 없습니다. 폴더가 아직 존재하는지 확인하세요.", "Cannot open the local folder. Check that it still exists."));
+        }
     }
 
     private async void Pause_Click(object sender, RoutedEventArgs e) =>

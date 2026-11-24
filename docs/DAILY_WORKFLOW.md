@@ -34,6 +34,8 @@ Transfers나 `Alt+7`의 파일 탐색은 현재 선택한 셸을 따릅니다. S
 
 A 서버 터미널에서 `ssh B`를 실행해도 Files는 A에 연결된 상태입니다. B 파일을 보려면 새 연결의 목적지를 B로 입력하고 **고급 연결 옵션 → 연결 경로 → SSH Jump**에서 A를 경유 서버로 지정하세요. 그러면 Terminal과 Files가 모두 B에 연결됩니다. A가 TCP forwarding과 B 접근을 허용하고 B가 SFTP를 제공해야 합니다. 목적지 인증은 이 PC에서 사용할 수 있어야 하며 A에만 있는 키는 자동 재사용하지 않습니다. Files 상단에서 실제 SFTP 대상을 확인할 수 있습니다.
 
+전송 중에도 다른 원격 폴더로 이동할 수 있습니다. **로컬 폴더**에서 이 PC의 즐겨찾기를 관리하고 탐색기를 엽니다. **폴더 비교**는 두 패널에 보이는 이름·크기·수정 시각(초)을 비교합니다. 결과를 패널에서 선택한 다음 방향을 확인하고 전송 버튼을 누르세요. 하위 폴더 내용은 비교 대상에서 제외됩니다. 폴더 트리는 한 번에 256개씩 펼치며 100,000개를 넘는 디렉터리는 하위 경로를 직접 입력해야 합니다.
+
 ## 한 줄 로컬 연결
 
 **한 줄 연결**은 Home의 새 연결 아래 독립 카드입니다. 저장한 명령은 **Hosts 즐겨찾기**에 나타납니다. 같은 명령을 다시 저장하면 기존 항목을 갱신하며, 예전 명령 즐겨찾기는 한 번만 이전하고 원본 데이터는 보존합니다. 외부 명령 즐겨찾기는 공유 JSON과 작업 공간 자동 복원에서 제외됩니다. 호스트 카드의 빈 별은 즐겨찾기에 추가하고 채운 별은 해제합니다. 최근 호스트 접속 기록은 Hosts에 남아 있습니다.
@@ -102,6 +104,8 @@ Open **Multi Command** from the left navigation or `Alt+8`. It covers the centra
 The right side reuses the existing **command library**, including search, add/delete, and `$1`, `$2` parameter inputs. Both free-form commands entered above it and saved commands run **only on checked sessions**. Sutty SSH uses structured exec. Local/external targets require separate, default-off advanced input approval for every run. Input goes to the foreground program and may reach an editor or authentication prompt; completion without an exit status is labeled unverified. Review the exact command, all visible targets before approval; cancellation preserves the draft. SSH exec does not share the terminal directory, environment, or sudo state. A 60-second wait limit and cancel-wait action keep unknown remote outcomes explicit. **Select all** checks running local/external and connected Sutty SSH among the visible cards; **Clear all** removes selection. Hidden and disconnected tabs are excluded with visible counts. New sessions always start unchecked; entering Multi Command clears every target. Last results and running state remain available for the same open sessions. Cancelled saved commands retain parameter inputs and do not increment usage. Each cell shows session state and the last result, with a scrollable output preview of up to 16,384 characters. PROD-tagged targets require an additional confirmation.
 
 Transfers and `Alt+7` follow the selected shell: the same SSH session's Local/Remote Files or the current directory reported by a PowerShell/CMD prompt. External tabs, missing shells, and unknown local paths retain an explicitly labeled local PC browser without choosing another server. Browsing locally does not change the shell directory; **Current shell folder** resumes following it once available. Directly launched SSH/Multipass programs are terminal-only: remote Files/Tunnels are not integrated. The connection button opens Home for a separate integrated SSH connection.
+
+Folders remain browsable during a transfer. **Local folders** manages PC bookmarks and opens Explorer. **Compare folders** compares visible names, sizes and modification times to the second. Select a result in the panes and choose the transfer direction. The comparison is shallow. The folder tree expands in groups of 256. Enter a subfolder path directly for directories exceeding 100,000 entries.
 
 ### One-line local connections
 

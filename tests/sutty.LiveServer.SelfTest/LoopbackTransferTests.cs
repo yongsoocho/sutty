@@ -63,14 +63,37 @@ internal static class LoopbackTransferTests
             if (args[2] == "interrupt")
             {
                 using var cancel = new CancellationTokenSource();
+                using var release = new ManualResetEventSlim();
+                var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 var progress = new InlineProgress<SftpTransferProgress>(item =>
                 {
-                    if (item.Phase == SftpTransferPhase.Transferring && item.BytesTransferred >= 4 * 1024 * 1024)
-                        cancel.Cancel();
+                    if (item.Phase == SftpTransferPhase.Transferring && item.BytesTransferred >= 4 * 1024 * 1024 &&
+                        started.TrySetResult() && !release.Wait(TimeSpan.FromSeconds(45)))
+                        throw new TimeoutException("The browse operation did not release the transfer.");
                 });
-                try { await Transfer(options, progress, cancel.Token); }
-                catch (OperationCanceledException) when (cancel.IsCancellationRequested) { return; }
-                throw new InvalidOperationException("The first attempt finished before the requested interruption.");
+                var transfer = Task.Run(() => Transfer(options, progress, cancel.Token));
+                try
+                {
+                    var first = await Task.WhenAny(started.Task, transfer).WaitAsync(TimeSpan.FromSeconds(45));
+                    if (first == transfer)
+                    {
+                        await transfer;
+                        throw new InvalidOperationException("Transfer finished before reaching the pause point.");
+                    }
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                    var entries = await session.Sftp.ListDirectoryAsync("/browse-check", timeout.Token);
+                    Require(entries.Any(entry => entry.Name == "확인.txt") && !transfer.IsCompleted,
+                        "Listing another directory must finish while the transfer owns its SFTP connection.");
+                    Console.WriteLine($"Listed an independent folder during {args[0]} via {args[1]}.");
+                }
+                finally
+                {
+                    cancel.Cancel();
+                    release.Set();
+                    try { await transfer; }
+                    catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }
+                }
+                return;
             }
 
             var result = await Transfer(options);

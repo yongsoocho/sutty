@@ -75,9 +75,10 @@ async def run_case(direction, local, remote_root, size, settings, forwards):
         )
         if await proc.wait() != 0:
             raise RuntimeError(f"{direction} {action} via {route} failed")
-        # The real terminal transport and SFTP use separate target connections.
-        if route == "jump" and len(forwards) - count < 2:
-            raise AssertionError("The gateway did not forward both target connections")
+        # The held transfer and its overlapping browse must both use the same gateway as the shell.
+        minimum = 3 if action == "interrupt" else 2
+        if route == "jump" and len(forwards) - count < minimum:
+            raise AssertionError(f"Expected at least {minimum} target connections through the gateway")
         if route == "direct" and len(forwards) != count:
             raise AssertionError("Direct unexpectedly used the gateway")
         staged = list(destination.parent.glob(destination.name + ".sutty-*.part"))
@@ -94,6 +95,9 @@ async def run_case(direction, local, remote_root, size, settings, forwards):
 async def main(root):
     remote_root = root / "target-files"
     remote_root.mkdir()
+    browse = remote_root / "browse-check"
+    browse.mkdir()
+    (browse / "확인.txt").write_text("ready", encoding="utf-8")
     keys = [asyncssh.generate_private_key("ssh-ed25519") for _ in range(2)]
     target_secret, gateway_secret = (secrets.token_urlsafe(32) for _ in range(2))
     forwards = []

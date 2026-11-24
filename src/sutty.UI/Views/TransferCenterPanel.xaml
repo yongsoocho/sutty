@@ -90,6 +90,9 @@
                 Foreground="{ThemeResource TextFaint}"
                 TextTrimming="CharacterEllipsis" />
             <TextBlock
+                x:Name="OutcomeText" VerticalAlignment="Center" TextWrapping="Wrap"
+                FontSize="10.5" Foreground="{ThemeResource TextMuted}" />
+            <TextBlock
                 x:Name="CountText"
                 VerticalAlignment="Center"
                 FontFamily="Cascadia Mono, Consolas"
@@ -242,6 +245,8 @@
                                 <controls:WrapPanel
                                     Grid.Row="4"
                                     Spacing="6">
+                                    <Button Padding="10,5" Click="OpenLocalFolder_Click"
+                                        Content="{x:Bind h:Loc.T('로컬 폴더 열기', 'Open local folder')}" />
                                     <Button
                                         MinWidth="0"
                                         Padding="10,5"

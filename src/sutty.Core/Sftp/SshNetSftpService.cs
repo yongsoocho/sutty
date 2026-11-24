@@ -4,8 +4,8 @@ using sutty.Core.Models;
 namespace sutty.Core.Sftp;
 
 /// <summary>
-/// SSH.NET SftpClient wrapper. SSH.NET does not promise that one SftpClient can be
-/// called concurrently, so every list/transfer/mutation is serialized by one gate.
+/// Each SSH.NET client has one owner at a time. Interactive listings can use a
+/// separately verified read-only connection while a transfer owns the main client.
 /// </summary>
 public sealed partial class SshNetSftpService : ISftpService
 {
@@ -15,14 +15,20 @@ public sealed partial class SshNetSftpService : ISftpService
     private string _checkpointScope;
     internal void BindVerifiedEndpoint(string identity) => _checkpointScope = identity;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
+    private readonly SemaphoreSlim _browseGate = new(1, 1);
+    private readonly Func<CancellationToken, Task<SftpClient>>? _openBrowseClient;
+    private CancellationTokenSource _browseLifetime = new();
+    private SftpClient? _browseClient;
 
     public SshNetSftpService(
         Func<SftpClient?> clientProvider,
         string checkpointScope = "default",
         Func<CancellationToken, Task<SftpClient?>>? reconnectAsync = null,
-        SftpTransferCheckpointStore? checkpointStore = null)
+        SftpTransferCheckpointStore? checkpointStore = null,
+        Func<CancellationToken, Task<SftpClient>>? openBrowseClient = null)
     {
         _clientProvider = clientProvider;
+        _openBrowseClient = openBrowseClient;
         _checkpointScope = string.IsNullOrWhiteSpace(checkpointScope) ? "default" : checkpointScope;
         _reconnectAsync = reconnectAsync;
         _checkpointStore = checkpointStore ?? SftpTransferCheckpointStore.Default;
@@ -33,26 +39,54 @@ public sealed partial class SshNetSftpService : ISftpService
             ? client
             : throw new InvalidOperationException("SFTP 채널이 연결되어 있지 않습니다.");
 
-    public Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(
-        string path, CancellationToken ct = default) => SerializedAsync<IReadOnlyList<RemoteFileEntry>>(() =>
+    public async Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(
+        string path, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Client.ListDirectory(path)
-            .Where(f => f.Name is not "." and not "..")
-            .Select(f => new RemoteFileEntry
+        // Ordinary navigation needs no additional SSH authentication. On contention,
+        // only listing uses the auxiliary connection; it never writes or retries a job.
+        if (_openBrowseClient is null || _operationGate.Wait(0, ct))
+        {
+            if (_openBrowseClient is null) await _operationGate.WaitAsync(ct).ConfigureAwait(false);
+            try { return await ReadDirectoryAsync(Client, path, ct).ConfigureAwait(false); }
+            finally { _operationGate.Release(); }
+        }
+
+        await _browseGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _browseLifetime.Token);
+            linked.Token.ThrowIfCancellationRequested();
+            if (_browseClient is not { IsConnected: true })
             {
-                Name = f.Name,
-                FullPath = f.FullName,
-                IsDirectory = f.IsDirectory,
-                IsSymbolicLink = f.IsSymbolicLink,
-                IsRegularFile = f.IsRegularFile,
-                Size = f.Length,
-                Modified = f.LastWriteTime,
-            })
-            .OrderByDescending(e => e.IsDirectory)
-            .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }, ct);
+                _browseClient?.Dispose();
+                _browseClient = null;
+                _browseClient = await _openBrowseClient(linked.Token).ConfigureAwait(false);
+            }
+            return await ReadDirectoryAsync(_browseClient, path, linked.Token).ConfigureAwait(false);
+        }
+        finally { _browseGate.Release(); }
+    }
+
+    private static async Task<IReadOnlyList<RemoteFileEntry>> ReadDirectoryAsync(
+        SftpClient client, string path, CancellationToken ct)
+    {
+        var entries = new List<RemoteFileEntry>();
+        await foreach (var file in client.ListDirectoryAsync(path, ct).ConfigureAwait(false))
+        {
+            if (file.Name is "." or "..") continue;
+            DirectoryListingLimit.CheckNext(entries.Count);
+            entries.Add(new RemoteFileEntry
+            {
+                Name = file.Name, FullPath = file.FullName, IsDirectory = file.IsDirectory,
+                IsSymbolicLink = file.IsSymbolicLink, IsRegularFile = file.IsRegularFile,
+                Size = file.Length, Modified = file.LastWriteTimeUtc,
+            });
+        }
+        return entries.OrderByDescending(entry => entry.IsDirectory)
+            .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(entry => entry.Name, StringComparer.Ordinal).ToArray();
+    }
 
     public Task UploadFileAsync(string localPath, string remoteDirectory, bool overwrite = false,
         IProgress<double>? progress = null, CancellationToken ct = default) => SerializedAsync(() =>
@@ -239,7 +273,22 @@ public sealed partial class SshNetSftpService : ISftpService
         await _operationGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            await Task.Run(shutdown).ConfigureAwait(false);
+            await _browseLifetime.CancelAsync().ConfigureAwait(false);
+            await _browseGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await Task.Run(() =>
+                {
+                    try { _browseClient?.Dispose(); }
+                    finally { _browseClient = null; shutdown(); }
+                }).ConfigureAwait(false);
+            }
+            finally
+            {
+                _browseLifetime.Dispose();
+                _browseLifetime = new();
+                _browseGate.Release();
+            }
         }
         finally
         {
