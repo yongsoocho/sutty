@@ -47,21 +47,32 @@ function Assert-Installed([version]$Version) {
 
 function Test-Window($Package) {
     $exe = Join-Path $Package.InstallLocation 'sutty.UI.exe'
-    $app = Start-Process -FilePath $exe -PassThru
+    $app = $null
+    $start = Get-Date
+    Start-Process explorer.exe -ArgumentList ("shell:AppsFolder\" + $Package.PackageFamilyName + '!App')
     try {
         $deadline = [DateTime]::UtcNow.AddSeconds(45)
         do {
             Start-Sleep -Milliseconds 250
-            $app.Refresh()
-            if ($app.HasExited) { throw 'Sutty exited before showing a window.' }
-        } while ($app.MainWindowHandle -eq [IntPtr]::Zero -and [DateTime]::UtcNow -lt $deadline)
-        if ($app.MainWindowHandle -eq [IntPtr]::Zero) { throw 'Sutty did not show a native window.' }
+            if (-not $app) {
+                $app = Get-Process -Name 'sutty.UI' -ErrorAction SilentlyContinue | Where-Object {
+                    $_.StartTime -ge $start -and $_.Path -eq $exe
+                } | Select-Object -First 1
+            }
+            if ($app) {
+                $app.Refresh()
+                if ($app.HasExited) { throw 'Sutty exited before showing a window.' }
+            }
+        } while ((-not $app -or $app.MainWindowHandle -eq [IntPtr]::Zero) -and [DateTime]::UtcNow -lt $deadline)
+        if (-not $app -or $app.MainWindowHandle -eq [IntPtr]::Zero) { throw 'Sutty did not show its installed native window.' }
         if (-not $app.CloseMainWindow() -or -not $app.WaitForExit(15000) -or $app.ExitCode -ne 0) {
             throw 'The Sutty window did not close cleanly.'
         }
     } finally {
-        if (-not $app.HasExited) { $app.Kill(); $app.WaitForExit() }
-        $app.Dispose()
+        if ($app) {
+            if (-not $app.HasExited) { $app.Kill(); $app.WaitForExit() }
+            $app.Dispose()
+        }
     }
 }
 

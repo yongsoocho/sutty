@@ -146,7 +146,7 @@ The manual `Signed MSIX release` workflow requires these GitHub secrets:
 - `SUTTY_MSIX_CERT_BASE64`: Base64-encoded production code-signing PFX.
 - `SUTTY_MSIX_CERT_PASSWORD`: PFX password.
 
-It patches the package publisher to the certificate subject, builds separate x64 and ARM64 MSIX packages, signs and verifies each package, and emits `Sutty-x64.appinstaller` and `Sutty-arm64.appinstaller`. `package_version` controls the installed package. `appinstaller_version` is deployment metadata and must always increase, including rollback releases. Publish each generated MSIX with its matching descriptor at the HTTPS directory supplied to the workflow.
+It patches the package publisher to the certificate subject, builds separate x64 and ARM64 MSIX packages, signs and verifies each package, and emits `Sutty-x64.appinstaller` and `Sutty-arm64.appinstaller`. `package_version` controls the installed package. `appinstaller_version` is deployment metadata and must always increase, including rollback releases. The workflow verifies the descriptor against the signed package manifest and the configured HTTPS file locations, and hashes both files. Publish the matching pair at that location.
 
 Rollback procedure:
 

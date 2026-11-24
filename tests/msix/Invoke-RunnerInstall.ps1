@@ -53,6 +53,24 @@ try {
     }
     $previous = Join-Path $testRoot 'Sutty-1.0.0.0-x64.msix'
     $candidate = Join-Path $testRoot 'Sutty-1.0.1.0-x64.msix'
+    # The same check runs on the real signed bundle before it becomes an artifact.
+    $base = 'https://example.invalid/sutty'
+    $descriptor = Join-Path $testRoot 'Sutty-x64.appinstaller'
+    [xml]$xml = @"
+<AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2021" Version="1.0.1.0" Uri="$base/Sutty-x64.appinstaller">
+  <MainPackage Name="$($manifest.Package.Identity.Name)" Publisher="$subject" ProcessorArchitecture="x64"
+      Version="1.0.1.0" Uri="$base/Sutty-1.0.1.0-x64.msix"/>
+</AppInstaller>
+"@
+    $xml.Save($descriptor)
+    $check = Join-Path $PSScriptRoot '..\..\.github\scripts\Assert-SignedInstaller.ps1'
+    & $check -Package $candidate -Descriptor $descriptor -ReleaseBase $base -Publisher $subject -Architecture x64
+    $xml.AppInstaller.MainPackage.Version = '1.0.0.0'
+    $xml.Save($descriptor)
+    $mismatchRejected = $false
+    try { & $check -Package $candidate -Descriptor $descriptor -ReleaseBase $base -Publisher $subject -Architecture x64 }
+    catch { $mismatchRejected = $_.Exception.Message -eq 'App Installer and the actual signed package do not match.' }
+    if (-not $mismatchRejected) { throw 'An outdated descriptor must be rejected.' }
     & "$PSScriptRoot\Test-SignedInstall.ps1" -PreviousPackage $previous -CandidatePackage $candidate `
         -PreviousSha256 (Get-FileHash -LiteralPath $previous).Hash -CandidateSha256 (Get-FileHash -LiteralPath $candidate).Hash `
         -ExpectedPublisher $cert.Subject | Format-List
