@@ -377,3 +377,8 @@ jobs:
           name: sutty-win-x64-unsigned
           path: artifacts/release-win-x64
           if-no-files-found: error
+
+
+      - name: Exercise signed x64 installation, upgrade, rollback and uninstall on a disposable runner
+        shell: powershell
+        run: .\tests\msix\Invoke-RunnerInstall.ps1

@@ -159,6 +159,19 @@ The descriptor opts into updates on launch and background checks, and permits a 
 
 Schema references: [Create an App Installer file manually](https://learn.microsoft.com/en-us/windows/msix/app-installer/how-to-create-appinstaller-file) and [ForceUpdateFromAnyVersion](https://learn.microsoft.com/en-us/uwp/schemas/appinstallerschema/element-s4-forceupdatefromanyversion).
 
+### Windows x64 installation canary / 설치 점검
+
+On a clean Windows 11 24H2+ test profile, download the previous and candidate signed x64 packages from the approved release location. Obtain their expected SHA-256 values and publisher from the release owner. In Windows PowerShell, run:
+
+```powershell
+.\tests\msix\Test-SignedInstall.ps1 -PreviousPackage $previousMsix -CandidatePackage $candidateMsix `
+    -PreviousSha256 $previousHash -CandidateSha256 $candidateHash -ExpectedPublisher $publisher -LaunchWindow
+```
+
+The script checks package identity and hashes, installs both versions in order, rolls back, checks a marker under the external Sutty data directory, and uninstalls. With `-LaunchWindow` it starts and closes the installed native window at each version. Use a disposable profile; existing installations or user data stop the run. The hosted-runner test uses a short-lived test publisher. Production HTTPS update discovery, real publisher trust, actual saved-host/vault retention and user-observed desktop behavior still require the two approved artifacts on a team machine.
+
+승인된 두 설치본의 해시와 발행자를 독립적으로 확인하고 깨끗한 Windows 11 시험 계정에서 실행합니다. 설치→업데이트→이전 버전 복귀→제거와 외부 데이터 표식 보존을 확인합니다. 실제 게시 URL에서의 자동 업데이트, 호스트·자격증명 보존, 팀 인증과 한글 IME·Narrator 사용 경험은 그 PC에서 직접 확인합니다.
+
 ## Evidence record / 증거 기록
 
 No accepted live or package evidence bundle is recorded in the current tree. This statement is deliberately not a placeholder `Pass`.

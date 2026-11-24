@@ -20,29 +20,7 @@ internal static class LoopbackTransferTests
         var length = long.Parse(args[4], CultureInfo.InvariantCulture);
         var savedOffset = long.Parse(args[5], CultureInfo.InvariantCulture);
         var remote = "/" + Path.GetFileName(local);
-        var targetPort = int.Parse(Setting("TARGET_PORT"), CultureInfo.InvariantCulture);
-        var gatewayPort = int.Parse(Setting("GATEWAY_PORT"), CultureInfo.InvariantCulture);
-        var trusted = new Dictionary<int, string>
-        {
-            [targetPort] = Setting("TARGET_KEY"),
-            [gatewayPort] = Setting("GATEWAY_KEY"),
-        };
-        var session = new SshNetSession(new SshConnectionInfo
-        {
-            Host = "127.0.0.1", Port = targetPort, Username = "target",
-            AuthMethod = SshAuthMethod.Password, Password = Setting("TARGET_PASSWORD"),
-            Route = viaJump ? new ConnectionRoute
-            {
-                Type = ConnectionRouteType.SshJump, Id = "fixture-gateway",
-                Host = "127.0.0.1", Port = gatewayPort, Username = "gateway",
-                AuthMethod = SshAuthMethod.Password, Password = Setting("GATEWAY_PASSWORD"),
-            } : new ConnectionRoute(),
-            HostKeyPromptAsync = (key, _) => Task.FromResult(
-                key.State == HostKeyTrustState.Unknown &&
-                trusted.TryGetValue(key.Endpoint.Port, out var expected) &&
-                key.PresentedKey.Sha256Fingerprint == expected
-                    ? HostKeyDecision.TrustOnce : HostKeyDecision.Cancel),
-        });
+        var session = CreateSession(viaJump);
         try
         {
             await session.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(45));
@@ -110,7 +88,41 @@ internal static class LoopbackTransferTests
         finally { await session.DisconnectAsync(); }
     }
 
-    private static string Setting(string name) => Environment.GetEnvironmentVariable("SUTTY_LOOPBACK_" + name)
+    internal static SshNetSession CreateSession(bool viaJump, string username = "target",
+        SshAuthMethod authentication = SshAuthMethod.Password)
+    {
+        var targetPort = int.Parse(Setting("TARGET_PORT"), CultureInfo.InvariantCulture);
+        var gatewayPort = int.Parse(Setting("GATEWAY_PORT"), CultureInfo.InvariantCulture);
+        var trusted = new Dictionary<int, string>
+        {
+            [targetPort] = Setting("TARGET_KEY"),
+            [gatewayPort] = Setting("GATEWAY_KEY"),
+        };
+        return new SshNetSession(new SshConnectionInfo
+        {
+            Host = "127.0.0.1", Port = targetPort, Username = username,
+            AuthMethod = authentication, Password = authentication == SshAuthMethod.Password ? Setting("TARGET_PASSWORD") : "",
+            PrivateKeyPath = authentication == SshAuthMethod.PublicKey ? Setting("CLIENT_KEY_FILE") : "",
+            KeyboardInteractivePromptAsync = (challenge, _) =>
+            {
+                Require(challenge.Prompts is [{ IsEchoed: false, Request: "Verification code: " }], "Unexpected authentication prompt.");
+                return Task.FromResult<IReadOnlyList<string>?>([Setting("TARGET_CODE")]);
+            },
+            Route = viaJump ? new ConnectionRoute
+            {
+                Type = ConnectionRouteType.SshJump, Id = "fixture-gateway",
+                Host = "127.0.0.1", Port = gatewayPort, Username = "gateway",
+                AuthMethod = SshAuthMethod.Password, Password = Setting("GATEWAY_PASSWORD"),
+            } : new ConnectionRoute(),
+            HostKeyPromptAsync = (key, _) => Task.FromResult(
+                key.State == HostKeyTrustState.Unknown &&
+                trusted.TryGetValue(key.Endpoint.Port, out var expected) &&
+                key.PresentedKey.Sha256Fingerprint == expected
+                    ? HostKeyDecision.TrustOnce : HostKeyDecision.Cancel),
+        });
+    }
+
+    internal static string Setting(string name) => Environment.GetEnvironmentVariable("SUTTY_LOOPBACK_" + name)
         ?? throw new InvalidOperationException($"Missing loopback fixture setting {name}.");
 
     private static void Require(bool condition, string message)

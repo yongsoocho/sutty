@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import os
+from functools import partial
 from pathlib import Path
 import secrets
 from tempfile import TemporaryDirectory
@@ -33,6 +34,43 @@ class Endpoint(asyncssh.SSHServer):
             self.forwards.append(dest_port)
             return True
         return False
+
+
+class OperatorTarget(Endpoint):
+    def __init__(self, password, client_key, code, echo_port):
+        super().__init__("target", password)
+        self.client_key = client_key
+        self.code = code
+        self.echo_port = echo_port
+
+    def public_key_auth_supported(self):
+        return True
+
+    def validate_public_key(self, username, key):
+        return username == "key-user" and key == self.client_key
+
+    def kbdint_auth_supported(self):
+        return True
+
+    def get_kbdint_challenge(self, username, lang, submethods):
+        if username != "otp-user":
+            return False
+        return ("Pilot", "", "", [("Verification code: ", False)])
+
+    def validate_kbdint_response(self, username, responses):
+        return username == "otp-user" and len(responses) == 1 and secrets.compare_digest(responses[0], self.code)
+
+    def connection_requested(self, dest_host, dest_port, orig_host, orig_port):
+        return (dest_host, dest_port) == (LOOPBACK, self.echo_port)
+
+
+async def echo_line(reader, writer):
+    try:
+        writer.write(await asyncio.wait_for(reader.readexactly(4), timeout=15))
+        await writer.drain()
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 
 def destination_command(process):
@@ -101,8 +139,16 @@ async def main(root):
     keys = [asyncssh.generate_private_key("ssh-ed25519") for _ in range(2)]
     target_secret, gateway_secret = (secrets.token_urlsafe(32) for _ in range(2))
     forwards = []
-    async with asyncssh.listen(
-        LOOPBACK, 0, server_factory=lambda: Endpoint("target", target_secret),
+    client_key = asyncssh.generate_private_key("ssh-ed25519")
+    client_key_file = root / "pilot.key"
+    client_key.write_private_key(client_key_file)
+    code = secrets.token_hex(6)
+    for route in ("direct", "jump"):
+        (remote_root / f"edit-{route}.txt").write_bytes(b"first")
+    echo = await asyncio.start_server(echo_line, LOOPBACK, 0)
+    echo_port = echo.sockets[0].getsockname()[1]
+    async with echo, asyncssh.listen(
+        LOOPBACK, 0, server_factory=partial(OperatorTarget, target_secret, client_key.convert_to_public(), code, echo_port),
         server_host_keys=[keys[0]], process_factory=destination_command,
         sftp_factory=lambda channel: asyncssh.SFTPServer(channel, chroot=str(remote_root)),
     ) as target:
@@ -116,6 +162,17 @@ async def main(root):
                 "TARGET_PASSWORD": target_secret, "GATEWAY_PASSWORD": gateway_secret,
                 "TARGET_KEY": keys[0].get_fingerprint(), "GATEWAY_KEY": keys[1].get_fingerprint(),
             }
+            operator_env = settings | {"CLIENT_KEY_FILE": client_key_file, "TARGET_CODE": code, "ECHO_PORT": echo_port}
+            env = os.environ | {"SUTTY_LOOPBACK_" + key: str(value) for key, value in operator_env.items()}
+            for route in ("direct", "jump"):
+                process = await asyncio.create_subprocess_exec(
+                    "dotnet", "run", "--project", str(PROJECT), "--configuration", "Debug", "--no-build",
+                    "--no-restore", "--", "--loopback-operator", route, str(root), env=env,
+                )
+                if await process.wait() != 0:
+                    raise RuntimeError(f"Operator acceptance failed via {route}")
+                if (remote_root / f"edit-{route}.txt").read_bytes() != b"other":
+                    raise AssertionError("A conflicting edit changed the remote file")
             await run_case("upload", root / "upload.bin", remote_root, 1024 * MIB, settings, forwards)
             await run_case("download", root / "download.bin", remote_root, 16 * MIB, settings, forwards)
 
