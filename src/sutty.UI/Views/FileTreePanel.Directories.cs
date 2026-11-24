@@ -24,6 +24,9 @@ public sealed partial class FileTreePanel
     }
 
     private sealed record DirectoryBranch(string Path);
+    private const int DirectoryPageSize = 256;
+    private sealed record DirectoryPage((string Name, string Path)[] Entries, int Offset);
+    private readonly ConditionalWeakTable<TreeViewNode, DirectoryPage> _directoryPages = new();
     private readonly ConditionalWeakTable<ISshSession, BrowserLocation> _locations = new();
     private readonly ConditionalWeakTable<TreeViewNode, DirectoryBranch> _directoryBranches = new();
     private readonly HashSet<TreeViewNode> _loadingDirectories = [];
@@ -98,12 +101,9 @@ public sealed partial class FileTreePanel
             if (!Current()) return;
             node.Children.Clear();
             node.HasUnrealizedChildren = false;
-            foreach (var (name, path) in children.OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                var child = DirectoryNode(name, path);
-                node.Children.Add(child);
-                if (expanded.Contains(path)) child.IsExpanded = true;
-            }
+            var ordered = children.OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(entry => entry.Name, StringComparer.Ordinal).ToArray();
+            AppendDirectoryPage(node, new DirectoryPage(ordered, 0), expanded);
             SelectLoadedDirectory(sender, local ? _location.LocalPath : _location.RemotePath);
         }
         catch (OperationCanceledException) { }
@@ -117,6 +117,23 @@ public sealed partial class FileTreePanel
         finally { _loadingDirectories.Remove(node); }
     }
 
+    private void AppendDirectoryPage(TreeViewNode parent, DirectoryPage page, HashSet<string> expanded)
+    {
+        var end = Math.Min(page.Offset + DirectoryPageSize, page.Entries.Length);
+        for (var index = page.Offset; index < end; index++)
+        {
+            var (name, path) = page.Entries[index];
+            var child = DirectoryNode(name, path);
+            parent.Children.Add(child);
+            if (expanded.Contains(path)) child.IsExpanded = true;
+        }
+        if (end >= page.Entries.Length) return;
+        var count = Math.Min(DirectoryPageSize, page.Entries.Length - end);
+        var more = new TreeViewNode { Content = Loc.T($"다음 폴더 {count}개 표시", $"Show next {count} folders") };
+        _directoryPages.Add(more, page with { Offset = end });
+        parent.Children.Add(more);
+    }
+
     private void DirectoryTree_Collapsed(TreeView sender, TreeViewCollapsedEventArgs args)
     {
         if (!_clearingDirectoryRoot && args.Node is { } node && _directoryBranches.TryGetValue(node, out var branch))
@@ -125,7 +142,16 @@ public sealed partial class FileTreePanel
 
     private async void DirectoryTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
     {
-        if (args.InvokedItem is not TreeViewNode node || !_directoryBranches.TryGetValue(node, out var branch)) return;
+        if (args.InvokedItem is not TreeViewNode node) return;
+        if (_directoryPages.TryGetValue(node, out var page) && node.Parent is { } parent)
+        {
+            parent.Children.Remove(node);
+            var local = sender == LocalDirectoryTree;
+            AppendDirectoryPage(parent, page, local ? _location.LocalExpanded : _location.RemoteExpanded);
+            SelectLoadedDirectory(sender, local ? _location.LocalPath : _location.RemotePath);
+            return;
+        }
+        if (!_directoryBranches.TryGetValue(node, out var branch)) return;
         if (sender == LocalDirectoryTree) await NavigateLocalAsync(branch.Path);
         else await NavigateToPathAsync(branch.Path);
     }

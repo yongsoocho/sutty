@@ -32,6 +32,7 @@ Directory.CreateDirectory(scratch);
 try
 {
     TransferSelectionTests.Run(scratch, Assert);
+    DirectoryComparisonTests.Run(Assert);
     var source = Path.Combine(scratch, "source.txt");
     var remote = Path.Combine(scratch, "remote");
     var downloads = Path.Combine(scratch, "downloads");

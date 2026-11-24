@@ -5,6 +5,24 @@ internal static class LocalFileBrowserSelfTests
 {
     public static async Task RunAsync(string scratch)
     {
+        var snapshot = new BrowserItemCollection<int>();
+        var resets = 0;
+        snapshot.CollectionChanged += (_, change) =>
+        {
+            Assert(change.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset, "one directory snapshot is published");
+            resets++;
+        };
+        var maximum = sutty.Core.Sftp.DirectoryListingLimit.MaximumEntries;
+        snapshot.ReplaceWith(Enumerable.Range(0, maximum));
+        Assert(snapshot.Count == maximum && snapshot[^1] == maximum - 1 && resets == 1,
+            "a 100,000-entry directory exposes every selectable row with one list notification");
+        sutty.Core.Sftp.DirectoryListingLimit.CheckNext(maximum - 1);
+        try
+        {
+            sutty.Core.Sftp.DirectoryListingLimit.CheckNext(maximum);
+            throw new InvalidOperationException("An oversized listing must fail instead of presenting a partial directory.");
+        }
+        catch (IOException) { }
         var root = Path.Combine(scratch, "local-browser");
         var folder = Path.Combine(root, "folder-a");
         Directory.CreateDirectory(folder);
@@ -166,6 +184,13 @@ internal static class LocalFileBrowserSelfTests
         var path = Path.Combine(scratch, "favorite-folders.json");
         var store = new sutty.Setting.RemotePathFavoritesStore(path);
         Assert(store.GetPaths("profile:a").Count == 0, "favorites start empty without a settings migration");
+        var local = Path.GetFullPath(Path.Combine(scratch, "팀 작업"));
+        store.SetLocalFavorite(local, true);
+        store.SetLocalFavorite(local + Path.DirectorySeparatorChar, true);
+        Assert(new sutty.Setting.RemotePathFavoritesStore(path).GetLocalPaths().SequenceEqual([local]),
+            "local bookmarks deduplicate and survive reload");
+        store.SetLocalFavorite(local, false);
+        Assert(store.GetLocalPaths().Count == 0, "local bookmark removal persists");
         store.SetFavorite("profile:a", "/var/한글 공백", true);
         store.SetFavorite("profile:a", "/var/한글 공백", true);
         store.SetFavorite("profile:b", "/srv/project", true);

@@ -30,7 +30,7 @@ public sealed partial class FileTreePanel : UserControl
     public event EventHandler<string>? OpenTerminalHereRequested;
 
     public ObservableCollection<FileNode> RootNodes { get; } = [];
-    public ObservableCollection<FileNode> RemoteItems { get; } = [];
+    public BrowserItemCollection<FileNode> RemoteItems { get; } = [];
     public ObservableCollection<SftpTransferItemVm> Transfers { get; } = [];
     public LocalFileBrowserViewModel LocalBrowser { get; } =
         new(new LocalFileBrowserService());
@@ -424,16 +424,12 @@ public sealed partial class FileTreePanel : UserControl
     private static void PopulateChildren(
         FileNode parent, IReadOnlyList<RemoteFileEntry> entries, int sessionVersion)
     {
-        parent.Children.Clear();
-        foreach (var entry in entries)
+        parent.Children.ReplaceWith(entries.Select(entry => new FileNode(entry)
         {
-            parent.Children.Add(new FileNode(entry)
-            {
-                Parent = parent,
-                SessionVersion = sessionVersion,
-                HasUnrealizedChildren = entry.IsDirectory,
-            });
-        }
+            Parent = parent,
+            SessionVersion = sessionVersion,
+            HasUnrealizedChildren = entry.IsDirectory,
+        }));
     }
 
     private async Task LoadChildrenAsync(FileNode directory)
@@ -804,6 +800,7 @@ public sealed partial class FileTreePanel : UserControl
             : Loc.T($"{remoteCount}개 선택", $"{remoteCount} selected");
 
         var remoteReady = _isAvailable && !LoadingRing.IsActive && _sftp is not null && RootNodes.Count > 0;
+        CompareFoldersButton.IsEnabled = remoteReady && !LocalBrowser.IsLoading && !string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath);
         UploadSelectedButton.IsEnabled = remoteReady && !LocalBrowser.IsLoading && localCount > 0;
         DownloadSelectedButton.IsEnabled = remoteReady && remoteCount > 0 &&
             !LocalBrowser.IsLoading && !string.IsNullOrWhiteSpace(LocalBrowser.CurrentPath);

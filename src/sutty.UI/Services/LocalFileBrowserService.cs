@@ -156,6 +156,7 @@ public sealed class LocalFileBrowserService : ILocalFileBrowserService
             foreach (var item in directory.EnumerateFileSystemInfos())
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                sutty.Core.Sftp.DirectoryListingLimit.CheckNext(entries.Count);
                 try
                 {
                     var isDirectory = item is DirectoryInfo;

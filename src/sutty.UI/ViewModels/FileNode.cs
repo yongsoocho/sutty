@@ -3,7 +3,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using sutty.Core.Models;
 using sutty.Core.Sftp;
-using System.Collections.ObjectModel;
 using System.Threading;
 
 namespace sutty.UI.ViewModels;
@@ -17,7 +16,7 @@ public sealed partial class FileNode : ObservableObject
     public RemoteFileEntry Entry { get; }
     public FileNode? Parent { get; set; }
     public int SessionVersion { get; set; }
-    public ObservableCollection<FileNode> Children { get; } = [];
+    public BrowserItemCollection<FileNode> Children { get; } = [];
 
     // [ObservableProperty]는 WinUI3에서 AOT 경고(MVVMTK0045)가 있어 수동 SetProperty 사용
 
