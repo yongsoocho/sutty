@@ -71,9 +71,12 @@ try {
     try { & $check -Package $candidate -Descriptor $descriptor -ReleaseBase $base -Publisher $subject -Architecture x64 }
     catch { $mismatchRejected = $_.Exception.Message -eq 'App Installer and the actual signed package do not match.' }
     if (-not $mismatchRejected) { throw 'An outdated descriptor must be rejected.' }
+    $sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    $desktop = @(Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $sessionId }).Count -gt 0
+    if (-not $desktop) { Write-Host 'Native window requires an interactive Windows desktop; running package registration checks.' }
     & "$PSScriptRoot\Test-SignedInstall.ps1" -PreviousPackage $previous -CandidatePackage $candidate `
         -PreviousSha256 (Get-FileHash -LiteralPath $previous).Hash -CandidateSha256 (Get-FileHash -LiteralPath $candidate).Hash `
-        -ExpectedPublisher $cert.Subject | Format-List
+        -ExpectedPublisher $cert.Subject -LaunchWindow:$desktop | Format-List
 } finally {
     if ($cert) {
         foreach ($store in @('Cert:\LocalMachine\TrustedPeople', 'Cert:\CurrentUser\My')) {
