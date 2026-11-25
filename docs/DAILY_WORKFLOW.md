@@ -36,6 +36,8 @@ A 서버 터미널에서 `ssh B`를 실행해도 Files는 A에 연결된 상태�
 
 전송 중에도 다른 원격 폴더로 이동할 수 있습니다. **로컬 폴더**에서 이 PC의 즐겨찾기를 관리하고 탐색기를 엽니다. **폴더 비교**는 두 패널에 보이는 이름·크기·수정 시각(초)을 비교합니다. 결과를 패널에서 선택한 다음 방향을 확인하고 전송 버튼을 누르세요. 하위 폴더 내용은 비교 대상에서 제외됩니다. 폴더 트리는 한 번에 256개씩 펼치며 100,000개를 넘는 디렉터리는 하위 경로를 직접 입력해야 합니다.
 
+SFTP로 파일을 주고받으면 원본의 수정 시각을 초 단위로 보존합니다. 원격 파일을 덮어쓰거나 외부 편집기로 저장할 때는 기존 Unix 권한·소유자·그룹을 임시 파일에 적용한 뒤 확인합니다. 서버가 속성을 거부하면 기존 파일을 유지하고 전송 오류를 표시합니다.
+
 ## 한 줄 로컬 연결
 
 **한 줄 연결**은 Home의 새 연결 아래 독립 카드입니다. 저장한 명령은 **Hosts 즐겨찾기**에 나타납니다. 같은 명령을 다시 저장하면 기존 항목을 갱신하며, 예전 명령 즐겨찾기는 한 번만 이전하고 원본 데이터는 보존합니다. 외부 명령 즐겨찾기는 공유 JSON과 작업 공간 자동 복원에서 제외됩니다. 호스트 카드의 빈 별은 즐겨찾기에 추가하고 채운 별은 해제합니다. 최근 호스트 접속 기록은 Hosts에 남아 있습니다.
@@ -106,6 +108,8 @@ The right side reuses the existing **command library**, including search, add/de
 Transfers and `Alt+7` follow the selected shell: the same SSH session's Local/Remote Files or the current directory reported by a PowerShell/CMD prompt. External tabs, missing shells, and unknown local paths retain an explicitly labeled local PC browser without choosing another server. Browsing locally does not change the shell directory; **Current shell folder** resumes following it once available. Directly launched SSH/Multipass programs are terminal-only: remote Files/Tunnels are not integrated. The connection button opens Home for a separate integrated SSH connection.
 
 Folders remain browsable during a transfer. **Local folders** manages PC bookmarks and opens Explorer. **Compare folders** compares visible names, sizes and modification times to the second. Select a result in the panes and choose the transfer direction. The comparison is shallow. The folder tree expands in groups of 256. Enter a subfolder path directly for directories exceeding 100,000 entries.
+
+SFTP transfers preserve the source file's modification time to the second. When you overwrite a remote file or save an external edit, Sutty verifies the original Unix mode, owner and group on the staged file before replacing the destination. If the server declines the attributes, the transfer reports an error and keeps the existing file.
 
 ### One-line local connections
 

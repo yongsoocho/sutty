@@ -94,11 +94,11 @@ public sealed partial class SshNetSftpService : ISftpService
         var client = Client;
         var remotePath = RemotePath.Combine(remoteDirectory, Path.GetFileName(localPath));
         var temporaryPath = remotePath + $".sutty-{Guid.NewGuid():N}.part";
-        string? backupPath = null;
 
-        if (client.Exists(remotePath))
+        var existing = client.Exists(remotePath) ? client.GetAttributes(remotePath) : null;
+        if (existing is not null)
         {
-            if (client.GetAttributes(remotePath).IsDirectory)
+            if (existing.IsDirectory)
                 throw new IOException($"A remote directory already exists: {remotePath}");
             if (!overwrite)
                 throw new IOException($"Remote file already exists: {remotePath}");
@@ -107,9 +107,12 @@ public sealed partial class SshNetSftpService : ISftpService
         progress?.Report(0.0);
         try
         {
+            DateTime sourceTime;
             using (var local = File.OpenRead(localPath))
             using (var remote = client.Open(temporaryPath, FileMode.CreateNew, FileAccess.Write))
             {
+                SftpFileMetadata.ProtectStagedUpload(client, temporaryPath, existing);
+                sourceTime = File.GetLastWriteTimeUtc(local.SafeFileHandle);
                 var total = local.Length;
                 var buffer = new byte[81920];
                 int read;
@@ -121,49 +124,12 @@ public sealed partial class SshNetSftpService : ISftpService
                 }
             }
 
-            ct.ThrowIfCancellationRequested();
-            if (client.Exists(remotePath))
-            {
-                if (client.GetAttributes(remotePath).IsDirectory)
-                    throw new IOException($"A remote directory already exists: {remotePath}");
-                if (!overwrite)
-                    throw new IOException($"Remote file already exists: {remotePath}");
-
-                // Preserve the previous remote file until the completed temp file has
-                // successfully taken its name. A failed promote rolls the backup back.
-                backupPath = remotePath + $".sutty-{Guid.NewGuid():N}.backup";
-                client.RenameFile(remotePath, backupPath);
-            }
-
-            try
-            {
-                client.RenameFile(temporaryPath, remotePath);
-            }
-            catch
-            {
-                if (backupPath is not null && client.Exists(backupPath) && !client.Exists(remotePath))
-                    client.RenameFile(backupPath, remotePath);
-                throw;
-            }
-
-            if (backupPath is not null)
-            {
-                try { if (client.Exists(backupPath)) client.DeleteFile(backupPath); } catch { }
-            }
+            PromoteRemoteFile(client, temporaryPath, remotePath, overwrite, sourceTime, ct);
             progress?.Report(1.0);
         }
         catch
         {
-            try { if (client.Exists(temporaryPath)) client.DeleteFile(temporaryPath); } catch { }
-            if (backupPath is not null)
-            {
-                try
-                {
-                    if (client.Exists(backupPath) && !client.Exists(remotePath))
-                        client.RenameFile(backupPath, remotePath);
-                }
-                catch { }
-            }
+            DeleteRemoteIfExists(client, temporaryPath);
             throw;
         }
     }, ct);
@@ -178,6 +144,7 @@ public sealed partial class SshNetSftpService : ISftpService
         var temporaryPath = localPath + $".sutty-{Guid.NewGuid():N}.part";
         try
         {
+            var sourceTime = Client.GetAttributes(remotePath).LastWriteTimeUtc;
             using (var remote = Client.OpenRead(remotePath))
             using (var local = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
@@ -194,6 +161,8 @@ public sealed partial class SshNetSftpService : ISftpService
                 }
                 local.Flush(flushToDisk: true);
             }
+            ct.ThrowIfCancellationRequested();
+            SftpFileMetadata.SetLocalWriteTime(temporaryPath, sourceTime);
             ct.ThrowIfCancellationRequested();
             File.Move(temporaryPath, localPath, overwrite);
             progress?.Report(1.0);

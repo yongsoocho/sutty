@@ -29,7 +29,7 @@ public static class DirectoryComparison
         if (local.Kind == DirectoryEntryKind.Directory) return DirectoryMatch.Folder;
         if (local.Size != remote.Size) return DirectoryMatch.Different;
         if (local.Modified is not { } left || remote.Modified is not { } right) return DirectoryMatch.Unverified;
-        return left.ToUniversalTime().Ticks / TimeSpan.TicksPerSecond == right.ToUniversalTime().Ticks / TimeSpan.TicksPerSecond
+        return SftpFileMetadata.WholeSecondUtc(left) == SftpFileMetadata.WholeSecondUtc(right)
             ? DirectoryMatch.SameMetadata : DirectoryMatch.Different;
     }
 }

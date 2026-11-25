@@ -31,6 +31,25 @@ env:
   ContinuousIntegrationBuild: true
 
 jobs:
+  sftp-unix:
+    name: SFTP transfers and Unix permissions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build the SSH and SFTP integration tests
+        run: |
+          dotnet restore tests/sutty.LiveServer.SelfTest --locked-mode
+          dotnet build tests/sutty.LiveServer.SelfTest --no-restore
+      - name: Exercise Direct and Bastion transfers on a Unix filesystem
+        run: |
+          python3 -m venv "$RUNNER_TEMP/sutty-loopback"
+          "$RUNNER_TEMP/sutty-loopback/bin/pip" install --disable-pip-version-check asyncssh==2.24.1
+          "$RUNNER_TEMP/sutty-loopback/bin/python" tests/live-server/loopback_transfers.py
+
   terminal-tui:
     name: Vim and tmux keyboard integration
     runs-on: ubuntu-latest

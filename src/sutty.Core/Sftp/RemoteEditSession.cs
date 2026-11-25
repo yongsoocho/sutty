@@ -72,9 +72,10 @@ public sealed class RemoteEditSession
     /// <summary>An immutable upload source prevents editor saves from changing an in-flight upload.</summary>
     public async Task<RemoteEditUpload> CreateUploadAsync(CancellationToken ct = default)
     {
-        var bytes = await ReadStableTextAsync(LocalFilePath, ct);
+        var (bytes, modifiedUtc) = await ReadTextSnapshotAsync(LocalFilePath, ct);
         var path = Path.Combine(WorkingDirectory, $"upload-{Guid.NewGuid():N}.txt");
         await File.WriteAllBytesAsync(path, bytes, ct);
+        File.SetLastWriteTimeUtc(path, modifiedUtc);
         return new RemoteEditUpload(path, Hash(bytes), bytes.LongLength);
     }
 
@@ -158,7 +159,10 @@ public sealed class RemoteEditSession
         }
     }
 
-    public static async Task<byte[]> ReadStableTextAsync(string path, CancellationToken ct)
+    public static async Task<byte[]> ReadStableTextAsync(string path, CancellationToken ct) =>
+        (await ReadTextSnapshotAsync(path, ct)).Bytes;
+
+    private static async Task<(byte[] Bytes, DateTime ModifiedUtc)> ReadTextSnapshotAsync(string path, CancellationToken ct)
     {
         // FileShare.Read blocks in-place writes/replacement during this short bounded snapshot.
         await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
@@ -170,7 +174,7 @@ public sealed class RemoteEditSession
         var utf16 = bytes.Length >= 2 && ((bytes[0] == 0xff && bytes[1] == 0xfe) || (bytes[0] == 0xfe && bytes[1] == 0xff));
         if (!utf16 && bytes.Contains((byte)0))
             throw new IOException("Binary files must be downloaded instead of opened for text editing.");
-        return bytes;
+        return (bytes, File.GetLastWriteTimeUtc(input.SafeFileHandle));
     }
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));

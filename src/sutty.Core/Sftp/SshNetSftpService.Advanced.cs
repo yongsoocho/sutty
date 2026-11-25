@@ -1,5 +1,6 @@
 using Renci.SshNet;
 using Renci.SshNet.Common;
+using Renci.SshNet.Sftp;
 using sutty.Core.Models;
 using System.Diagnostics;
 using System.Net.Sockets;
@@ -445,6 +446,7 @@ public sealed partial class SshNetSftpService
         var offset = 0L;
 
         var replaceExistingDestination = false;
+        SftpFileAttributes? previousAccess = null;
         if (client.Exists(remotePath))
         {
             var destinationAttributes = client.GetAttributes(remotePath);
@@ -452,7 +454,8 @@ public sealed partial class SshNetSftpService
                 throw new IOException($"A remote directory already exists: {remotePath}");
 
             if (options.VerifyChecksum && options.EffectiveConflictPolicy is not (SftpConflictPolicy.Skip or SftpConflictPolicy.NewerOnly or SftpConflictPolicy.Rename) &&
-                destinationAttributes.Size == source.Length)
+                destinationAttributes.IsRegularFile && destinationAttributes.Size == source.Length &&
+                destinationAttributes.LastWriteTimeUtc == SftpFileMetadata.WholeSecondUtc(source.LastWriteTimeUtc))
             {
                 var localHash = ComputeLocalSha256(source.FullName, ct);
                 var remoteHash = ComputeRemoteSha256(client, remotePath, ct);
@@ -469,6 +472,7 @@ public sealed partial class SshNetSftpService
             {
                 case SftpConflictPolicy.Overwrite:
                     replaceExistingDestination = true;
+                    previousAccess = destinationAttributes;
                     break;
                 case SftpConflictPolicy.Skip:
                     reportBytes(source.Length);
@@ -488,12 +492,13 @@ public sealed partial class SshNetSftpService
                     checkpoint = _checkpointStore.Load(id);
                     break;
                 case SftpConflictPolicy.NewerOnly:
-                    if (source.LastWriteTimeUtc <= destinationAttributes.LastWriteTimeUtc)
+                    if (SftpFileMetadata.WholeSecondUtc(source.LastWriteTimeUtc) <= destinationAttributes.LastWriteTimeUtc)
                     {
                         reportBytes(source.Length);
                         return new FileTransferResult(0, 0, null, Skipped: true);
                     }
                     replaceExistingDestination = true;
+                    previousAccess = destinationAttributes;
                     break;
                 default:
                     throw new SftpTransferConflictException(source.FullName, remotePath);
@@ -523,6 +528,7 @@ public sealed partial class SshNetSftpService
             partialPath, source.Length, offset, sourceTicks);
         try
         {
+            if (offset == 0 || offset < source.Length)
             {
                 using var local = source.OpenRead();
                 local.Position = offset;
@@ -530,6 +536,7 @@ public sealed partial class SshNetSftpService
                     partialPath,
                     offset > 0 ? FileMode.Open : FileMode.CreateNew,
                     FileAccess.Write);
+                SftpFileMetadata.ProtectStagedUpload(client, partialPath, previousAccess);
                 if (offset > 0)
                     remote.Seek(offset, SeekOrigin.Begin);
 
@@ -565,7 +572,7 @@ public sealed partial class SshNetSftpService
 
             ct.ThrowIfCancellationRequested();
             reportPhase(SftpTransferPhase.Promoting);
-            PromoteRemoteFile(client, partialPath, remotePath, replaceExistingDestination);
+            PromoteRemoteFile(client, partialPath, remotePath, replaceExistingDestination, source.LastWriteTimeUtc, ct);
             _checkpointStore.Delete(id);
             return new FileTransferResult(source.Length, offset, checksum);
         }
@@ -611,7 +618,8 @@ public sealed partial class SshNetSftpService
             options.EffectiveConflictPolicy is not (SftpConflictPolicy.Skip or SftpConflictPolicy.NewerOnly or SftpConflictPolicy.Rename))
         {
             var existing = new FileInfo(destination);
-            if (existing.Length == attributes.Size)
+            if (existing.Length == attributes.Size &&
+                SftpFileMetadata.WholeSecondUtc(existing.LastWriteTimeUtc) == attributes.LastWriteTimeUtc)
             {
                 var remoteHash = ComputeRemoteSha256(client, remotePath, ct);
                 var localHash = ComputeLocalSha256(destination, ct);
@@ -638,7 +646,7 @@ public sealed partial class SshNetSftpService
                     destination = CreateAvailableLocalPath(destination);
                     break;
                 case SftpConflictPolicy.NewerOnly:
-                    if (new FileInfo(destination).LastWriteTimeUtc >= attributes.LastWriteTimeUtc)
+                    if (SftpFileMetadata.WholeSecondUtc(File.GetLastWriteTimeUtc(destination)) >= attributes.LastWriteTimeUtc)
                     {
                         reportBytes(attributes.Size);
                         return new FileTransferResult(0, 0, null, Skipped: true);
@@ -726,6 +734,8 @@ public sealed partial class SshNetSftpService
 
             ct.ThrowIfCancellationRequested();
             reportPhase(SftpTransferPhase.Promoting);
+            SftpFileMetadata.SetLocalWriteTime(partialPath, attributes.LastWriteTimeUtc);
+            ct.ThrowIfCancellationRequested();
             File.Move(partialPath, destination, replaceExistingDestination);
             _checkpointStore.Delete(id);
             return new FileTransferResult(attributes.Size, offset, checksum);
@@ -1262,15 +1272,26 @@ public sealed partial class SshNetSftpService
         SftpClient client,
         string partialPath,
         string destinationPath,
-        bool overwrite)
+        bool overwrite,
+        DateTime sourceTime,
+        CancellationToken ct)
     {
         string? backupPath = null;
-        if (client.Exists(destinationPath))
+        var destination = client.Exists(destinationPath) ? client.Get(destinationPath) : null;
+        if (destination is not null && !overwrite)
+            throw new IOException($"Remote file already exists: {destinationPath}");
+        // SSH.NET canonicalizes the path before lstat. A symlinked parent is fine,
+        // but replacing a resolved leaf could rename a different directory entry.
+        if (destination is not null && destination.FullName != destinationPath &&
+            destination.FullName != RemotePath.Combine(client.Get(RemotePath.GetDirectory(destinationPath)).FullName,
+                RemotePath.GetName(destinationPath)))
+            throw new InvalidOperationException("심볼릭 링크 대상은 교체할 수 없습니다. / Cannot replace a symbolic-link destination.");
+
+        ct.ThrowIfCancellationRequested();
+        SftpFileMetadata.PrepareRemoteFile(client, partialPath, sourceTime, destination?.Attributes);
+        ct.ThrowIfCancellationRequested();
+        if (destination is not null)
         {
-            if (!overwrite)
-                throw new IOException($"Remote file already exists: {destinationPath}");
-            if (client.GetAttributes(destinationPath).IsDirectory)
-                throw new IOException($"A remote directory already exists: {destinationPath}");
             backupPath = destinationPath + $".sutty-{Guid.NewGuid():N}.backup";
             client.RenameFile(destinationPath, backupPath);
         }
