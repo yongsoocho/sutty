@@ -48,6 +48,7 @@ function Assert-Installed([version]$Version) {
 function Test-Window($Package) {
     $exe = Join-Path $Package.InstallLocation 'sutty.UI.exe'
     $app = $null
+    $ready = $false
     $start = Get-Date
     Start-Process explorer.exe -ArgumentList ("shell:AppsFolder\" + $Package.PackageFamilyName + '!App')
     try {
@@ -58,16 +59,22 @@ function Test-Window($Package) {
                 $app = Get-Process -Name 'sutty.UI' -ErrorAction SilentlyContinue | Where-Object {
                     $_.StartTime -ge $start -and $_.Path -eq $exe
                 } | Select-Object -First 1
+                # Explorer owns activation. Retain a handle while the app is alive so
+                # Windows PowerShell can still read its exit status after the PID exits.
+                if ($app) { [void]$app.get_Handle() }
             }
             if ($app) {
                 $app.Refresh()
-                if ($app.HasExited) { throw 'Sutty exited before showing a window.' }
+                if ($app.HasExited) { throw "Sutty exited before showing a window (exit $($app.get_ExitCode()))." }
+                $ready = $app.MainWindowHandle -ne [IntPtr]::Zero -and $app.MainWindowTitle -eq 'Sutty'
             }
-        } while ((-not $app -or $app.MainWindowHandle -eq [IntPtr]::Zero) -and [DateTime]::UtcNow -lt $deadline)
-        if (-not $app -or $app.MainWindowHandle -eq [IntPtr]::Zero) { throw 'Sutty did not show its installed native window.' }
-        if (-not $app.CloseMainWindow() -or -not $app.WaitForExit(15000) -or $app.ExitCode -ne 0) {
-            throw 'The Sutty window did not close cleanly.'
-        }
+        } while (-not $ready -and [DateTime]::UtcNow -lt $deadline)
+        if (-not $ready) { throw 'Sutty did not show its installed native window.' }
+        if (-not $app.CloseMainWindow()) { throw 'Windows rejected the close request for the Sutty window.' }
+        if (-not $app.WaitForExit(15000)) { throw 'Sutty was still running 15 seconds after the close request.' }
+        $exitCode = $app.get_ExitCode()
+        if ($exitCode -ne 0) { throw ('Sutty exited with code 0x{0:X8}.' -f $exitCode) }
+        Write-Host "Installed Sutty $($Package.Version) opened its window and exited with code 0."
     } finally {
         if ($app) {
             if (-not $app.HasExited) { $app.Kill(); $app.WaitForExit() }
