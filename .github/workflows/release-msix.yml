@@ -223,10 +223,14 @@ jobs:
             (Join-Path $outputDirectory.FullName $appInstallerFileName),
             $descriptor.Trim(),
             [System.Text.UTF8Encoding]::new($false))
+          .\.github\scripts\Assert-SignedInstaller.ps1 -Package $signedPackage `
+            -Descriptor (Join-Path $outputDirectory.FullName $appInstallerFileName) `
+            -ReleaseBase $env:RELEASE_BASE_URL -Publisher $env:PUBLISHER -Architecture $env:TARGET_ARCHITECTURE
+          $descriptorHash = (Get-FileHash -LiteralPath (Join-Path $outputDirectory.FullName $appInstallerFileName) -Algorithm SHA256).Hash.ToLowerInvariant()
           $packageHash = (Get-FileHash -LiteralPath $signedPackage -Algorithm SHA256).Hash.ToLowerInvariant()
           [System.IO.File]::WriteAllText(
             (Join-Path $outputDirectory.FullName 'SHA256SUMS.txt'),
-            "$packageHash  $($env:PACKAGE_FILE_NAME)$([Environment]::NewLine)",
+            "$packageHash  $($env:PACKAGE_FILE_NAME)$([Environment]::NewLine)$descriptorHash  $appInstallerFileName$([Environment]::NewLine)",
             [System.Text.UTF8Encoding]::new($false))
 
       - name: Upload signed release bundle

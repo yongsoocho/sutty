@@ -14,6 +14,12 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
+if (args is ["--loopback-operator", var route, var scratch] && route is "direct" or "jump")
+{
+    await LoopbackOperatorTests.RunAsync(route == "jump", scratch);
+    return 0;
+}
+
 if (args.Length > 0 && args[0] == "--loopback-transfer")
 {
     await LoopbackTransferTests.RunAsync(args[1..]);
