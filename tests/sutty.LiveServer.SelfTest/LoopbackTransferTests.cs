@@ -83,6 +83,8 @@ internal static class LoopbackTransferTests
             var skipped = await Transfer(options with { ConflictPolicy = SftpConflictPolicy.Skip });
             Require(skipped.FilesSkipped == 1 && skipped.FilesTransferred == 0 && skipped.BytesTransferred == 0,
                 "An existing destination was not reported as skipped.");
+            var newer = await Transfer(options with { ConflictPolicy = SftpConflictPolicy.NewerOnly });
+            Require(newer.FilesSkipped == 1, "Newer-only must skip files in the same SFTP timestamp second.");
             Console.WriteLine($"{args[0]} via {args[1]} resumed at {savedOffset:N0} bytes, verified {length:N0} bytes.");
         }
         finally { await session.DisconnectAsync(); }
