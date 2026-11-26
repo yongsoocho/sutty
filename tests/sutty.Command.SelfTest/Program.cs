@@ -1,5 +1,11 @@
 using sutty.Command;
 
+if (args is ["--msix-profile", var phase, var family, var receipt, var outcome])
+{
+    InstalledProfileProbe.Run(phase, family, receipt, outcome);
+    return;
+}
+
 var scratch = Path.Combine(Path.GetTempPath(), $"sutty-command-self-test-{Guid.NewGuid():N}");
 Directory.CreateDirectory(scratch);
 Db.PathOverride = Path.Combine(scratch, "sutty.db");
