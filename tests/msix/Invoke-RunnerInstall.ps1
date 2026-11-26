@@ -74,9 +74,12 @@ try {
     $sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
     $desktop = @(Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $sessionId }).Count -gt 0
     if (-not $desktop) { Write-Host 'Native window requires an interactive Windows desktop; running package registration checks.' }
+    $profileProbe = Join-Path $testRoot 'profile-probe'
+    Invoke-Checked dotnet @('build', '.\tests\sutty.Command.SelfTest\sutty.Command.SelfTest.csproj', '-c', 'Release',
+        '--no-restore', '-p:Platform=x64', '--output', $profileProbe)
     & "$PSScriptRoot\Test-SignedInstall.ps1" -PreviousPackage $previous -CandidatePackage $candidate `
         -PreviousSha256 (Get-FileHash -LiteralPath $previous).Hash -CandidateSha256 (Get-FileHash -LiteralPath $candidate).Hash `
-        -ExpectedPublisher $cert.Subject -LaunchWindow:$desktop | Format-List
+        -ExpectedPublisher $cert.Subject -LaunchWindow:$desktop -ProfileProbeDirectory $profileProbe | Format-List
 } finally {
     if ($cert) {
         foreach ($store in @('Cert:\LocalMachine\TrustedPeople', 'Cert:\CurrentUser\My')) {

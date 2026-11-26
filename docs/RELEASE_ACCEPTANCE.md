@@ -168,9 +168,17 @@ On a clean Windows 11 24H2+ test profile, download the previous and candidate si
     -PreviousSha256 $previousHash -CandidateSha256 $candidateHash -ExpectedPublisher $publisher -LaunchWindow
 ```
 
-The script checks package identity and hashes, installs both versions in order, rolls back, checks a marker under the external Sutty data directory, and uninstalls. With `-LaunchWindow` it starts and closes the installed native window at each version. Use a disposable profile; existing installations or user data stop the run. The hosted-runner test uses a short-lived test publisher. Production HTTPS update discovery, real publisher trust, actual saved-host/vault retention and user-observed desktop behavior still require the two approved artifacts on a team machine.
+The script checks package identity and hashes, installs both versions in order, rolls back, checks a marker under the external Sutty data directory, and uninstalls. With `-LaunchWindow` it starts and closes the installed native window at each version. On a disposable Windows profile with the .NET SDK, build the profile probe and add its output directory to that command to check the stored host and credential as well.
 
-승인된 두 설치본의 해시와 발행자를 독립적으로 확인하고 깨끗한 Windows 11 시험 계정에서 실행합니다. 설치→업데이트→이전 버전 복귀→제거와 외부 데이터 표식 보존을 확인합니다. 실제 게시 URL에서의 자동 업데이트, 호스트·자격증명 보존, 팀 인증과 한글 IME·Narrator 사용 경험은 그 PC에서 직접 확인합니다.
+```powershell
+dotnet build .\tests\sutty.Command.SelfTest -c Release -p:Platform=x64 -o C:\SuttyPilot\probe
+# Add to Test-SignedInstall.ps1 arguments:
+# -ProfileProbeDirectory C:\SuttyPilot\probe -LaunchWindow
+```
+
+The probe creates a synthetic saved host and an encrypted random password under the installed package identity. After upgrade and rollback it reads back the host, decrypts its credential, and compares its digest. With an interactive desktop it also opens Hosts with `Alt+2` and checks that Windows UI Automation can read the saved host in the installed window. The hosted runner uses a short-lived test publisher. The team pilot still needs the approved publisher, the actual HTTPS update feed and observations on its Windows PCs.
+
+승인된 두 설치본의 해시와 발행자를 확인하고 깨끗한 Windows 11 시험 계정에서 실행합니다. `-ProfileProbeDirectory`를 지정하면 이전 버전에 시험용 호스트와 임의 자격증명을 저장하고, 업데이트와 롤백 뒤 같은 호스트를 읽고 비밀번호를 복호화해 일치 여부를 확인합니다. `-LaunchWindow`를 함께 쓰면 실제 창에서 `Alt+2`로 연 호스트 목록을 접근성 API로 읽습니다. 실제 게시 URL에서의 업데이트, 팀 인증, 한글 IME·Narrator 사용 경험은 팀 PC에서 확인합니다.
 
 ## Evidence record / 증거 기록
 
